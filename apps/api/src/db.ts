@@ -1,12 +1,14 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { schema } from './schema.js';
 
 export type Db = Database.Database;
 
 export function openDatabase(path = process.env.DATABASE_PATH ?? './data/acronote.db'): Db {
-  const resolved = path === ':memory:' ? path : resolve(process.cwd(), path);
+  const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
+  const resolved = path === ':memory:' ? path : (isAbsolute(path) ? path : resolve(projectRoot, path));
   if (resolved !== ':memory:') mkdirSync(dirname(resolved), { recursive: true });
   const db = new Database(resolved);
   db.pragma('journal_mode = WAL');
