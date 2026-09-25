@@ -1,5 +1,6 @@
 export type ProfileMode = 'athlete' | 'coach';
 export type ActivityKind = 'element' | 'routine';
+export * from './element-code.js';
 
 export interface ElementSnapshot {
   sourceElementId: number | null;

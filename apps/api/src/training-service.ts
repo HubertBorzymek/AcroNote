@@ -33,7 +33,7 @@ export function saveTraining(db: Db, userId: number, input: TrainingInput, train
     const addElement = db.prepare(`INSERT INTO activity_elements(activity_id,position,source_element_id,code_snapshot,name_snapshot,
       execution_type_id,execution_type_name) VALUES(?,?,?,?,?,?,?)`);
     input.entries.forEach((entry, entryIndex) => {
-      const defaultName = requiredText(entry.defaultExecutionTypeName ?? 'Na płasko', 'Rodzaj wykonania');
+      const defaultName = requiredText(entry.defaultExecutionTypeName ?? 'Siatka', 'Rodzaj wykonania');
       const entryId = Number(addEntry.run(id, entryIndex, entry.defaultExecutionTypeId ?? null, defaultName).lastInsertRowid);
       entry.activities.forEach((activity, activityIndex) => {
         if (!Number.isInteger(activity.repetitions) || activity.repetitions < 1) throw new Error('Liczba powtórzeń musi być dodatnią liczbą całkowitą.');
@@ -96,7 +96,7 @@ export function getTraining(db: Db, userId: number, id: number) {
   return training;
 }
 
-export function trainingSummary(db: Db, userId: number, from?: string, to?: string) {
+export function trainingSummary(db: Db, userId: number, from?: string, to?: string, elementId?: number) {
   const conditions = ['t.user_id=?']; const values: unknown[] = [userId];
   if (from) { conditions.push('t.training_date>=?'); values.push(from); }
   if (to) { conditions.push('t.training_date<=?'); values.push(to); }
@@ -109,19 +109,34 @@ export function trainingSummary(db: Db, userId: number, from?: string, to?: stri
   const byCode: Record<string, number> = {};
   for (const row of activityRows) if (row.kind === 'element') byCode[row.code_snapshot] = (byCode[row.code_snapshot] ?? 0) + row.repetitions;
   for (const row of snapshotRows) byCode[row.code] = (byCode[row.code] ?? 0) + row.repetitions;
-  const totalElements = Object.values(byCode).reduce((sum, count) => sum + count, 0);
+  let totalElements = Object.values(byCode).reduce((sum, count) => sum + count, 0);
   for (const training of trainings) {
     const rows=db.prepare(`SELECT a.kind,a.repetitions,a.code_snapshot FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=?`).all(training.id) as any[];
     const routineIds=db.prepare(`SELECT a.id,a.repetitions FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=? AND a.kind='routine'`).all(training.id) as any[];
-    const direct=rows.filter(r=>r.kind==='element').reduce((s,r)=>s+r.repetitions,0);
-    const nested=routineIds.reduce((sum,r)=>sum+(db.prepare('SELECT COUNT(*) count FROM activity_elements WHERE activity_id=?').get(r.id) as any).count*r.repetitions,0);
+    const direct=elementId===undefined?rows.filter(r=>r.kind==='element').reduce((s,r)=>s+r.repetitions,0):
+      Number((db.prepare(`SELECT COALESCE(SUM(a.repetitions),0) count FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=? AND a.kind='element' AND a.source_element_id=?`).get(training.id,elementId) as any).count);
+    const nested=elementId===undefined?routineIds.reduce((sum,r)=>sum+(db.prepare('SELECT COUNT(*) count FROM activity_elements WHERE activity_id=?').get(r.id) as any).count*r.repetitions,0):
+      Number((db.prepare(`SELECT COALESCE(SUM(a.repetitions),0) count FROM training_entries te JOIN activities a ON a.entry_id=te.id JOIN activity_elements ae ON ae.activity_id=a.id WHERE te.training_id=? AND ae.source_element_id=?`).get(training.id,elementId) as any).count);
     training.totalElements=direct+nested;
+  }
+  if(elementId!==undefined){
+    totalElements=trainings.reduce((sum,row)=>sum+row.totalElements,0);
+    const element=db.prepare('SELECT code FROM elements WHERE id=? AND user_id=?').get(elementId,userId) as {code:string}|undefined;
+    for(const code of Object.keys(byCode))delete byCode[code];
+    if(element)byCode[element.code]=totalElements;
+  }
+  const timelineByDate = new Map<string, { date: string; entries: number; totalElements: number }>();
+  for (const training of trainings) {
+    const point = timelineByDate.get(training.date) ?? { date: training.date, entries: 0, totalElements: 0 };
+    point.entries += Number(training.entries);
+    point.totalElements += Number(training.totalElements);
+    timelineByDate.set(training.date, point);
   }
   return {
     trainings: trainings.length, entries: trainings.reduce((sum,row)=>sum+row.entries,0), totalElements, byCode,
     fullRoutines: activityRows.filter(row=>row.kind==='routine' && row.is_full_range).reduce((sum,row)=>sum+row.repetitions,0),
     matchingFullRoutines: activityRows.filter(row=>row.kind==='routine' && row.is_full_range && row.matched_original_template).reduce((sum,row)=>sum+row.repetitions,0),
     fragments: activityRows.filter(row=>row.kind==='routine' && !row.is_full_range).reduce((sum,row)=>sum+row.repetitions,0),
-    timeline: trainings
+    timeline: [...timelineByDate.values()]
   };
 }

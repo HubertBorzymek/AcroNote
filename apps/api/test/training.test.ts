@@ -7,7 +7,7 @@ describe('historyczne zapisy treningów', () => {
   beforeEach(() => {
     db=openDatabase(':memory:');
     userId=Number(db.prepare("INSERT INTO users(username,password_hash) VALUES('ala','hash')").run().lastInsertRowid); seedExecutionTypes(db,userId);
-    typeId=(db.prepare("SELECT id FROM execution_types WHERE user_id=? AND name='Na płasko'").get(userId) as any).id;
+    typeId=(db.prepare("SELECT id FROM execution_types WHERE user_id=? AND name='Siatka'").get(userId) as any).id;
     elementA=Number(db.prepare("INSERT INTO elements(user_id,code,name) VALUES(?, '41o','Barani')").run(userId).lastInsertRowid);
     elementB=Number(db.prepare("INSERT INTO elements(user_id,code,name) VALUES(?, '40/','Salto')").run(userId).lastInsertRowid);
     routineId=Number(db.prepare("INSERT INTO routines(user_id,name,slot_count) VALUES(?,'Układ 1',3)").run(userId).lastInsertRowid);
@@ -55,8 +55,19 @@ describe('historyczne zapisy treningów', () => {
 
   it('sumuje kilka treningów tego samego dnia oraz zakres tygodniowy i miesięczny',()=>{
     for(const [date,count] of [['2026-09-21',2],['2026-09-21',3],['2026-10-01',7]] as const) saveTraining(db,userId,{date,entries:[{defaultExecutionTypeName:'Na płasko',activities:[{kind:'element',code:'41o',repetitions:count,executionTypeName:'Na płasko'}]}]});
-    expect(trainingSummary(db,userId,'2026-09-21','2026-09-21')).toMatchObject({trainings:2,totalElements:5});
+    const day = trainingSummary(db,userId,'2026-09-21','2026-09-21');
+    expect(day).toMatchObject({trainings:2,totalElements:5});
+    expect(day.timeline).toEqual([{date:'2026-09-21',entries:2,totalElements:5}]);
     expect(trainingSummary(db,userId,'2026-09-21','2026-09-27').totalElements).toBe(5); expect(trainingSummary(db,userId,'2026-09-01','2026-09-30').totalElements).toBe(5);
+  });
+
+  it('filtruje oś czasu po elemencie, także wewnątrz układu i przy duplikatach',()=>{
+    saveTraining(db,userId,{date:'2026-09-25',entries:[{defaultExecutionTypeName:'Siatka',activities:[
+      {kind:'element',sourceElementId:elementA,code:'41o',repetitions:3,executionTypeName:'Siatka'},fullActivity()]}]});
+    const selected=trainingSummary(db,userId,undefined,undefined,elementA);
+    expect(selected.totalElements).toBe(7);
+    expect(selected.timeline[0].totalElements).toBe(7);
+    expect(selected.byCode).toEqual({'41o':7});
   });
 
   it('odrzuca zero powtórzeń',()=>{expect(()=>saveTraining(db,userId,{date:'2026-09-25',entries:[{defaultExecutionTypeName:'Na płasko',activities:[{kind:'element',code:'41o',repetitions:0,executionTypeName:'Na płasko'}]}]})).toThrow(/powtórzeń/);});
