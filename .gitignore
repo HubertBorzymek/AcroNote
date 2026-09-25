@@ -6,9 +6,10 @@ coverage/
 !.env.example
 data/*.db
 data/*.db-*
+**/data/*.db
+**/data/*.db-*
 *.log
 .vs/
 .vscode/
 *.user
 *.suo
-
