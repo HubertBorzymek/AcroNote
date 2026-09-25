@@ -8,9 +8,10 @@ import { ElementsPage } from './pages/ElementsPage';
 import { RoutinesPage } from './pages/RoutinesPage';
 import { StatsPage } from './pages/StatsPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { AdminPage } from './pages/AdminPage';
 
-type Route = 'trainings' | 'elements' | 'routines' | 'stats' | 'profile';
-const validRoutes: Route[] = ['trainings', 'elements', 'routines', 'stats', 'profile'];
+type Route = 'trainings' | 'elements' | 'routines' | 'stats' | 'profile' | 'admin';
+const validRoutes: Route[] = ['trainings', 'elements', 'routines', 'stats', 'profile', 'admin'];
 function routeFromUrl(): Route { const value = location.pathname.split('/').filter(Boolean)[0] as Route; return validRoutes.includes(value) ? value : 'trainings'; }
 
 export function App() {
@@ -26,7 +27,8 @@ export function App() {
   if (user === undefined && !loadError) return <div className="app-loading"><div className="logo-mark">A</div><Loading/></div>;
   if (loadError) return <div className="centered-page"><ErrorState message={loadError} retry={loadUser}/></div>;
   if (!user) return <Auth onAuthenticated={setUser}/>;
-  const pages = { trainings: <TrainingsPage setDirty={setDirty}/>, elements: <ElementsPage setDirty={setDirty}/>, routines: <RoutinesPage setDirty={setDirty}/>, stats: <StatsPage/>, profile: <ProfilePage user={user} onLogout={logout}/> };
+  const pages = { trainings: <TrainingsPage setDirty={setDirty}/>, elements: <ElementsPage setDirty={setDirty}/>, routines: <RoutinesPage setDirty={setDirty}/>, stats: <StatsPage/>, profile: <ProfilePage user={user} onLogout={logout}/>, admin: user.isAdmin ? <AdminPage currentUser={user}/> : <ProfilePage user={user} onLogout={logout}/> };
   const navigation: Array<[Route, string, Parameters<typeof Icon>[0]['name']]> = [['trainings', 'Treningi', 'home'], ['elements', 'Elementy', 'spark'], ['routines', 'Układy', 'routine'], ['stats', 'Statystyki', 'chart'], ['profile', 'Profil', 'user']];
+  if (user.isAdmin) navigation.push(['admin', 'Admin', 'admin']);
   return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="logo-mark">A</div><div><strong>AcroNote</strong><span>Dziennik akrobatyczny</span></div></div><nav>{navigation.map(([key, label, icon]) => <button className={route === key ? 'active' : ''} key={key} onClick={() => navigate(key)}><Icon name={icon}/><span>{label}</span></button>)}</nav><div className="sidebar-user"><span>{user.username.slice(0, 1).toUpperCase()}</span><div><strong>{user.username}</strong><small>Profil zawodnika</small></div></div></aside><main className="content">{pages[route]}</main><nav className="bottom-nav">{navigation.map(([key, label, icon]) => <button className={route === key ? 'active' : ''} key={key} onClick={() => navigate(key)}><Icon name={icon}/><span>{label}</span></button>)}</nav></div>;
 }

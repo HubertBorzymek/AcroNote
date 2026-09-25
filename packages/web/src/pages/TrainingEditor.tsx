@@ -1,17 +1,17 @@
-import { useMemo, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import { api } from '../api';
 import { today, useAsync, useUnsavedChanges } from '../hooks';
 import type { Activity, ElementItem, ExecutionType, Routine, Training, TrainingEntry } from '../types';
 import { Counter, ErrorState, Icon, Loading, PageHeader, Toast } from '../components/ui';
 
 const fallbackExecutionTypes: ExecutionType[] = [
-  { id: 'flat', name: 'Na płasko' }, { id: 'mat', name: 'Materac' }, { id: 'foam', name: 'Gąbki' },
+  { id: 'flat', name: 'Siatka' }, { id: 'mat', name: 'Materac' }, { id: 'foam', name: 'Gąbki' },
 ];
 
 export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { initial?: Training; onBack: () => void; onSaved: () => void; setGlobalDirty: (dirty: boolean) => void }) {
   const sources = useAsync(async () => {
     const [elements, routines, executionTypes] = await Promise.all([api.elements(false), api.routines(), api.executionTypes().catch(() => fallbackExecutionTypes)]);
-    return { elements, routines, executionTypes: executionTypes.length ? executionTypes : fallbackExecutionTypes };
+    return { elements, routines, executionTypes: (executionTypes.length ? executionTypes : fallbackExecutionTypes).map((type) => ({ ...type, name: type.name === 'Na płasko' ? 'Siatka' : type.name })) };
   }, []);
   const [date, setDate] = useState(initial?.date ?? today());
   const [entries, setEntries] = useState<TrainingEntry[]>(initial?.entries ? structuredClone(initial.entries) : []);
@@ -20,10 +20,11 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
   const [message, setMessage] = useState('');
   const [picker, setPicker] = useState<{ entryIndex: number; type?: 'element' | 'routine' } | null>(null);
   const [editingActivity, setEditingActivity] = useState<{ entryIndex: number; activityIndex: number } | null>(null);
+  const [showExitDialog, setShowExitDialog] = useState(false);
   useUnsavedChanges(dirty);
 
   const markDirty = () => { setDirty(true); setGlobalDirty(true); };
-  function back() { if (dirty && !confirm('Masz niezapisane zmiany w treningu. Czy chcesz je odrzucić?')) return; setGlobalDirty(false); onBack(); }
+  function back() { if (dirty) return setShowExitDialog(true); setGlobalDirty(false); onBack(); }
   function updateEntry(index: number, update: (entry: TrainingEntry) => TrainingEntry) { setEntries(entries.map((entry, i) => i === index ? update(entry) : entry)); markDirty(); }
   function addEntry() {
     const execution = sources.data?.executionTypes[0] ?? fallbackExecutionTypes[0];
@@ -46,12 +47,13 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
     updateEntry(entryIndex, (current) => ({ ...current, activities: [...current.activities, activity] })); setPicker(null);
   }
   async function save() {
-    if (!entries.length) return setMessage('Dodaj co najmniej jedno wejście.');
-    if (entries.some((entry) => !entry.activities.length)) return setMessage('Każde wejście powinno zawierać co najmniej jedną czynność.');
+    if (!entries.length) { setMessage('Dodaj co najmniej jedno wejście.'); return false; }
+    if (entries.some((entry) => !entry.activities.length)) { setMessage('Każde wejście powinno zawierać co najmniej jedną czynność.'); return false; }
     setSaving(true);
-    try { initial ? await api.updateTraining(initial.id, { date, entries }) : await api.createTraining({ date, entries }); setDirty(false); setGlobalDirty(false); await onSaved(); }
+    try { initial ? await api.updateTraining(initial.id, { date, entries }) : await api.createTraining({ date, entries }); setDirty(false); setGlobalDirty(false); await onSaved(); return true; }
     catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Nie udało się zapisać treningu. Twoje dane pozostały w formularzu.'); }
     finally { setSaving(false); }
+    return false;
   }
   async function removeTraining() {
     if (!initial || !confirm('Usunąć ten trening? Tej operacji nie można cofnąć.')) return;
@@ -79,17 +81,29 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
     <button className="add-entry" onClick={addEntry}><Icon name="plus"/><span><strong>Dodaj wejście</strong><small>Kolejne wejście na trampolinę</small></span></button>
     {initial && <button className="delete-training" onClick={() => void removeTraining()}>Usuń trening</button>}
     <div className="sticky-save"><span><strong>{entries.length}</strong> wejść · <strong>{total}</strong> elementów</span><button className="button primary" onClick={() => void save()} disabled={saving}>{saving ? 'Zapisywanie…' : 'Zapisz trening'}</button></div>
-    {picker?.type === 'element' && <ElementPicker elements={sources.data!.elements} onPick={(element) => addElement(picker.entryIndex, element)} onClose={() => setPicker(null)}/>} 
-    {picker?.type === 'routine' && <RoutinePicker routines={sources.data!.routines} onPick={(routine, start, end) => addRoutine(picker.entryIndex, routine, start, end)} onClose={() => setPicker(null)}/>} 
+    {picker?.type === 'element' && <ElementPicker elements={sources.data!.elements} onCreated={(element) => sources.setData({ ...sources.data!, elements: [...sources.data!.elements, element] })} onPick={(element) => addElement(picker.entryIndex, element)} onClose={() => setPicker(null)}/>}
+    {picker?.type === 'routine' && <RoutinePicker routines={sources.data!.routines} onPick={(routine, start, end) => addRoutine(picker.entryIndex, routine, start, end)} onClose={() => setPicker(null)}/>}
     {editingActivity && <ActivityEditor activity={entries[editingActivity.entryIndex].activities[editingActivity.activityIndex]} executionTypes={sources.data!.executionTypes} onClose={() => setEditingActivity(null)} onDelete={() => { updateEntry(editingActivity.entryIndex, (entry) => ({ ...entry, activities: entry.activities.filter((_, i) => i !== editingActivity.activityIndex) })); setEditingActivity(null); }} onChange={(activity) => { updateEntry(editingActivity.entryIndex, (entry) => ({ ...entry, activities: entry.activities.map((item, i) => i === editingActivity.activityIndex ? activity : item) })); }}/>} 
+    {showExitDialog && <div className="modal-backdrop above"><section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="exit-title"><h2 id="exit-title">Zapisać trening?</h2><p>Masz niezapisane zmiany. Możesz je zapisać, odrzucić albo zostać w formularzu.</p><div><button className="button primary" disabled={saving} onClick={() => void save()}>{saving ? 'Zapisuję…' : 'Zapisz'}</button><button className="button danger" onClick={() => { setShowExitDialog(false); setGlobalDirty(false); onBack(); }}>Odrzuć</button><button className="button secondary" onClick={() => setShowExitDialog(false)}>Zostań</button></div></section></div>}
     {message && <Toast message={message} kind="error" onClose={() => setMessage('')}/>} 
   </div>;
 }
 
-function ElementPicker({ elements, onPick, onClose }: { elements: ElementItem[]; onPick: (element: ElementItem) => void; onClose: () => void }) {
+function ElementPicker({ elements, onCreated, onPick, onClose }: { elements: ElementItem[]; onCreated: (element: ElementItem) => void; onPick: (element: ElementItem) => void; onClose: () => void }) {
   const [query, setQuery] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [favorite, setFavorite] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const list = elements.filter((item) => `${item.code} ${item.name ?? ''}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => Number(b.favorite) - Number(a.favorite));
-  return <div className="modal-backdrop above"><section className="sheet picker"><PageHeader title="Dodaj element" onBack={onClose}/><div className="search"><Icon name="search"/><input autoFocus placeholder="Wpisz kod lub nazwę" value={query} onChange={(e) => setQuery(e.target.value)}/></div><div className="pick-list">{list.map((item) => <button key={item.id} onClick={() => onPick(item)}><strong>{item.code}</strong><span>{item.name || 'Bez nazwy'}</span>{item.favorite && <b>★</b>}</button>)}</div>{!list.length && <p className="picker-empty">Nie znaleziono elementu. Dodaj go wcześniej w sekcji „Moje elementy”.</p>}</section></div>;
+  async function create(event: FormEvent) {
+    event.preventDefault(); setSaving(true); setError('');
+    try { const element = await api.createElement({ code: query.trim(), name: name.trim(), favorite, hidden: false }); onCreated(element); setCreating(false); setName(''); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Nie udało się dodać elementu.'); }
+    finally { setSaving(false); }
+  }
+  return <div className="modal-backdrop above"><section className="sheet picker"><PageHeader title={creating ? 'Nowy element' : 'Dodaj element'} onBack={creating ? () => setCreating(false) : onClose}/>{creating ? <form className="form-stack" onSubmit={create}><p className="picker-return">Po zapisaniu wrócisz do wyboru elementu w tym wejściu.</p><label>Kod elementu<input autoFocus required value={query} onChange={(e) => setQuery(e.target.value)} placeholder="np. 41o"/></label><label>Nazwa <span className="optional">opcjonalnie</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="np. Barani"/></label><label className="check-row"><input type="checkbox" checked={favorite} onChange={(e) => setFavorite(e.target.checked)}/><span><strong>Dodaj do ulubionych</strong></span></label>{error && <p className="form-error">{error}</p>}<button className="button primary full" disabled={saving}>{saving ? 'Dodaję…' : 'Dodaj i wróć'}</button></form> : <><div className="search"><Icon name="search"/><input autoFocus placeholder="Wpisz kod lub nazwę" value={query} onChange={(e) => setQuery(e.target.value)}/></div><button className="button secondary full picker-create" onClick={() => setCreating(true)}><Icon name="plus"/> Dodaj nowy element{query ? ` „${query}”` : ''}</button><div className="pick-list">{list.map((item) => <button key={item.id} onClick={() => onPick(item)}><strong>{item.code}</strong><span>{item.name || 'Bez nazwy'}</span>{item.favorite && <b>★</b>}</button>)}</div>{!list.length && <p className="picker-empty">Nie ma takiego elementu. Możesz dodać go tutaj bez utraty treningu.</p>}</>}</section></div>;
 }
 
 function RoutinePicker({ routines, onPick, onClose }: { routines: Routine[]; onPick: (routine: Routine, start: number, end: number) => void; onClose: () => void }) {
@@ -99,5 +113,5 @@ function RoutinePicker({ routines, onPick, onClose }: { routines: Routine[]; onP
 }
 
 function ActivityEditor({ activity, executionTypes, onClose, onDelete, onChange }: { activity: Activity; executionTypes: ExecutionType[]; onClose: () => void; onDelete: () => void; onChange: (activity: Activity) => void }) {
-  return <div className="modal-backdrop above"><section className="sheet"><PageHeader title="Edytuj wykonanie" onBack={onClose}/><div className="activity-editor"><div className="activity-title"><span className={`activity-kind ${activity.type}`}>{activity.type === 'element' ? 'E' : 'U'}</span><div><strong>{activity.type === 'element' ? activity.elementCode : activity.routineName}</strong><small>{activity.type === 'routine' ? `Migawka: ${activity.elements?.map((x) => x.code).join(' · ')}` : activity.elementName || 'Pojedynczy element'}</small></div></div><div className="field-label"><span>Liczba powtórzeń</span></div><Counter value={activity.repetitions} onChange={(repetitions) => onChange({ ...activity, repetitions })}/><label>Rodzaj wykonania<select value={activity.executionTypeId} onChange={(e) => { const type = executionTypes.find((x) => x.id === e.target.value)!; onChange({ ...activity, executionTypeId: type.id, executionTypeName: type.name }); }}><option value="" disabled>Wybierz</option>{executionTypes.map((type) => <option value={type.id} key={type.id}>{type.name}</option>)}</select><small>Zmiana nie nadpisuje indywidualnych rodzajów elementów migawki.</small></label>{activity.type === 'routine' && <div className="snapshot-elements"><div className="field-label"><span>Elementy w zapisanej migawce</span></div>{activity.elements?.map((element, index) => <div key={index}><strong>{index + 1}. {element.code}</strong><select value={element.executionTypeId} onChange={(e) => { const type = executionTypes.find((x) => x.id === e.target.value)!; onChange({ ...activity, elements: activity.elements!.map((item, i) => i === index ? { ...item, executionTypeId: type.id, executionTypeName: type.name } : item) }); }}>{executionTypes.map((type) => <option value={type.id} key={type.id}>{type.name}</option>)}</select></div>)}</div>}<button className="button secondary full" onClick={onClose}>Gotowe</button><button className="danger-link centered" onClick={onDelete}>Usuń tę czynność</button></div></section></div>;
+  return <div className="modal-backdrop above"><section className="sheet"><PageHeader title="Edytuj wykonanie" onBack={onClose}/><div className="activity-editor"><div className="activity-title"><span className={`activity-kind ${activity.type}`}>{activity.type === 'element' ? 'E' : 'U'}</span><div><strong>{activity.type === 'element' ? activity.elementCode : activity.routineName}</strong><small>{activity.type === 'routine' ? `W tym wykonaniu: ${activity.elements?.map((x) => x.code).join(' · ')}` : activity.elementName || 'Pojedynczy element'}</small></div></div><div className="field-label"><span>Liczba powtórzeń</span></div><Counter value={activity.repetitions} onChange={(repetitions) => onChange({ ...activity, repetitions })}/><label>Rodzaj wykonania<select value={activity.executionTypeId} onChange={(e) => { const type = executionTypes.find((x) => x.id === e.target.value)!; onChange({ ...activity, executionTypeId: type.id, executionTypeName: type.name }); }}><option value="" disabled>Wybierz</option>{executionTypes.map((type) => <option value={type.id} key={type.id}>{type.name}</option>)}</select><small>Możesz też wybrać inny rodzaj osobno dla każdego elementu poniżej.</small></label>{activity.type === 'routine' && <div className="snapshot-elements"><div className="field-label"><span>Jak wykonano każdy element?</span></div>{activity.elements?.map((element, index) => <div key={index}><strong>{index + 1}. {element.code}</strong><select value={element.executionTypeId} onChange={(e) => { const type = executionTypes.find((x) => x.id === e.target.value)!; onChange({ ...activity, elements: activity.elements!.map((item, i) => i === index ? { ...item, executionTypeId: type.id, executionTypeName: type.name } : item) }); }}>{executionTypes.map((type) => <option value={type.id} key={type.id}>{type.name}</option>)}</select></div>)}</div>}<button className="button secondary full" onClick={onClose}>Gotowe</button><button className="danger-link centered" onClick={onDelete}>Usuń tę czynność</button></div></section></div>;
 }

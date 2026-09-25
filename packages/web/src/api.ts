@@ -1,4 +1,4 @@
-import type { Activity, ElementItem, ExecutionType, Routine, RoutineSlot, StatsSummary, Training, TrainingEntry, User } from './types';
+import type { Activity, AdminUser, AdminUserData, ElementItem, ExecutionType, Routine, RoutineSlot, StatsSummary, Training, TrainingEntry, User } from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public details?: unknown) {
@@ -6,11 +6,13 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (init.body != null && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const response = await fetch(`/api${path}`, {
     ...init,
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...init.headers },
+    headers,
   });
   const payload = response.status === 204 ? undefined : await response.json().catch(() => undefined);
   if (!response.ok) {
@@ -25,6 +27,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 const json = (body: unknown): RequestInit => ({ body: JSON.stringify(body) });
 const id = (value: unknown) => value == null ? undefined : String(value);
 const apiId = (value: string | undefined) => value && /^\d+$/.test(value) ? Number(value) : value ?? null;
+const mapUser = (user: User & { id: unknown }): User => ({ ...user, id: String(user.id) });
 
 type RawRoutine = Omit<Routine, 'id' | 'slots'> & { id: unknown; items?: Array<Record<string, unknown>>; slots?: Array<Record<string, unknown>> };
 function mapRoutine(raw: RawRoutine): Routine {
@@ -58,15 +61,16 @@ function mapTraining(raw: Record<string, unknown>): Training {
 }
 
 export const api = {
-  me: () => request<User>('/auth/me'),
-  login: (username: string, password: string) => request<User>('/auth/login', { method: 'POST', ...json({ username, password }) }),
-  register: (username: string, password: string) => request<User>('/auth/register', { method: 'POST', ...json({ username, password }) }),
+  me: async () => mapUser(await request<User & { id: unknown }>('/auth/me')),
+  login: async (username: string, password: string) => mapUser(await request<User & { id: unknown }>('/auth/login', { method: 'POST', ...json({ username, password }) })),
+  register: async (username: string, password: string) => mapUser(await request<User & { id: unknown }>('/auth/register', { method: 'POST', ...json({ username, password }) })),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
   changePassword: (currentPassword: string, newPassword: string) => request<void>('/auth/password', { method: 'PUT', ...json({ currentPassword, newPassword }) }),
 
   elements: async (includeHidden = false) => (await request<Array<Omit<ElementItem, 'id'> & { id: unknown }>>(`/elements${includeHidden ? '?hidden=all' : ''}`)).map((item) => ({ ...item, id: String(item.id) })),
   createElement: async (input: Omit<ElementItem, 'id'>) => { const item = await request<Omit<ElementItem, 'id'> & { id: unknown }>('/elements', { method: 'POST', ...json(input) }); return { ...item, id: String(item.id) }; },
-  updateElement: async (elementId: string, input: Partial<ElementItem>) => { const item = await request<Omit<ElementItem, 'id'> & { id: unknown }>(`/elements/${elementId}`, { method: 'PUT', ...json(input) }); return { ...item, id: String(item.id) }; },
+  updateElement: (elementId: string, input: Omit<ElementItem, 'id'>) => request<void>(`/elements/${elementId}`, { method: 'PUT', ...json(input) }),
+  elementUsage: (elementId: string) => request<{ routineCount: number }>(`/elements/${elementId}/usage`),
   deleteElement: (id: string, removeFromRoutines = false) => request<void>(`/elements/${id}?routineHandling=${removeFromRoutines ? 'remove' : 'keep'}`, { method: 'DELETE' }),
 
   routines: async () => (await request<RawRoutine[]>('/routines')).map(mapRoutine),
@@ -75,6 +79,8 @@ export const api = {
   deleteRoutine: (id: string) => request<void>(`/routines/${id}`, { method: 'DELETE' }),
 
   executionTypes: async () => (await request<Array<Omit<ExecutionType, 'id'> & { id: unknown }>>('/execution-types')).map((item) => ({ ...item, id: String(item.id) })),
+  createExecutionType: (name: string) => request<ExecutionType>('/execution-types', { method: 'POST', ...json({ name }) }),
+  updateExecutionType: (item: ExecutionType) => request<void>(`/execution-types/${item.id}`, { method: 'PUT', ...json({ name: item.name, sortOrder: item.sortOrder ?? 0, hidden: !!item.hidden }) }),
   trainings: async (from?: string, to?: string) => (await request<Array<Record<string, unknown>>>(`/trainings?${new URLSearchParams({ ...(from && { from }), ...(to && { to }) })}`)).map(mapTraining),
   training: async (trainingId: string) => mapTraining(await request<Record<string, unknown>>(`/trainings/${trainingId}`)),
   createTraining: async (input: Pick<Training, 'date' | 'entries'>) => mapTraining(await request<Record<string, unknown>>('/trainings', { method: 'POST', ...json(trainingBody(input)) })),
@@ -87,4 +93,16 @@ export const api = {
       byCode: Array.isArray(byCode) ? byCode : Object.entries(byCode ?? {}).map(([code, count]) => ({ code, count })).sort((a, b) => b.count - a.count),
       timeline: ((raw.timeline ?? []) as Array<Record<string, unknown>>).map((point) => ({ date: String(point.date), entries: Number(point.entries ?? 0), elements: Number(point.totalElements ?? point.elements ?? 0) })) } satisfies StatsSummary;
   },
+  adminUsers: async () => (await request<Array<AdminUser & { id: unknown; elementsCount?: number; routinesCount?: number; trainingsCount?: number }>>('/admin/users?includeDeleted=true')).map((user) => ({ ...user, id: String(user.id), isAdmin: user.role === 'admin', elementCount: user.elementsCount ?? user.elementCount, routineCount: user.routinesCount ?? user.routineCount, trainingCount: user.trainingsCount ?? user.trainingCount })),
+  adminDeleteUser: (userId: string) => request<void>(`/admin/users/${userId}`, { method: 'DELETE' }),
+  adminRestoreUser: (userId: string) => request<void>(`/admin/users/${userId}/restore`, { method: 'POST' }),
+  adminSetRole: (userId: string, isAdmin: boolean) => request<void>(`/admin/users/${userId}`, { method: 'PUT', ...json({ role: isAdmin ? 'admin' : 'user' }) }),
+  adminResetPassword: (userId: string, newPassword: string) => request<void>(`/admin/users/${userId}/reset-password`, { method: 'PUT', ...json({ newPassword }) }),
+  adminCreateUser: (username: string, password: string, role: 'user' | 'admin' = 'user') => request<AdminUser>('/admin/users', { method: 'POST', ...json({ username, password, role, athleteEnabled: true }) }),
+  adminUpdateUser: (userId: string, input: { username?: string; role?: 'user' | 'admin' }) => request<void>(`/admin/users/${userId}`, { method: 'PUT', ...json(input) }),
+  adminUserData: async (userId: string) => { const data = await request<AdminUserData>(`/admin/users/${userId}/data`); return { elements: data.elements.map((x) => ({ ...x, id: String(x.id) })), routines: data.routines.map((x) => ({ ...x, id: String(x.id) })), trainings: data.trainings.map((x) => ({ ...x, id: String(x.id) })) }; },
+  adminDeleteElement: (userId: string, elementId: string) => request<void>(`/admin/users/${userId}/elements/${elementId}`, { method: 'DELETE' }),
+  adminRestoreElement: (userId: string, elementId: string) => request<void>(`/admin/users/${userId}/elements/${elementId}/restore`, { method: 'POST' }),
+  adminDeleteRoutine: (userId: string, routineId: string) => request<void>(`/admin/users/${userId}/routines/${routineId}`, { method: 'DELETE' }),
+  adminRestoreRoutine: (userId: string, routineId: string) => request<void>(`/admin/users/${userId}/routines/${routineId}/restore`, { method: 'POST' }),
 };

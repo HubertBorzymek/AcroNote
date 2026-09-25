@@ -5,6 +5,27 @@ export interface User {
   username: string;
   athleteProfile: boolean;
   coachProfile: boolean;
+  athleteEnabled?: boolean;
+  coachEnabled?: boolean;
+  isAdmin?: boolean;
+}
+
+export interface AdminUser {
+  id: ID;
+  username: string;
+  isAdmin: boolean;
+  role?: 'user' | 'admin';
+  deletedAt?: string | null;
+  createdAt?: string;
+  elementCount?: number;
+  routineCount?: number;
+  trainingCount?: number;
+}
+
+export interface AdminUserData {
+  elements: Array<{ id: ID; code: string; name?: string | null; deletedAt?: string | null }>;
+  routines: Array<{ id: ID; name: string; deletedAt?: string | null }>;
+  trainings: Array<{ id: ID; date: string }>;
 }
 
 export interface ElementItem {
@@ -19,6 +40,7 @@ export interface ExecutionType {
   id: ID;
   name: string;
   hidden?: boolean;
+  sortOrder?: number;
 }
 
 export interface RoutineSlot {
