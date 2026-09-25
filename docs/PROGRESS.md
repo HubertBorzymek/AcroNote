@@ -1,122 +1,97 @@
 # Postęp prac nad AcroNote
 
-> Ten plik opisuje faktycznie zweryfikowany stan repozytorium. Wymagania docelowe znajdują się w `REQUIREMENTS.md`; obecność wymagania w tamtym dokumencie nie oznacza, że zostało wdrożone.
+> Ten plik opisuje faktycznie zweryfikowany stan repozytorium. Wymagania docelowe znajdują się w `REQUIREMENTS.md`.
 
 ## Stan bieżący
 
-**Aktualizacja:** 2026-09-25  
-**Etap:** działający lokalny prototyp podstawowego dziennika zawodnika  
-**Weryfikacja:** testy, kontrola typów, build i smoke test produkcyjnego serwera zakończone powodzeniem
+**Aktualizacja:** 2026-09-25
 
-Prototyp pozwala założyć konto, prowadzić prywatną listę elementów i układów, zapisywać oraz edytować treningi z wejściami i czynnościami, a następnie wyświetlać podstawowe agregacje. Backend przechowuje historyczne migawki niezależnie od aktualnych szablonów. Nie jest to jeszcze wersja gotowa do publicznego Internetu.
+**Etap:** kompletna lokalna wersja dziennika zawodnika z panelem administratora
 
-## Zrealizowane funkcje
+**Weryfikacja:** 45 testów automatycznych, kontrola typów, build, audyt zależności oraz testy przeglądarkowe desktop/mobile
 
-### Fundamenty
+Profil trenera pozostaje celowo poza bieżącym interfejsem. Backend wcześniejszego etapu zawiera relacje i endpointy trenerskie, ale nie należy ich przedstawiać użytkownikowi jako gotowy produkt.
 
-- Monorepo npm workspaces: `apps/api`, `packages/web` i `packages/shared`.
-- Fastify + TypeScript, React + Vite oraz lokalny SQLite przez `better-sqlite3`.
-- Automatyczny bootstrap pustej bazy, klucze obce, WAL i transakcyjne zapisy złożone.
-- Jednopoleceniowe skrypty `dev`, `build`, `start`, `test`, `seed` i `typecheck`.
-- Produkcyjny serwer API serwuje również build frontendu.
-- `start.bat`, `.env.example` i `.gitignore` dla Windowsa.
+## Zrealizowany zakres
 
-### Konta i izolacja
+### Konta i dane
 
-- Rejestracja i logowanie nazwą użytkownika oraz hasłem.
-- Hasła haszowane `bcrypt`; losowy token sesji jest przechowywany jako skrót i przesyłany w ciasteczku `HttpOnly`, `SameSite=Strict`.
-- Wylogowanie, odczyt bieżącego użytkownika i zmiana hasła.
-- Ograniczanie częstotliwości żądań oraz ostrzejsze limity rejestracji/logowania i przyjmowania zaproszeń.
-- Właściciel jest sprawdzany przez API; test integracyjny potwierdza brak dostępu niezalogowanego klienta i izolację list elementów dwóch użytkowników.
+- Rejestracja, logowanie, wylogowanie i zmiana hasła (minimum 10 znaków).
+- Hasła `bcrypt`; losowe sesje przechowywane jako skróty i przesyłane w `HttpOnly`, `SameSite=Strict`.
+- Kontrola właściciela zasobu w API i test izolacji użytkowników.
+- Automatyczna, idempotentna migracja istniejącej bazy do v2 bez usuwania historii.
+- Miękkie usuwanie kont, elementów i układów tam, gdzie wymagane jest odzyskanie.
 
-### Elementy i układy
+### Elementy
 
-- Tworzenie, edycja, wyszukiwanie, ulubione, ukrywanie/przywracanie i miękkie usuwanie elementów.
-- Przy usuwaniu elementu użytkownik wybiera usunięcie go z aktualnych układów albo zachowanie migawki w szablonie.
-- Tworzenie, edycja, zmiana kolejności i usuwanie układów.
-- Powtórzony element wymaga potwierdzenia i jest wyróżniony w edytorze.
-- Usunięcie aktualnego układu lub elementu nie usuwa historycznych wykonań.
+- Pełny CRUD, wyszukiwanie, ulubione, ukrywanie, przywracanie i poprawny pusty stan zakładki „Ukryte”.
+- Usuwanie pyta o wpływ na układy tylko wtedy, gdy element faktycznie w nich występuje.
+- Wspólny parser i walidacja kodów: 1–12 ćwiartek, liczba cyfr śrub wynikająca z liczby salt i końcowy symbol `o`, `<` lub `/`.
+- Metadane i filtry: liczba salt, suma śrub co 0,5, przód/tył oraz pozycja.
+- Prosta ściągawka dla młodszych zawodników z przykładami `800/`, `831o` itd.
 
-### Dziennik treningowy
+### Układy i treningi
 
-- Dowolna liczba odrębnych treningów tego samego dnia.
-- Tworzenie, edycja i usuwanie treningu oraz dowolnej liczby wejść.
-- Czynności pojedynczych elementów, pełnych układów i wybranych fragmentów.
-- Dodatni licznik powtórzeń z przyciskami i polem liczbowym.
-- Domyślny rodzaj wykonania wejścia, osobny rodzaj czynności i osobne rodzaje elementów migawki układu.
-- Ostrzeżenia o niezapisanych zmianach przy nawigacji i `beforeunload`.
-- Formularz zachowuje stan po błędzie API, a komunikat sukcesu pojawia się po odpowiedzi serwera.
+- Tworzenie, edycja, kolejność, duplikaty i usuwanie układów.
+- Element można utworzyć bezpośrednio z wyboru w wejściu, po czym aplikacja wraca do tego samego miejsca bez utraty formularza.
+- Cofnięcie z niezapisanymi zmianami pokazuje „Zapisz”, „Odrzuć” i „Zostań”; zapis wykonuje prawdziwe żądanie do API.
+- Dowolna liczba wejść, elementów, układów i fragmentów, liczniki powtórzeń oraz rodzaje wykonania.
+- Termin „Na płasko” został zastąpiony przez „Siatka” w bieżącym katalogu; historyczne migawki zachowują dawną nazwę.
+- Techniczny nagłówek migawki zastąpiono prostym „Jak wykonano każdy element?”.
+- Rodzaje wykonania można w profilu dodawać, zmieniać, ukrywać/przywracać i porządkować.
+- Klient HTTP nie wysyła już `Content-Type: application/json` dla żądań bez ciała, co naprawiało DELETE elementów i układów.
 
 ### Historia i statystyki
 
-- Migawki zapisują kody, nazwy, kolejność, rodzaje wykonania, źródłowy układ, wersję i zakres.
-- Zmiana kodu/nazwy elementu, rodzaju wykonania albo bieżącego szablonu nie aktualizuje dawnych zapisów.
-- Ręczna edycja treningu zastępuje tylko wskazany trening i powoduje ponowne obliczenie agregacji.
-- API oblicza łączną liczbę wejść i elementów, liczniki kodów, pełne układy, pełne układy zgodne z migawką oraz fragmenty dla dowolnego zakresu dat.
-- Interfejs pokazuje agregacje dla ostatnich 7/30 dni i całej historii, ranking kodów oraz liczbę elementów w czasie.
+- Migawki pozostają niezależne od aktualnych elementów, układów i rodzajów wykonania.
+- Statystyki uwzględniają elementy bezpośrednie, układy, fragmenty, powtórzenia i duplikaty.
+- Widoki: bieżący tydzień kalendarzowy, miesiąc kalendarzowy i cała historia.
+- Dwa czytelne wykresy: wykonane elementy oraz wejścia w czasie; opcjonalny filtr pokazuje historię wybranego elementu.
+- Kilka treningów jednego dnia jest jednym punktem wykresu, ale pozostaje osobnymi treningami i jest prawidłowo sumowane.
 
-### Profile trenerów — backend
+### Konto demo i administrator
 
-- Konto może aktywować profil zawodnika i trenera w API.
-- API tworzy 24-godzinne, jednorazowe zaproszenie zawierające token, krótki kod i dane obrazu QR.
-- Zaproszenie może zainicjować zawodnik lub trener; przyjęcie wymaga zalogowania i aktywnych właściwych profili.
-- Zawodnik może wskazać trenera głównego i usuwać połączenia, a trener może odłączyć zawodnika.
-- Połączony trener ma endpointy tylko do odczytu treningów i statystyk zawodnika; dostęp przed połączeniem jest zabroniony.
+- `demo` / `AcroNote-demo-2026`: 30 zróżnicowanych elementów, dwa układy (drugi zawiera duplikat) i siedem treningów startowych.
+- `admin` / `AcroNote-admin-2026`: osobny panel kont.
+- Administrator może tworzyć konto, zmieniać jego nazwę i rolę, ustawić hasło tymczasowe, miękko usunąć i odzyskać konto.
+- Może przeglądać i usuwać/odzyskiwać elementy i układy użytkownika oraz przeglądać i usuwać treningi.
+- Reset hasła unieważnia sesje. API ani UI nie zwracają aktualnego hasła, skrótu hasła lub tokenów sesji.
+- Panel blokuje odebranie sobie roli administratora i usunięcie własnego aktywnego konta.
 
-### Dane demonstracyjne
+## Wyniki weryfikacji z 2026-09-25
 
-- `npm run seed` tworzy konto `demo`, elementy, układ i trening tylko wtedy, gdy baza nie zawiera jeszcze użytkowników.
-- Seeder nie nadpisuje istniejącej bazy. Dane logowania i ostrzeżenie bezpieczeństwa są opisane w README.
-
-## Ograniczenia i funkcje pozostające do wykonania
-
-### Ważne braki pierwszego prototypu
-
-- Interfejs trenera, przełączanie profilu oraz ekrany tworzenia/przyjmowania zaproszeń nie są jeszcze dostępne; funkcje te istnieją tylko w REST API.
-- Zarządzanie własnymi rodzajami wykonania (tworzenie, kolejność, ukrywanie) istnieje w API, ale nie ma jeszcze formularza w interfejsie.
-- Edytor wejścia nie pozwala utworzyć nowego elementu bez opuszczenia treningu.
-- Interfejs pozwala zmieniać rodzaje elementów migawki, lecz nie umożliwia jeszcze zmiany jej składu/kodów. Backend przyjmuje zmodyfikowaną migawkę.
-- Nowy układ ma w bazie domyślny `slot_count=10`, ale edytor nie prezentuje dziesięciu pustych, jawnie regulowanych miejsc; użytkownik dodaje kolejne pozycje sekwencyjnie.
-- Widok statystyk używa przedziałów kroczących 7 i 30 dni, a nie kalendarzowego tygodnia/miesiąca. Brakuje osobnej historii wybranego elementu.
-- Bootstrap tworzy tabele dla nowej bazy, ale nie ma jeszcze wersjonowanych migracji aktualizujących istniejący schemat.
-
-### Funkcje przyszłe
-
-- Pełna procedura odzyskiwania konta, w tym niezależne uprawnienie pomocy trenera.
-- PWA, offline i synchronizacja, import/eksport, kluby i grupy.
-- Komentarze, cele, notatki, generator kodów, trudność/punktacja i zaawansowane filtry.
-- Utwardzenie do publicznego wdrożenia: HTTPS, `Secure` cookie, polityka CORS/CSRF odpowiednia dla hostingu, kopie zapasowe, obserwowalność i przegląd bezpieczeństwa.
-
-## Wyniki testów z 2026-09-25
-
-| Polecenie | Wynik | Szczegóły |
+| Kontrola | Wynik | Szczegóły |
 |---|---|---|
-| `npm test` | **PASS** | Vitest 5.0.1; 2 pliki, 8 testów |
-| `npm run typecheck` | **PASS** | `shared`, `web` i `api` |
-| `npm run build` | **PASS** | TypeScript oraz produkcyjny build Vite i API |
-| `npm start` + smoke | **PASS** | na `PORT=3011`: `/api/health` 200 i `/` 200 z dokumentem AcroNote |
-| `npm audit` | **PASS** | 0 znanych podatności według wyniku bieżącej sesji |
+| `npm test` | **PASS** | API: 5 plików / 31 testów; web: 2 pliki / 14 testów; razem 45 |
+| `npm run typecheck` | **PASS** | `shared`, `web`, `api` |
+| `npm run build` | **PASS** | produkcyjny build Vite i API |
+| `npm audit --audit-level=moderate` | **PASS** | 0 znanych podatności |
+| `git diff --check` | **PASS** | brak błędów białych znaków; tylko informacyjne ostrzeżenia CRLF |
+| migracja kopii bazy | **PASS** | zachowanie danych, v2 i idempotencja |
+| produkcyjny smoke test | **PASS** | logowanie, trasy API i frontend z lokalnej bazy testowej |
+| testy przeglądarkowe | **PASS** | demo/admin, tworzenie elementu w treningu, dialog cofania, ukrywanie/przywracanie, ściągawka, wykresy, panel admina i viewport 390×844 |
 
-Automatyczne testy używają SQLite `:memory:`. Obejmują:
+## Pokrycie automatyczne
 
-- pojedyncze i różne elementy oraz liczby powtórzeń;
-- pełny układ, fragment, wielokrotne wykonanie i duplikaty kodów bez podwójnego liczenia;
-- zachowanie migawki po zmianie/usunięciu źródłowego elementu, układu i rodzaju wykonania;
-- edycję starego treningu i ponowne przeliczenie bez wpływu na drugi trening;
-- sumowanie wielu treningów dnia oraz zakresu tygodniowego i miesięcznego;
-- odrzucenie zerowej liczby powtórzeń;
-- brak dostępu bez sesji i izolację danych dwóch użytkowników;
-- odmowę dostępu trenera przed połączeniem oraz odczyt po jednorazowym zaproszeniu.
+- zapis elementów, układów, fragmentów, powtórzeń i duplikatów;
+- historyczna niezmienność po zmianie/usunięciu źródeł;
+- ponowne przeliczenie po edycji treningu oraz zakresy dat;
+- filtrowanie historii po elemencie również wewnątrz układu;
+- parser poprawnych i błędnych kodów oraz wyliczane metadane;
+- puste DELETE bez błędnego nagłówka JSON;
+- autoryzacja i izolacja danych;
+- bezpieczne operacje administratora;
+- migracja starszego schematu i idempotentny seeder.
 
-Testy nie pokrywają jeszcze wszystkich interakcji przeglądarkowych, interfejsu mobilnego, pełnego CRUD każdego zasobu ani migracji istniejącej bazy. Osiemnaście scenariuszy z `TEST_PLAN.md` jest częściowo grupowanych w obecnych testach, ale nie każdy ma osobny przypadek E2E.
+## Świadomie odłożone
 
-## Znane błędy
+- Interfejs trenera, przełączanie profili i obsługa zaproszeń — zgodnie z decyzją użytkownika kolejny etap.
+- PWA/offline i synchronizacja, import/eksport, kluby, komentarze, cele, generator kodów i punktacja.
+- Utwardzenie do publicznego Internetu: HTTPS, `Secure` cookie, polityka CORS/CSRF dla docelowej domeny, automatyczne kopie i monitoring.
+- Automatyczne E2E w CI dla wielu przeglądarek; krytyczne ścieżki wykonano ręcznie w Chromium desktop i 390×844.
 
-- Nie wykryto błędu powodującego niepowodzenie testów, typechecku, builda lub podstawowego startu serwera.
-- Znane luki funkcjonalne interfejsu są wymienione wyżej i nie powinny być przedstawiane jako ukończone.
+## Ważne informacje operacyjne
 
-## Następne zalecane zadanie
-
-Rozszerzyć test przeglądarkowy o układ i zmodyfikowaną migawkę, a następnie dodać tworzenie elementu bezpośrednio z edytora wejścia oraz edycję składu historycznej migawki. Kolejnym etapem powinien być interfejs trenera, zaproszeń i zarządzania rodzajami wykonania.
-
-W tej sesji ręcznie potwierdzono w przeglądarce produkcyjny frontend, logowanie, utworzenie elementu, zapis treningu, poprawne podsumowanie na liście, restart serwera oraz ponowne otwarcie treningu z pełnym wejściem i czynnością.
+- Nie uruchamiaj testów na `data/acronote.db`; używaj `:memory:` albo jawnej kopii.
+- Przed tą migracją utworzono kopię pliku bazowego, ale SQLite używał WAL i sam plik nie zawierał stron danych. Poprawna, spójna kopia po migracji i seedzie znajduje się w `data/backups/acronote-after-v2-20260925.db`.
+- Jawne hasło startowe administratora trzeba zmienić przed udostępnieniem aplikacji innym osobom.

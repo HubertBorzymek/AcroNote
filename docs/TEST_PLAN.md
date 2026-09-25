@@ -35,6 +35,11 @@ Testy nie używają pliku `data/acronote.db`. Każdy zestaw integracyjny otrzymu
 | T16 | Tydzień i miesiąc | Granice okresu i agregacje są prawidłowe |
 | T17 | Ukrycie/usunięcie elementu | Historia oraz jej statystyki pozostają dostępne |
 | T18 | Zmiana/usunięcie układu | Historyczna migawka pozostaje kompletna |
+| T19 | Walidacja kodów i metadane filtrów | Poprawne kody są klasyfikowane, skróty i niejednoznaczne kody odrzucane |
+| T20 | Puste DELETE w kliencie | Żądanie nie wysyła nagłówka JSON bez ciała |
+| T21 | Migracja istniejącej bazy | Rekordy pozostają, a nowe kolumny i „Siatka” są dodane idempotentnie |
+| T22 | Seeder na niepustej bazie | Dodaje tylko brakujące `demo`/`admin`, nie zmienia innych kont i jest idempotentny |
+| T23 | Administracja | Rola jest wymagana; operacje nie ujawniają haseł/tokenów; reset unieważnia sesje |
 
 ## Konta i uprawnienia
 
@@ -56,11 +61,14 @@ Na telefonowym rozmiarze widoku należy sprawdzić:
 1. rejestrację/logowanie i nawigację po głównych sekcjach;
 2. utworzenie elementu z samego formularza wejścia i poprawny powrót;
 3. obsługę `+`, `−` oraz klawiatury ekranowej;
-4. ostrzeżenie po próbie opuszczenia brudnego formularza;
+4. ostrzeżenie po próbie opuszczenia brudnego formularza oraz działanie „Zapisz”, „Odrzuć” i „Zostań”;
 5. zachowanie formularza po symulowanym błędzie API;
 6. czy sukces pojawia się dopiero po odpowiedzi API;
 7. czy główne cele dotykowe nie są zbyt małe i nie nakładają się;
 8. widok desktopowy bez poziomego przewijania głównych ekranów.
+9. filtry elementów, pusty stan zakładki „Ukryte” i przywracanie elementu;
+10. obecność obu wykresów i historii wybranego elementu;
+11. panel administratora na koncie z rolą `admin`, bez wyświetlania danych logowania.
 
 ## Macierz przeglądarek
 

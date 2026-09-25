@@ -2,7 +2,7 @@
 
 AcroNote to polskojęzyczny, responsywny dziennik treningów akrobatycznych na trampolinie. Aplikacja łączy frontend React/Vite, REST API Fastify i lokalną bazę SQLite w jednym monorepo npm.
 
-> Dostępny jest działający lokalny prototyp podstawowego dziennika zawodnika. Aktualny, zweryfikowany zakres i znane ograniczenia opisuje [docs/PROGRESS.md](docs/PROGRESS.md). Funkcji oznaczonych tam jako planowane nie należy traktować jako gotowych.
+> Dostępna jest kompletna, lokalna wersja dziennika zawodnika wraz z panelem administratora. Profil trenera pozostaje świadomie odłożony. Aktualny, zweryfikowany zakres opisuje [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Wymagania
 
@@ -54,7 +54,7 @@ npm test
 npm run typecheck
 ```
 
-Testy powinny obejmować logikę migawek historycznych, statystyki i izolację danych, nie tylko uruchomienie interfejsu. Szczegółowy zakres znajduje się w [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
+`npm test` uruchamia testy backendu i frontendu. Obejmują one migawki historyczne, statystyki, izolację danych, administrację, migrację istniejącej bazy, seeder, parser kodów i klienta HTTP. Szczegółowy zakres znajduje się w [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
 
 ## Dane demonstracyjne
 
@@ -66,7 +66,12 @@ npm run seed
 
 Seeder nie nadpisuje istniejących rekordów.
 
-Jeśli baza nie zawiera użytkowników, bieżący seeder tworzy lokalne konto `demo` z hasłem `AcroNote-demo-2026`, elementy, układ i przykładowy trening. Są to publicznie udokumentowane dane demonstracyjne — nie używaj tego hasła ani tego konta przy wdrożeniu dostępnym dla innych osób. Jeśli baza zawiera już dowolnego użytkownika, seeder kończy pracę bez zmian.
+Seeder tworzy brakujące konta, nie zmieniając istniejących użytkowników ani ich haseł:
+
+- `demo` / `AcroNote-demo-2026` — 30 zróżnicowanych elementów, dwa układy i historia treningów;
+- `admin` / `AcroNote-admin-2026` — panel zarządzania kontami i ich danymi, bez dostępu do haseł, skrótów haseł i tokenów sesji.
+
+Są to jawne dane startowe do lokalnych testów. Przed udostępnieniem aplikacji innym osobom zmień hasło administratora i nie traktuj konta demo jako prywatnego.
 
 ## Konfiguracja
 
@@ -92,7 +97,7 @@ npm start
 
 ## Baza danych i kopie zapasowe
 
-Domyślna baza znajduje się w `data/acronote.db`. Katalog `data` jest trwałą częścią projektu, ale pliki bazy są ignorowane przez Git.
+Domyślna baza znajduje się w `data/acronote.db`. Katalog `data` jest trwałą częścią projektu, ale pliki bazy — także w podkatalogu `data/backups` — są ignorowane przez Git. Migracja schematu uruchamia się automatycznie i zachowuje istniejące rekordy.
 
 Przed ręcznym kopiowaniem bazy zatrzymaj aplikację. Przy wdrożeniu na serwerze katalog bazy musi znajdować się na trwałym dysku i podlegać regularnym kopiom zapasowym. Hosting wyłącznie plików statycznych nie wystarczy — aplikacja wymaga działającego procesu Node.js.
 
@@ -117,4 +122,4 @@ Wykonania układów są zapisywane jako niezależne migawki kodów, nazw, kolejn
 
 ## Funkcje przyszłe
 
-PWA i offline, import/eksport, kluby, komentarze i cele, generator kodów, punktacja, rozbudowane filtry oraz pełne odzyskiwanie konta pozostają poza zakresem pierwszej wersji. Profile trenera i zaproszenia należy traktować jako osobny etap, dopóki `PROGRESS.md` nie potwierdzi ich implementacji i testów.
+PWA i offline, import/eksport, kluby, komentarze i cele, generator kodów oraz punktacja pozostają poza bieżącym zakresem. Profile trenera i zaproszenia należy traktować jako osobny etap, dopóki `PROGRESS.md` nie potwierdzi ich implementacji i testów.

@@ -1,65 +1,87 @@
 # AcroNote — dziennik implementacji
 
-Ten plik jest operacyjnym punktem wejścia dla kolejnych agentów. Przed zmianami należy przeczytać `README.md`, `docs/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/TEST_PLAN.md` oraz ten dokument. Po każdej sesji trzeba uzupełnić stan, decyzje, testy i nierozwiązane problemy.
+Ten plik jest operacyjnym punktem wejścia dla kolejnych agentów. Przed zmianami należy przeczytać `AGENTS.md`, `README.md`, `docs/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/TEST_PLAN.md` oraz ten dokument. Po sesji należy dopisać decyzje, testy, problemy i dokładny stan pracy.
 
-## Cel bieżącej iteracji
+## Cel produktu i bieżący zakres
 
-Dostarczyć kompletną i sprawdzoną wersję dziennika zawodnika. Profil trenera pozostaje poza zakresem UI. W zakresie są: naprawa całego CRUD elementów i układów, tworzenie elementu podczas edycji wejścia, bezpieczne cofanie z możliwością zapisu, prosty język dla dzieci, filtry kodów, ściągawka kodowania, wykresy, rozbudowane konto demonstracyjne oraz osobna rola administratora bez dostępu do haseł, skrótów haseł i tokenów sesji.
+AcroNote jest lokalnym, polskojęzycznym dziennikiem zawodnika trenującego akrobatykę na trampolinie. Bieżąca wersja obejmuje pełny interfejs zawodnika i panel administratora. Interfejs trenera jest celowo odłożony.
 
-## Reguły domenowe doprecyzowane 2026-09-25
+Najważniejsze zasady:
+
+- historia jest zapisywana jako samodzielne migawki i nie zmienia się po edycji katalogu;
+- statystyki wynikają z migawek, nie z bieżących szablonów;
+- każda operacja użytkownika ma kontrolę właściciela w API;
+- administrator nie widzi haseł, skrótów haseł ani tokenów sesji;
+- `data/acronote.db` nie służy do testów.
+
+## Reguły kodu elementu
 
 - Kod kończy się pozycją: `o` — kuczna, `<` — łamana, `/` — prosta.
-- Początkowa liczba oznacza liczbę ćwiartek salta: `4` = jedno salto, `8` = dwa, `12` = trzy. Wartość niepodzielna przez 4 oznacza wykonanie nie z nóg na nogi.
-- Po liczbie ćwiartek występuje dokładnie tyle cyfr śrub, ile pełnych salt zawiera element. Każda cyfra liczy półobroty: `1` = 0,5 śruby, `2` = 1 śruba itd.
-- Przykłady: `800` = dwa salta bez śrub, `801` = pół śruby w drugim salcie, `831` = 1,5 śruby w pierwszym i 0,5 w drugim.
-- Kierunek filtrowania wynika z sumy śrub: całkowita liczba = tył, niecałkowita = przód.
-- Parser ma być zachowawczy: nie może interpretować niejednoznacznego kodu jako poprawnego. Walidacja formularza powinna podawać prostą przyczynę i przykład.
-- Domyślny rodzaj wykonania nazywa się `Siatka` (historyczne migawki zachowują dawną nazwę).
+- Początek to liczba ćwiartek salta od 1 do 12: `4` = jedno, `8` = dwa, `12` = trzy. Liczba niepodzielna przez 4 opisuje inne przejście niż z nóg na nogi.
+- Dalej występuje dokładnie `max(1, floor(liczba ćwiartek / 4))` cyfr śrub. Cyfra liczy półobroty: `1` = 0,5 śruby, `2` = 1 śruba.
+- `800/` to dwa salta bez śrub, `801<` ma pół śruby w drugim salcie, `831o` ma 1,5 w pierwszym i 0,5 w drugim.
+- Suma parzystej liczby półobrotów oznacza kierunek „tył”, nieparzystej — „przód”.
+- Parser w `packages/shared/src/element-code.ts` jest źródłem prawdy backendu. Frontendowa funkcja w `packages/web/src/elementCode.ts` odpowiada temu samemu kontraktowi i ma testy zgodności.
 
-## Zgłoszone błędy i oczekiwane zachowanie
+## Iteracja 2026-09-25 — zakończona
 
-| Obszar | Problem | Oczekiwane rozwiązanie | Stan |
-|---|---|---|---|
-| Edytor treningu | Nie można utworzyć elementu z wyboru elementów | Przycisk „Dodaj nowy element”, formularz w kontekście i powrót do wyboru bez utraty treningu | w toku |
-| Cofanie | Jest tylko pytanie o odrzucenie zmian | Dialog z trzema decyzjami: zapisz, odrzuć, zostań | w toku |
-| Elementy | DELETE wysyła pusty JSON i kończy się błędem Fastify | Żądania bez ciała nie ustawiają `Content-Type`; usuwanie działa | w toku |
-| Elementy | Ukrywanie wysyła niepełny model i backend odrzuca kod | Aktualizacja pobiera/scala pełny rekord lub API obsługuje PATCH | w toku |
-| Ukryte | Pusty stan mówi „dodaj pierwszy element” | Osobny komunikat: brak ukrytych elementów, z możliwością powrotu | w toku |
-| Układy | Usuwanie ma analogiczny błąd pustego JSON | Naprawa klienta i test CRUD | w toku |
-| Usuwanie elementu | Pytanie o układy pojawia się zawsze | Pytać tylko, gdy element faktycznie występuje w aktywnym układzie | w toku |
-| Język UI | „Elementy w zapisanej migawce” jest techniczne | Proste „Jak wykonano elementy układu” i krótkie wyjaśnienie | w toku |
-| Statystyki | Wykresy niewidoczne/nieoczywiste | Widoczne, opisane wykresy elementów, wejść i wybranego kodu | w toku |
+Naprawiono wszystkie zgłoszone problemy:
 
-## Plan realizacji
+| Zgłoszenie | Rozwiązanie | Weryfikacja |
+|---|---|---|
+| Elementu nie dało się dodać z wejścia | Formularz „Dodaj nowy element” działa w pickerze i wraca do tego wejścia | ręczny test produkcyjnego UI |
+| Cofnięcie nie proponowało zapisu | Dialog „Zapisz / Odrzuć / Zostań” | ręczny test zapisu przez dialog |
+| DELETE elementu/układu kończył się błędem pustego JSON | klient ustawia `Content-Type` tylko, gdy istnieje body | test `api.test.ts` + UI |
+| Ukrywanie odrzucało niepełny element | UI scala pełny model przed PUT | ręczne ukrycie i przywrócenie |
+| Błędny pusty stan „Ukryte” | osobny komunikat i bez przycisku tworzenia | ręczny test UI |
+| Pytanie o układy pojawiało się bez użycia | endpoint `GET /elements/:id/usage` i warunkowy dialog | test API |
+| Techniczny opis migawki | „Jak wykonano każdy element?” | kontrola UI |
+| Brak wykresów | wykres elementów i wejść, filtr elementu, okresy kalendarzowe | kontrola UI i test statystyk |
+| „Na płasko” | bieżący katalog używa „Siatka”; historia bez zmian | test migracji |
 
-1. Audyt kontraktu HTTP oraz pełnego CRUD.
-2. Parser kodów, walidacja, filtry i ściągawka.
-3. Poprawa przepływów edycji treningu i prostoty tekstów.
-4. Konto demo z około 30 zróżnicowanymi elementami, dwoma układami i historią treningów.
-5. Rola administratora i bezpieczny panel administracyjny.
-6. Rozszerzenie testów automatycznych, pełny build, czysta baza i testy przeglądarkowe desktop/mobile.
-7. Aktualizacja całej dokumentacji i lokalne commity etapami.
+Dodatkowo:
 
-## Decyzje bezpieczeństwa
+- wdrożono filtry i ściągawkę kodów;
+- dodano zarządzanie rodzajami wykonania;
+- dodano rolę i panel administratora, soft-delete/restore oraz bezpieczny reset hasła;
+- dodano seeder 30 elementów, dwóch układów i siedmiu treningów dla `demo` oraz konto `admin`;
+- oś wykresu agreguje wiele treningów tego samego dnia;
+- minimum hasła jest spójne w UI i API (10 znaków);
+- zaktualizowano `.gitignore` o bazy w `data/backups`.
 
-- Administrator nie otrzymuje endpointu zwracającego `password_hash`, tokeny sesji ani surowe tokeny zaproszeń.
-- Administrator może ustawić użytkownikowi tymczasowe hasło, ale API zwraca je tylko w odpowiedzi na świadomą operację; dotychczasowego hasła nie da się odczytać.
-- Operacje administracyjne są autoryzowane rolą zapisaną w bazie, nie nazwą użytkownika po stronie frontendu.
-- Usuwanie kont będzie miękkie lub blokowane, jeśli bezpieczne odzyskanie nie jest jeszcze wdrożone.
+## Migracja danych i kopie
 
-## Przebieg prac
+- Migrację sprawdzono najpierw na `data/migration-check.db`.
+- Następnie `npm run seed` wykonano na domyślnej bazie bez nadpisania istniejących kont.
+- `data/backups/acronote-before-v2-20260925.db` jest niepełnym plikiem utworzonym podczas aktywnego WAL i nie stanowi poprawnej kopii danych.
+- Spójna kopia po migracji i seedzie została wykonana przez SQLite Backup API jako `data/backups/acronote-after-v2-20260925.db`.
+- Wszystkie pliki `.db`, `.db-wal` i `.db-shm` są ignorowane przez Git.
 
-### 2026-09-25 — rozpoczęcie iteracji jakościowej
+## Weryfikacja
 
-- Przeanalizowano pięć zrzutów i opis użytkownika.
-- Potwierdzono czysty stan Git na `edd7471`.
-- Utworzono ten dziennik przed zmianami kodu.
-- Uruchomiono równoległy audyt backendu oraz interfejsu w rozłącznych katalogach.
+- `npm test`: 45/45 (API 31, web 14).
+- `npm run typecheck`: PASS.
+- `npm run build`: PASS.
+- `npm audit --audit-level=moderate`: 0 podatności.
+- `git diff --check`: PASS (ostrzeżenia konwersji LF/CRLF są informacyjne).
+- Produkcyjny serwer uruchomiony na kopii migracyjnej: PASS.
+- Ręcznie w Chromium: logowanie demo/admin, lista 30 elementów, filtry, ściągawka, ukrycie/przywrócenie, dodanie `53/` z wejścia, zapis przez dialog cofania, dwa wykresy, panel administratora i podgląd danych konta.
+- Responsywność: ręczna kontrola przy 390×844; dolna nawigacja i modal pozostają używalne.
 
-## Wyniki testów
+## Konta startowe
 
-Do uzupełnienia po implementacji.
+- `demo` / `AcroNote-demo-2026`
+- `admin` / `AcroNote-admin-2026`
 
-## Znane problemy
+Hasła są jawne wyłącznie dlatego, że są to lokalne konta startowe. Hasło `admin` należy zmienić przed udostępnieniem aplikacji.
 
-Lista startowa znajduje się w tabeli powyżej. Każdy nowy błąd należy dopisać przed naprawą, aby kolejny agent znał przyczynę zmiany.
+## Commity tej iteracji
+
+- `d43d0c9` — dziennik i instrukcje dla kolejnych agentów;
+- `372bdc5` — parser, migracje, administracja API, seeder i testy;
+- `76b4a61` — naprawione przepływy zawodnika, filtry, wykresy i panel admina;
+- `76b6edc` — podgląd i usuwanie treningów z panelu admina.
+
+## Pozostały zakres
+
+Nie ma znanego błędu blokującego lokalną wersję zawodnika. Następny większy etap to profil trenera; nie należy go zaczynać bez nowego polecenia użytkownika. Przed każdym kolejnym wydaniem trzeba powtórzyć komplet kontroli z `AGENTS.md`.

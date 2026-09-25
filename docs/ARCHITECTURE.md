@@ -39,7 +39,7 @@ Frontend nie uzyskuje bezpośredniego dostępu do bazy. Pakiet `shared` powinien
 - `npm run dev` uruchamia API i serwer Vite równolegle.
 - `npm run build` buduje `shared`, `web` i `api` w wymaganej kolejności.
 - `npm start` uruchamia zbudowane API; w trybie produkcyjnym API serwuje również statyczny build frontendu.
-- `npm test` uruchamia automatyczne testy API i logiki biznesowej.
+- `npm test` uruchamia testy API, logiki biznesowej oraz krytycznych funkcji frontendu.
 - `npm run seed` opcjonalnie dodaje dane demonstracyjne bez nadpisywania istniejących danych.
 - `npm run typecheck` sprawdza wszystkie workspace'y bez generowania plików.
 
@@ -59,7 +59,7 @@ Reguły historycznej niezmienności i statystyk nie powinny być duplikowane w k
 
 Nazwy fizycznych tabel mogą ewoluować, lecz model logiczny obejmuje:
 
-- **users / sessions** — tożsamość, skrót hasła i sesje;
+- **users / sessions** — tożsamość, rola, stan miękkiego usunięcia, skrót hasła i sesje;
 - **profiles** — aktywne role zawodnika i trenera;
 - **elements** — bieżąca, prywatna lista elementów zawodnika;
 - **execution_types** — prywatne rodzaje wykonania i ich kolejność;
@@ -104,6 +104,8 @@ Statystyki są wyprowadzane z zapisanych czynności i ich migawek:
 
 Agregacje dzienne, tygodniowe i miesięczne używają daty kalendarzowej treningu. Na obecnym etapie obliczenia mogą być wykonywane zapytaniem na żądanie; materializowane statystyki byłyby przedwczesną optymalizacją i utrudniałyby poprawną edycję historii.
 
+Oś czasu agreguje wiele treningów tej samej daty do jednego punktu. Opcjonalny filtr elementu uwzględnia jego wystąpienia bezpośrednie oraz wszystkie pozycje zapisanych migawek układów, w tym duplikaty.
+
 ## Frontend
 
 Frontend organizuje widoki według zadań użytkownika: treningi, elementy, układy, statystyki i profil. Stan serwerowy pochodzi z REST API, natomiast stan niezapisanego formularza pozostaje lokalny do momentu potwierdzonego zapisu.
@@ -127,7 +129,7 @@ Formularze edycyjne powinny:
 
 ## Schemat bazy i transakcje
 
-Przy uruchomieniu API bieżąca implementacja tworzy brakujące tabele idempotentnymi instrukcjami `CREATE TABLE IF NOT EXISTS`. Jest to wystarczające dla nowej bazy prototypu, ale tabela `migrations` nie obsługuje jeszcze kolejnych, wersjonowanych zmian schematu. Przed zmianą struktury istniejącej bazy trzeba dodać rzeczywisty mechanizm migracji zamiast polegać wyłącznie na bootstrapie.
+Przy uruchomieniu API implementacja tworzy brakujące tabele i wykonuje idempotentną migrację v2. Migracja sprawdza kolumny przez `PRAGMA table_info`, dodaje rolę i stan usunięcia użytkownika oraz metadane kodu elementu, uzupełnia je wspólnym parserem i zmienia bieżący rodzaj „Na płasko” na „Siatka”. Historyczne migawki nie są przepisywane.
 
 Zmiany obejmujące trening, czynności i elementy migawki są wykonywane transakcyjnie, aby przerwany zapis nie pozostawił częściowych danych. SQLite ma włączone klucze obce i tryb WAL.
 
@@ -135,7 +137,7 @@ Zmiany obejmujące trening, czynności i elementy migawki są wykonywane transak
 
 Build może działać na komputerze lokalnym lub serwerze klubu, ale wymaga procesu Node.js i trwałego, regularnie kopiowanego pliku SQLite. Hosting wyłącznie statyczny nie uruchomi API. Bieżąca konfiguracja nie jest deklaracją gotowości do publicznego Internetu: przed zewnętrznym wdrożeniem wymagane są HTTPS, silny sekret, kopie zapasowe, kontrola pochodzenia żądań, limity prób logowania i przegląd bezpieczeństwa.
 
-Backend zawiera już relacje trener–zawodnik, jednorazowe zaproszenia (token, krótki kod i QR) oraz endpointy trenerskie tylko do odczytu. Frontend pierwszego prototypu udostępnia jednak wyłącznie profil zawodnika; interfejs trenera i obsługa zaproszeń pozostają następnym etapem.
+Backend zawiera już relacje trener–zawodnik, jednorazowe zaproszenia (token, krótki kod i QR) oraz endpointy trenerskie tylko do odczytu. Bieżący frontend udostępnia profil zawodnika i osobny panel administratora; interfejs trenera i obsługa zaproszeń pozostają następnym etapem zgodnie z decyzją użytkownika.
 
 ## Świadomie odłożone decyzje
 

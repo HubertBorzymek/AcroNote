@@ -34,7 +34,9 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **EL-05:** użytkownik może filtrować ulubione oraz ukrywać i przywracać elementy.
 - **EL-06:** usunięcie lub ukrycie elementu nie usuwa jego historycznych wykonań ani nie zmienia statystyk.
 - **EL-07:** element utworzony podczas edycji wejścia trafia na stałą listę użytkownika i może zostać od razu wybrany.
-- **EL-08:** aplikacja nie interpretuje automatycznie kodów i nie tworzy globalnego katalogu elementów.
+- **EL-08:** aplikacja waliduje i interpretuje kod wyłącznie na potrzeby filtrów; nie tworzy globalnego katalogu elementów ani nie dopisuje nazwy automatycznie.
+- **EL-09:** kod kończy się `o`, `<` albo `/`; zawiera liczbę ćwiartek od 1 do 12 oraz dokładnie `max(1, floor(ćwiartki / 4))` cyfr opisujących półobroty śrub.
+- **EL-10:** filtry obejmują liczbę salt, sumę śrub, kierunek wyliczony z parzystości sumy półobrotów oraz pozycję końcową.
 
 ### Układy
 
@@ -59,7 +61,7 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 
 ### Rodzaje wykonania
 
-- **EXE-01:** użytkownik otrzymuje rodzaje „Na płasko”, „Materac” i „Gąbki”.
+- **EXE-01:** użytkownik otrzymuje rodzaje „Siatka”, „Materac” i „Gąbki”.
 - **EXE-02:** użytkownik może dodawać własne rodzaje, zmieniać ich nazwy i kolejność oraz je ukrywać.
 - **EXE-03:** rodzaj wejścia jest kopiowany do nowo dodanej czynności, ale późniejsza zmiana wejścia nie modyfikuje tej czynności.
 - **EXE-04:** rodzaj czynności można nadpisać, a w wykonaniu układu można nadpisać rodzaj poszczególnych elementów.
@@ -93,6 +95,14 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **UI-03:** główna nawigacja obejmuje treningi/kalendarz, elementy, układy, statystyki oraz profil/ustawienia.
 - **UI-04:** użytkownik może szybko wrócić do edytowanego wejścia i sprawnie dodawać elementy.
 - **UI-05:** interfejs pozostaje funkcjonalny na komputerze; nie wymaga instalacji PWA.
+
+### Administracja
+
+- **ADM-01:** dostęp do panelu wynika z roli zweryfikowanej po stronie API.
+- **ADM-02:** administrator może tworzyć konta, zmieniać ich nazwę i rolę, ustawiać tymczasowe hasło, miękko usuwać i odzyskiwać konto.
+- **ADM-03:** administrator może przeglądać elementy, układy i treningi konta oraz usuwać lub odzyskiwać elementy i układy; usunięcie treningu wymaga ostrzeżenia, ponieważ jest nieodwracalne.
+- **ADM-04:** administrator nigdy nie otrzymuje aktualnego hasła, skrótu hasła ani tokenu sesji; reset hasła unieważnia istniejące sesje użytkownika.
+- **ADM-05:** aktywny administrator nie może odebrać roli ani usunąć samemu sobie z poziomu panelu.
 
 ## Wymagania techniczne i operacyjne
 
