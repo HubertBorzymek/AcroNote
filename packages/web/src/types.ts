@@ -3,8 +3,8 @@ export type ID = string;
 export interface User {
   id: ID;
   username: string;
-  athleteProfile: boolean;
-  coachProfile: boolean;
+  athleteProfile?: boolean;
+  coachProfile?: boolean;
   athleteEnabled?: boolean;
   coachEnabled?: boolean;
   isAdmin?: boolean;
@@ -120,4 +120,39 @@ export interface StatsSummary {
   fragments: number;
   byCode: Array<{ code: string; count: number }>;
   timeline: StatsPoint[];
+  byLanding: LandingCount[];
+  landingByCode: Array<{ code: string; landings: LandingCount[] }>;
+}
+
+export interface LandingCount { name: string; count: number }
+
+export interface CoachAthlete {
+  id: ID;
+  username: string;
+  connectedAt?: string;
+}
+
+export interface CoachLink {
+  id: ID;
+  username: string;
+  connectedAt?: string;
+}
+
+export interface CoachInvitation {
+  id: ID;
+  role: 'athlete' | 'coach';
+  token?: string;
+  shortCode?: string;
+  path?: string;
+  qrDataUrl?: string;
+  expiresAt: string;
+  createdAt: string;
+  status: 'pending' | 'accepted' | 'cancelled' | 'expired';
+}
+
+export interface ElementHistoryItem {
+  trainingId: ID;
+  date: string;
+  count: number;
+  landings?: LandingCount[];
 }

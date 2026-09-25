@@ -21,7 +21,7 @@ export function TrainingsPage({ setDirty }: { setDirty: (dirty: boolean) => void
     (all[training.date] ??= []).push(training); return all;
   }, {})).sort(([a], [b]) => b.localeCompare(a)), [result.data]);
 
-  if (editing) return <TrainingEditor initial={editing === 'new' ? undefined : editing} onBack={() => setEditing(null)} onSaved={async () => { await result.reload(); setEditing(null); setMessage('Trening został zapisany.'); }} setGlobalDirty={setDirty}/>;
+  if (editing) return <TrainingEditor initial={editing === 'new' ? undefined : editing} onBack={() => { setEditing(null); void result.reload(); }} onSaved={async () => { await result.reload(); setEditing(null); setMessage('Trening został zapisany.'); }} setGlobalDirty={setDirty}/>;
   if (result.loading) return <Loading/>;
   if (result.error) return <ErrorState message={result.error} retry={result.reload}/>;
   return <div className="page">

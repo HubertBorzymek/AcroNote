@@ -1,4 +1,4 @@
-import type { Activity, AdminUser, AdminUserData, ElementItem, ExecutionType, Routine, RoutineSlot, StatsSummary, Training, TrainingEntry, User } from './types';
+import type { Activity, AdminUser, AdminUserData, CoachAthlete, CoachInvitation, CoachLink, ElementHistoryItem, ElementItem, ExecutionType, LandingCount, Routine, RoutineSlot, StatsSummary, Training, TrainingEntry, User } from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public details?: unknown) {
@@ -28,6 +28,12 @@ const json = (body: unknown): RequestInit => ({ body: JSON.stringify(body) });
 const id = (value: unknown) => value == null ? undefined : String(value);
 const apiId = (value: string | undefined) => value && /^\d+$/.test(value) ? Number(value) : value ?? null;
 const mapUser = (user: User & { id: unknown }): User => ({ ...user, id: String(user.id) });
+const mapIds = <T extends { id: unknown }>(items: T[]) => items.map((item) => ({ ...item, id: String(item.id) }));
+function landingCounts(value: unknown): LandingCount[] {
+  if (Array.isArray(value)) return value.map((item) => ({ name: String(item.name ?? item.executionTypeName ?? item.landing ?? 'Inne'), count: Number(item.count ?? 0) }));
+  if (value && typeof value === 'object') return Object.entries(value as Record<string, unknown>).map(([name, count]) => ({ name, count: Number(count) }));
+  return [];
+}
 
 type RawRoutine = Omit<Routine, 'id' | 'slots'> & { id: unknown; items?: Array<Record<string, unknown>>; slots?: Array<Record<string, unknown>> };
 function mapRoutine(raw: RawRoutine): Routine {
@@ -66,6 +72,7 @@ export const api = {
   register: async (username: string, password: string) => mapUser(await request<User & { id: unknown }>('/auth/register', { method: 'POST', ...json({ username, password }) })),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
   changePassword: (currentPassword: string, newPassword: string) => request<void>('/auth/password', { method: 'PUT', ...json({ currentPassword, newPassword }) }),
+  updateProfiles: async (athleteEnabled: boolean, coachEnabled: boolean) => mapUser(await request<User & { id: unknown }>('/profile', { method: 'PUT', ...json({ athleteEnabled, coachEnabled }) })),
 
   elements: async (includeHidden = false) => (await request<Array<Omit<ElementItem, 'id'> & { id: unknown }>>(`/elements${includeHidden ? '?hidden=all' : ''}`)).map((item) => ({ ...item, id: String(item.id) })),
   createElement: async (input: Omit<ElementItem, 'id'>) => { const item = await request<Omit<ElementItem, 'id'> & { id: unknown }>('/elements', { method: 'POST', ...json(input) }); return { ...item, id: String(item.id) }; },
@@ -91,8 +98,31 @@ export const api = {
     const byCode = raw.byCode as Record<string, number> | Array<{ code: string; count: number }> | undefined;
     return { entries: Number(raw.entries ?? raw.totalEntries ?? 0), elements: Number(raw.totalElements ?? raw.elements ?? 0), trainings: Number(raw.trainings ?? raw.trainingCount ?? 0), fullRoutines: Number(raw.fullRoutines ?? 0), fragments: Number(raw.fragments ?? raw.routineFragments ?? 0),
       byCode: Array.isArray(byCode) ? byCode : Object.entries(byCode ?? {}).map(([code, count]) => ({ code, count })).sort((a, b) => b.count - a.count),
-      timeline: ((raw.timeline ?? []) as Array<Record<string, unknown>>).map((point) => ({ date: String(point.date), entries: Number(point.entries ?? 0), elements: Number(point.totalElements ?? point.elements ?? 0) })) } satisfies StatsSummary;
+      timeline: ((raw.timeline ?? []) as Array<Record<string, unknown>>).map((point) => ({ date: String(point.date), entries: Number(point.entries ?? 0), elements: Number(point.totalElements ?? point.elements ?? 0) })),
+      byLanding: landingCounts(raw.byLanding ?? raw.landings),
+      landingByCode: Array.isArray(raw.landingByCode) ? (raw.landingByCode as Array<Record<string, unknown>>).map((item) => ({ code: String(item.code), landings: landingCounts(item.landings ?? item.byLanding) })) : Object.entries((raw.landingByCode ?? {}) as Record<string, unknown>).map(([code, value]) => ({ code, landings: landingCounts(value) })) } satisfies StatsSummary;
   },
+  invitations: async () => mapIds(await request<Array<CoachInvitation & { id: unknown }>>('/coach/invitations')),
+  previewInvitation: (value: string) => request<{ id: number; role: 'athlete' | 'coach'; creatorUsername: string; expiresAt: string; requiredProfile: 'athlete' | 'coach' }>(`/coach/invitations/preview?${new URLSearchParams(value.length <= 12 ? { shortCode: value.toUpperCase() } : { token: value })}`),
+  createInvitation: async (role: 'athlete' | 'coach', expiresInHours = 24) => { const item = await request<CoachInvitation & { id: unknown }>('/coach/invitations', { method: 'POST', ...json({ role, expiresInHours }) }); return { ...item, id: String(item.id) }; },
+  acceptInvitation: (value: string) => request<void>('/coach/invitations/accept', { method: 'POST', ...json(value.length <= 12 ? { shortCode: value.toUpperCase() } : { token: value }) }),
+  cancelInvitation: (invitationId: string) => request<void>(`/coach/invitations/${invitationId}`, { method: 'DELETE' }),
+  coachAthletes: async () => mapIds(await request<Array<CoachAthlete & { id: unknown }>>('/coach/athletes')),
+  athleteCoaches: async () => mapIds(await request<Array<CoachLink & { id: unknown }>>('/athlete/coaches')),
+  disconnectAthlete: (athleteId: string) => request<void>(`/coach/links/${athleteId}`, { method: 'DELETE' }),
+  disconnectCoach: (coachId: string) => request<void>(`/athlete/coaches/${coachId}`, { method: 'DELETE' }),
+  coachAthlete: async (athleteId: string) => { const item = await request<CoachAthlete & { id: unknown }>(`/coach/athletes/${athleteId}`); return { ...item, id: String(item.id) }; },
+  coachElements: async (athleteId: string) => mapIds(await request<Array<ElementItem & { id: unknown }>>(`/coach/athletes/${athleteId}/elements`)),
+  coachExecutionTypes: async (athleteId: string) => mapIds(await request<Array<ExecutionType & { id: unknown }>>(`/coach/athletes/${athleteId}/execution-types`)),
+  coachRoutines: async (athleteId: string) => (await request<RawRoutine[]>(`/coach/athletes/${athleteId}/routines`)).map(mapRoutine),
+  coachTrainings: async (athleteId: string, from?: string, to?: string) => (await request<Array<Record<string, unknown>>>(`/coach/athletes/${athleteId}/trainings?${new URLSearchParams({ ...(from && { from }), ...(to && { to }) })}`)).map(mapTraining),
+  coachTraining: async (athleteId: string, trainingId: string) => mapTraining(await request<Record<string, unknown>>(`/coach/athletes/${athleteId}/trainings/${trainingId}`)),
+  coachStats: async (athleteId: string, from?: string, to?: string, elementId?: string) => {
+    const raw = await request<Record<string, unknown>>(`/coach/athletes/${athleteId}/stats?${new URLSearchParams({ ...(from && { from }), ...(to && { to }), ...(elementId && { elementId }) })}`);
+    const byCode = raw.byCode as Record<string, number> | Array<{ code: string; count: number }> | undefined;
+    return { entries: Number(raw.entries ?? raw.totalEntries ?? 0), elements: Number(raw.totalElements ?? raw.elements ?? 0), trainings: Number(raw.trainings ?? raw.trainingCount ?? 0), fullRoutines: Number(raw.fullRoutines ?? 0), fragments: Number(raw.fragments ?? raw.routineFragments ?? 0), byCode: Array.isArray(byCode) ? byCode : Object.entries(byCode ?? {}).map(([code, count]) => ({ code, count })).sort((a, b) => b.count - a.count), timeline: ((raw.timeline ?? []) as Array<Record<string, unknown>>).map((point) => ({ date: String(point.date), entries: Number(point.entries ?? 0), elements: Number(point.totalElements ?? point.elements ?? 0) })), byLanding: landingCounts(raw.byLanding ?? raw.landings), landingByCode: Array.isArray(raw.landingByCode) ? (raw.landingByCode as Array<Record<string, unknown>>).map((item) => ({ code: String(item.code), landings: landingCounts(item.landings ?? item.byLanding) })) : Object.entries((raw.landingByCode ?? {}) as Record<string, unknown>).map(([code, value]) => ({ code, landings: landingCounts(value) })) } satisfies StatsSummary;
+  },
+  coachElementHistory: async (athleteId: string, elementId: string) => (await request<Array<Record<string, unknown>>>(`/coach/athletes/${athleteId}/elements/${elementId}/history`)).map((item): ElementHistoryItem => ({ trainingId: String(item.trainingId ?? item.id), date: String(item.date), count: Number(item.count ?? item.executions ?? 0), landings: landingCounts(item.landings ?? item.byLanding) })),
   adminUsers: async () => (await request<Array<AdminUser & { id: unknown; elementsCount?: number; routinesCount?: number; trainingsCount?: number }>>('/admin/users?includeDeleted=true')).map((user) => ({ ...user, id: String(user.id), isAdmin: user.role === 'admin', elementCount: user.elementsCount ?? user.elementCount, routineCount: user.routinesCount ?? user.routineCount, trainingCount: user.trainingsCount ?? user.trainingCount })),
   adminDeleteUser: (userId: string) => request<void>(`/admin/users/${userId}`, { method: 'DELETE' }),
   adminRestoreUser: (userId: string) => request<void>(`/admin/users/${userId}/restore`, { method: 'POST' }),
