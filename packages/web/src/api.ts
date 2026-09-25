@@ -105,4 +105,6 @@ export const api = {
   adminRestoreElement: (userId: string, elementId: string) => request<void>(`/admin/users/${userId}/elements/${elementId}/restore`, { method: 'POST' }),
   adminDeleteRoutine: (userId: string, routineId: string) => request<void>(`/admin/users/${userId}/routines/${routineId}`, { method: 'DELETE' }),
   adminRestoreRoutine: (userId: string, routineId: string) => request<void>(`/admin/users/${userId}/routines/${routineId}/restore`, { method: 'POST' }),
+  adminTraining: async (userId: string, trainingId: string) => mapTraining(await request<Record<string, unknown>>(`/admin/users/${userId}/trainings/${trainingId}`)),
+  adminDeleteTraining: (userId: string, trainingId: string) => request<void>(`/admin/users/${userId}/trainings/${trainingId}`, { method: 'DELETE' }),
 };
