@@ -3,6 +3,18 @@ import { buildApp } from '../src/app.js';
 import { openDatabase } from '../src/db.js';
 
 describe('uwierzytelnianie i izolacja danych',()=>{
+  it('ogranicza serię rejestracji na pięć minut i zwraca polski komunikat',async()=>{
+    const db=openDatabase(':memory:'); const app=await buildApp({db});
+    for(let index=0;index<10;index++){
+      const response=await app.inject({method:'POST',url:'/api/auth/register',payload:{username:`limit_${index}`,password:'bardzo-bezpieczne-haslo'}});
+      expect(response.statusCode).toBe(201);
+    }
+    const limited=await app.inject({method:'POST',url:'/api/auth/register',payload:{username:'limit_ostatni',password:'bardzo-bezpieczne-haslo'}});
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json().message).toMatch(/^Zbyt wiele prób\. Spróbuj ponownie za [1-5] min\.$/);
+    expect(Number(limited.headers['retry-after'])).toBeLessThanOrEqual(300);
+    await app.close();db.close();
+  });
   it('nie udostępnia danych bez sesji ani innemu użytkownikowi',async()=>{
     const db=openDatabase(':memory:'); const app=await buildApp({db});
     const noAuth=await app.inject({method:'GET',url:'/api/elements'}); expect(noAuth.statusCode).toBe(401);

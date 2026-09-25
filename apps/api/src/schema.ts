@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS coach_links (
 CREATE TABLE IF NOT EXISTS invitations (
   id INTEGER PRIMARY KEY, creator_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   role TEXT NOT NULL CHECK(role IN ('athlete','coach')), token_hash TEXT NOT NULL UNIQUE,
-  short_code_hash TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL, used_at TEXT
+  short_code_hash TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL, used_at TEXT,
+  accepted_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL, cancelled_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 `;

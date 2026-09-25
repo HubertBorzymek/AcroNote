@@ -70,5 +70,23 @@ describe('historyczne zapisy treningów', () => {
     expect(selected.byCode).toEqual({'41o':7});
   });
 
+  it('liczy miejsca lądowania osobno dla każdego elementu migawki układu i respektuje filtr elementu',()=>{
+    saveTraining(db,userId,{date:'2026-09-25',entries:[{defaultExecutionTypeName:'Siatka',activities:[{
+      kind:'routine',sourceRoutineId:null,sourceRoutineName:'Wejście mieszane',rangeStart:1,rangeEnd:2,isFullRange:false,repetitions:2,executionTypeName:'Siatka',elements:[
+        {sourceElementId:elementA,code:'41o',executionTypeName:'Siatka',position:1},
+        {sourceElementId:elementB,code:'800o',executionTypeName:'Materac',position:2}
+      ]
+    }]}]});
+    const all=trainingSummary(db,userId);
+    expect(all.byLanding).toEqual([{name:'Materac',count:2},{name:'Siatka',count:2}]);
+    expect(all.landingByCode).toEqual([
+      {code:'41o',landings:[{name:'Siatka',count:2}]},
+      {code:'800o',landings:[{name:'Materac',count:2}]}
+    ]);
+    const filtered=trainingSummary(db,userId,undefined,undefined,elementB);
+    expect(filtered.byLanding).toEqual([{name:'Materac',count:2}]);
+    expect(filtered.landingByCode).toEqual([{code:'800o',landings:[{name:'Materac',count:2}]}]);
+  });
+
   it('odrzuca zero powtórzeń',()=>{expect(()=>saveTraining(db,userId,{date:'2026-09-25',entries:[{defaultExecutionTypeName:'Na płasko',activities:[{kind:'element',code:'41o',repetitions:0,executionTypeName:'Na płasko'}]}]})).toThrow(/powtórzeń/);});
 });

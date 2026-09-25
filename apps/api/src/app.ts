@@ -26,7 +26,15 @@ export async function buildApp(options: { db?: Db; logger?: boolean } = {}) {
   const db = options.db ?? openDatabase();
   app.decorate('db', db);
   await app.register(cookie);
-  await app.register(rateLimit, { max: 150, timeWindow: '1 minute' });
+  await app.register(rateLimit, {
+    max: 150,
+    timeWindow: '1 minute',
+    errorResponseBuilder: (_request, context) => ({
+      statusCode: 429,
+      error: 'Zbyt wiele prób',
+      message: `Zbyt wiele prób. Spróbuj ponownie za ${Math.max(1, Math.ceil(context.ttl / 60000))} min.`
+    })
+  });
 
   app.addHook('onClose', async () => { if (!options.db) db.close(); });
   app.setErrorHandler((error, _request, reply) => {
@@ -52,7 +60,7 @@ export async function buildApp(options: { db?: Db; logger?: boolean } = {}) {
   const adminAuth = { preHandler: authenticateAdmin };
 
   app.get('/api/health', async () => ({ ok: true }));
-  app.post('/api/auth/register', { config: { rateLimit: { max: 10, timeWindow: '1 hour' } } }, async (request, reply) => {
+  app.post('/api/auth/register', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
     const body = request.body as any;
     const username = text(body?.username, 'Nazwa użytkownika', 3);
     const password = text(body?.password, 'Hasło', 10);
@@ -95,14 +103,14 @@ export async function buildApp(options: { db?: Db; logger?: boolean } = {}) {
 
   app.get('/api/execution-types', auth, async request => db.prepare(`SELECT id,name,sort_order sortOrder,hidden FROM execution_types WHERE user_id=? AND deleted_at IS NULL ORDER BY sort_order,id`).all(request.userId));
   app.post('/api/execution-types', auth, async (request, reply) => {
-    const body=request.body as any; const name=text(body?.name,'Nazwa');
+    const body=request.body as any; const name=text(body?.name,'Nazwa miejsca lądowania');
     const order=(db.prepare('SELECT COALESCE(MAX(sort_order),-1)+1 n FROM execution_types WHERE user_id=?').get(request.userId) as any).n;
     const id=Number(db.prepare('INSERT INTO execution_types(user_id,name,sort_order) VALUES(?,?,?)').run(request.userId,name,order).lastInsertRowid);
     return reply.status(201).send({id,name,sortOrder:order,hidden:false});
   });
   app.put('/api/execution-types/:id', auth, async request => {
-    const body=request.body as any; const info=db.prepare('UPDATE execution_types SET name=?,sort_order=?,hidden=? WHERE id=? AND user_id=? AND deleted_at IS NULL').run(text(body.name,'Nazwa'),Number(body.sortOrder??0),bool(body.hidden),Number((request.params as any).id),request.userId);
-    if (!info.changes) throw new Error('Nie znaleziono rodzaju wykonania.'); return {ok:true};
+    const body=request.body as any; const info=db.prepare('UPDATE execution_types SET name=?,sort_order=?,hidden=? WHERE id=? AND user_id=? AND deleted_at IS NULL').run(text(body.name,'Nazwa miejsca lądowania'),Number(body.sortOrder??0),bool(body.hidden),Number((request.params as any).id),request.userId);
+    if (!info.changes) throw new Error('Nie znaleziono miejsca lądowania.'); return {ok:true};
   });
   app.delete('/api/execution-types/:id', auth, async request => { db.prepare("UPDATE execution_types SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?").run(Number((request.params as any).id),request.userId); return {ok:true}; });
 
@@ -144,15 +152,7 @@ export async function buildApp(options: { db?: Db; logger?: boolean } = {}) {
   app.put('/api/trainings/:id', auth, async request => { const id=saveTraining(db,request.userId,request.body as TrainingInput,Number((request.params as any).id));return getTraining(db,request.userId,id); });
   app.delete('/api/trainings/:id', auth, async request => { const info=db.prepare('DELETE FROM trainings WHERE id=? AND user_id=?').run(Number((request.params as any).id),request.userId);if(!info.changes)throw new Error('Nie znaleziono treningu.');return {ok:true}; });
   app.get('/api/stats/summary', auth, async (request,reply) => { const q=request.query as any;let elementId:number|undefined;if(q.elementId!==undefined){elementId=integerQuery(q.elementId,'Element');if(!db.prepare('SELECT 1 FROM elements WHERE id=? AND user_id=?').get(elementId,request.userId))return reply.status(404).send({message:'Nie znaleziono elementu.'});}return trainingSummary(db,request.userId,q.from,q.to,elementId); });
-  app.get('/api/stats/elements/:id/history', auth, async (request,reply) => {
-    const id=Number((request.params as any).id);const element=db.prepare('SELECT id,code,name FROM elements WHERE id=? AND user_id=?').get(id,request.userId) as any;
-    if(!element)return reply.status(404).send({message:'Nie znaleziono elementu.'});
-    const direct=db.prepare(`SELECT t.id trainingId,t.training_date date,SUM(a.repetitions) count FROM trainings t JOIN training_entries te ON te.training_id=t.id JOIN activities a ON a.entry_id=te.id WHERE t.user_id=? AND a.kind='element' AND a.source_element_id=? GROUP BY t.id`).all(request.userId,id) as any[];
-    const nested=db.prepare(`SELECT t.id trainingId,t.training_date date,SUM(a.repetitions) count FROM trainings t JOIN training_entries te ON te.training_id=t.id JOIN activities a ON a.entry_id=te.id JOIN activity_elements ae ON ae.activity_id=a.id WHERE t.user_id=? AND ae.source_element_id=? GROUP BY t.id`).all(request.userId,id) as any[];
-    const map=new Map<number,any>();for(const row of [...direct,...nested]){const old=map.get(row.trainingId);map.set(row.trainingId,{trainingId:row.trainingId,date:row.date,count:Number(row.count)+(old?.count??0)});}const trainings=[...map.values()].sort((a,b)=>a.date.localeCompare(b.date));
-    const group=(format:string)=>db.prepare(`SELECT strftime('${format}',t.training_date) period,SUM(x.count) count FROM (SELECT te.training_id,SUM(a.repetitions) count FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE a.kind='element' AND a.source_element_id=? GROUP BY te.training_id UNION ALL SELECT te.training_id,SUM(a.repetitions) count FROM training_entries te JOIN activities a ON a.entry_id=te.id JOIN activity_elements ae ON ae.activity_id=a.id WHERE ae.source_element_id=? GROUP BY te.training_id) x JOIN trainings t ON t.id=x.training_id WHERE t.user_id=? GROUP BY period ORDER BY period`).all(id,id,request.userId);
-    return {element,trainings,weeks:group('%Y-W%W'),months:group('%Y-%m')};
-  });
+  app.get('/api/stats/elements/:id/history', auth, async (request,reply) => elementHistory(db,request.userId,Number((request.params as any).id),reply));
 
   app.get('/api/admin/users', adminAuth, async request => {
     const q=request.query as any; const includeDeleted=q.includeDeleted==='true';
@@ -197,34 +197,75 @@ export async function buildApp(options: { db?: Db; logger?: boolean } = {}) {
   app.delete('/api/admin/users/:userId/routines/:id', adminAuth, async (request,reply) => {const p=request.params as any;const info=db.prepare("UPDATE routines SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=? AND deleted_at IS NULL").run(Number(p.id),Number(p.userId));if(!info.changes)return reply.status(404).send({message:'Nie znaleziono aktywnego układu.'});return{ok:true};});
   app.post('/api/admin/users/:userId/routines/:id/restore', adminAuth, async (request,reply) => {const p=request.params as any;const info=db.prepare('UPDATE routines SET deleted_at=NULL WHERE id=? AND user_id=? AND deleted_at IS NOT NULL').run(Number(p.id),Number(p.userId));if(!info.changes)return reply.status(404).send({message:'Nie znaleziono usuniętego układu.'});return{ok:true};});
 
+  app.get('/api/coach/invitations', auth, async request => db.prepare(`SELECT i.id,i.role,u.username creatorUsername,
+    i.created_at createdAt,i.expires_at expiresAt,i.used_at acceptedAt,i.cancelled_at cancelledAt,
+    CASE WHEN i.cancelled_at IS NOT NULL THEN 'cancelled' WHEN i.used_at IS NOT NULL THEN 'accepted'
+      WHEN i.expires_at<=datetime('now') THEN 'expired' ELSE 'pending' END status
+    FROM invitations i JOIN users u ON u.id=i.creator_id WHERE i.creator_id=? ORDER BY i.id DESC`).all(request.userId));
   app.post('/api/coach/invitations', auth, async (request,reply) => {
-    const b=request.body as any; const role=b.role==='coach'?'coach':'athlete';
+    const b=request.body as any;
+    if(!['athlete','coach'].includes(b?.role)) return reply.status(400).send({message:'Wybierz profil zawodnika albo trenera.'});
+    const role=b.role as 'athlete'|'coach';
     const profile=db.prepare('SELECT athlete_enabled,coach_enabled FROM users WHERE id=?').get(request.userId) as any;
     if((role==='coach'&&!profile.coach_enabled)||(role==='athlete'&&!profile.athlete_enabled)) return reply.status(403).send({message:'Najpierw aktywuj odpowiedni profil.'});
+    const expiresInHours=b.expiresInHours===undefined?24:Number(b.expiresInHours);
+    if(!Number.isInteger(expiresInHours)||expiresInHours<1||expiresInHours>72)return reply.status(400).send({message:'Ważność zaproszenia musi wynosić od 1 do 72 godzin.'});
     const token=randomBytes(24).toString('base64url'); const shortCode=randomBytes(4).toString('hex').toUpperCase();
-    const id=Number(db.prepare("INSERT INTO invitations(creator_id,role,token_hash,short_code_hash,expires_at) VALUES(?,?,?,?,datetime('now','+24 hours'))").run(request.userId,role,hashToken(token),hashToken(shortCode)).lastInsertRowid);
+    const id=Number(db.prepare("INSERT INTO invitations(creator_id,role,token_hash,short_code_hash,expires_at) VALUES(?,?,?,?,datetime('now',?))").run(request.userId,role,hashToken(token),hashToken(shortCode),`+${expiresInHours} hours`).lastInsertRowid);
+    const row=db.prepare('SELECT created_at createdAt,expires_at expiresAt FROM invitations WHERE id=?').get(id) as any;
     const path=`/zaproszenie/${token}`; const qrDataUrl=await QRCode.toDataURL(path,{margin:1,width:280});
-    return reply.status(201).send({id,role,token,shortCode,path,qrDataUrl,expiresInHours:24});
+    return reply.status(201).send({id,role,token,shortCode,path,qrDataUrl,expiresInHours,...row,status:'pending'});
+  });
+  app.get('/api/coach/invitations/preview', { ...auth, config:{rateLimit:{max:20,timeWindow:'5 minutes'}} }, async (request,reply) => {
+    const q=request.query as any; const credential=text(q.token??q.shortCode??q.credential,'Kod zaproszenia');
+    const invitation=findPendingInvitation(db,credential);
+    if(!invitation)return reply.status(404).send({message:'Zaproszenie jest nieprawidłowe lub wygasło.'});
+    if(invitation.creator_id===request.userId)return reply.status(400).send({message:'Nie możesz użyć własnego zaproszenia.'});
+    return {id:invitation.id,role:invitation.role,creatorUsername:invitation.creator_username,expiresAt:invitation.expires_at,
+      requiredProfile:invitation.role==='athlete'?'coach':'athlete'};
+  });
+  app.delete('/api/coach/invitations/:id', auth, async (request,reply) => {
+    const id=Number((request.params as any).id);
+    const info=db.prepare("UPDATE invitations SET cancelled_at=CURRENT_TIMESTAMP WHERE id=? AND creator_id=? AND used_at IS NULL AND cancelled_at IS NULL AND expires_at>datetime('now')").run(id,request.userId);
+    if(!info.changes)return reply.status(404).send({message:'Nie znaleziono aktywnego zaproszenia.'});
+    return {ok:true};
   });
   app.post('/api/coach/invitations/accept', { ...auth, config:{rateLimit:{max:10,timeWindow:'15 minutes'}} }, async (request,reply) => {
     const b=request.body as any; const credential=text(b.token??b.shortCode,'Kod zaproszenia');
-    const invitation=db.prepare("SELECT id,creator_id,role FROM invitations WHERE (token_hash=? OR short_code_hash=?) AND used_at IS NULL AND expires_at>datetime('now')").get(hashToken(credential),hashToken(credential.toUpperCase())) as any;
+    const invitation=findPendingInvitation(db,credential);
     if(!invitation)return reply.status(404).send({message:'Zaproszenie jest nieprawidłowe lub wygasło.'});
+    if(invitation.creator_id===request.userId)return reply.status(400).send({message:'Nie możesz połączyć konta z samym sobą.'});
     const athleteId=invitation.role==='athlete'?invitation.creator_id:request.userId; const coachId=invitation.role==='coach'?invitation.creator_id:request.userId;
-    if(athleteId===coachId)return reply.status(400).send({message:'Nie możesz połączyć konta z samym sobą.'});
-    const athlete=db.prepare('SELECT athlete_enabled FROM users WHERE id=?').get(athleteId) as any; const coach=db.prepare('SELECT coach_enabled FROM users WHERE id=?').get(coachId) as any;
+    const athlete=db.prepare('SELECT athlete_enabled FROM users WHERE id=? AND deleted_at IS NULL').get(athleteId) as any;
+    const coach=db.prepare('SELECT coach_enabled FROM users WHERE id=? AND deleted_at IS NULL').get(coachId) as any;
     if(!athlete?.athlete_enabled||!coach?.coach_enabled)return reply.status(400).send({message:'Oba wymagane profile muszą być aktywne.'});
-    db.transaction(()=>{db.prepare('INSERT OR IGNORE INTO coach_links(athlete_id,coach_id) VALUES(?,?)').run(athleteId,coachId);db.prepare("UPDATE invitations SET used_at=CURRENT_TIMESTAMP WHERE id=?").run(invitation.id);})();
-    return {ok:true};
+    const connected=db.transaction(()=>{
+      const claimed=db.prepare("UPDATE invitations SET used_at=CURRENT_TIMESTAMP,accepted_by_id=? WHERE id=? AND used_at IS NULL AND cancelled_at IS NULL AND expires_at>datetime('now')").run(request.userId,invitation.id);
+      if(!claimed.changes)return false;
+      db.prepare('INSERT OR IGNORE INTO coach_links(athlete_id,coach_id) VALUES(?,?)').run(athleteId,coachId);
+      return true;
+    })();
+    if(!connected)return reply.status(409).send({message:'To zaproszenie zostało już wykorzystane.'});
+    return {ok:true,athleteId,coachId};
   });
-  app.get('/api/coach/athletes', auth, async request => db.prepare(`SELECT u.id,u.username,cl.is_primary isPrimary,cl.created_at connectedAt FROM coach_links cl JOIN users u ON u.id=cl.athlete_id WHERE cl.coach_id=? ORDER BY u.username`).all(request.userId));
+  app.get('/api/coach/athletes', auth, async (request,reply) => {
+    if(!hasEnabledProfile(db,request.userId,'coach'))return reply.status(403).send({message:'Najpierw aktywuj profil trenera.'});
+    return db.prepare(`SELECT u.id,u.username,cl.created_at connectedAt FROM coach_links cl JOIN users u ON u.id=cl.athlete_id WHERE cl.coach_id=? AND u.deleted_at IS NULL AND u.athlete_enabled=1 ORDER BY u.username`).all(request.userId);
+  });
   app.delete('/api/coach/links/:athleteId', auth, async request => { const athleteId=Number((request.params as any).athleteId);const info=db.prepare('DELETE FROM coach_links WHERE athlete_id=? AND coach_id=?').run(athleteId,request.userId);if(!info.changes)throw new Error('Nie znaleziono połączenia.');return{ok:true}; });
-  app.get('/api/athlete/coaches', auth, async request => db.prepare(`SELECT u.id,u.username,cl.is_primary isPrimary,cl.created_at connectedAt FROM coach_links cl JOIN users u ON u.id=cl.coach_id WHERE cl.athlete_id=? ORDER BY cl.is_primary DESC,u.username`).all(request.userId));
+  app.get('/api/athlete/coaches', auth, async (request,reply) => {
+    if(!hasEnabledProfile(db,request.userId,'athlete'))return reply.status(403).send({message:'Najpierw aktywuj profil zawodnika.'});
+    return db.prepare(`SELECT u.id,u.username,cl.created_at connectedAt FROM coach_links cl JOIN users u ON u.id=cl.coach_id WHERE cl.athlete_id=? AND u.deleted_at IS NULL AND u.coach_enabled=1 ORDER BY u.username`).all(request.userId);
+  });
   app.delete('/api/athlete/coaches/:coachId', auth, async request => { const coachId=Number((request.params as any).coachId);const info=db.prepare('DELETE FROM coach_links WHERE athlete_id=? AND coach_id=?').run(request.userId,coachId);if(!info.changes)throw new Error('Nie znaleziono połączenia.');return{ok:true}; });
-  app.put('/api/athlete/coaches/:coachId/primary', auth, async request => { const coachId=Number((request.params as any).coachId);const tx=db.transaction(()=>{const exists=db.prepare('SELECT 1 FROM coach_links WHERE athlete_id=? AND coach_id=?').get(request.userId,coachId);if(!exists)throw new Error('Nie znaleziono połączenia.');db.prepare('UPDATE coach_links SET is_primary=0 WHERE athlete_id=?').run(request.userId);db.prepare('UPDATE coach_links SET is_primary=1 WHERE athlete_id=? AND coach_id=?').run(request.userId,coachId);});tx();return{ok:true}; });
-  app.get('/api/coach/athletes/:athleteId/trainings', auth, async (request,reply) => { const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return reply.status(403).send({message:'Brak dostępu do danych zawodnika.'});return db.prepare('SELECT id,training_date date,created_at createdAt,updated_at updatedAt FROM trainings WHERE user_id=? ORDER BY training_date DESC,id DESC').all(athleteId); });
+  app.get('/api/coach/athletes/:athleteId', auth, async (request,reply) => {const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);return db.prepare('SELECT id,username FROM users WHERE id=?').get(athleteId);});
+  app.get('/api/coach/athletes/:athleteId/elements', auth, async (request,reply) => {const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);return listElements(db,athleteId);});
+  app.get('/api/coach/athletes/:athleteId/execution-types', auth, async (request,reply) => {const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);return db.prepare('SELECT id,name,sort_order sortOrder,hidden FROM execution_types WHERE user_id=? AND deleted_at IS NULL ORDER BY sort_order,id').all(athleteId);});
+  app.get('/api/coach/athletes/:athleteId/routines', auth, async (request,reply) => {const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);return listRoutines(db,athleteId);});
+  app.get('/api/coach/athletes/:athleteId/trainings', auth, async (request,reply) => { const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply); const q=request.query as any;const conditions=['t.user_id=?'];const values:any[]=[athleteId];if(q.from){conditions.push('t.training_date>=?');values.push(q.from)}if(q.to){conditions.push('t.training_date<=?');values.push(q.to)}return listTrainings(db,conditions,values); });
   app.get('/api/coach/athletes/:athleteId/trainings/:id', auth, async (request,reply) => { const p=request.params as any;const athleteId=Number(p.athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return reply.status(403).send({message:'Brak dostępu do danych zawodnika.'});const item=getTraining(db,athleteId,Number(p.id));return item??reply.status(404).send({message:'Nie znaleziono treningu.'}); });
-  app.get('/api/coach/athletes/:athleteId/stats', auth, async (request,reply) => { const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return reply.status(403).send({message:'Brak dostępu do danych zawodnika.'});const q=request.query as any;return trainingSummary(db,athleteId,q.from,q.to); });
+  app.get('/api/coach/athletes/:athleteId/stats', auth, async (request,reply) => { const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);const q=request.query as any;let elementId:number|undefined;if(q.elementId!==undefined){elementId=integerQuery(q.elementId,'Element');if(!db.prepare('SELECT 1 FROM elements WHERE id=? AND user_id=?').get(elementId,athleteId))return reply.status(404).send({message:'Nie znaleziono elementu.'});}return trainingSummary(db,athleteId,q.from,q.to,elementId); });
+  app.get('/api/coach/athletes/:athleteId/elements/:elementId/history', auth, async (request,reply) => {const p=request.params as any;const athleteId=Number(p.athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);return coachElementHistory(db,athleteId,Number(p.elementId),reply);});
 
   const webRoot=resolve(fileURLToPath(new URL('../../../packages/web/dist',import.meta.url)));
   if(existsSync(webRoot)){await app.register(staticPlugin,{root:webRoot});app.setNotFoundHandler((request,reply)=>{if(!request.url.startsWith('/api/'))return reply.sendFile('index.html');return reply.status(404).send({message:'Nie znaleziono zasobu.'});});}
@@ -239,4 +280,36 @@ function adminUser(db:Db,id:number){return db.prepare(`SELECT u.id,u.username,u.
   (SELECT COUNT(*) FROM elements e WHERE e.user_id=u.id AND e.deleted_at IS NULL) elementsCount,(SELECT COUNT(*) FROM routines r WHERE r.user_id=u.id AND r.deleted_at IS NULL) routinesCount,(SELECT COUNT(*) FROM trainings t WHERE t.user_id=u.id) trainingsCount FROM users u WHERE u.id=?`).get(id);}
 function listRoutines(db:Db,userId:number,id?:number){const rows=db.prepare(`SELECT id,name,template_version templateVersion,slot_count slotCount FROM routines WHERE user_id=? AND deleted_at IS NULL ${id?'AND id=?':''} ORDER BY name`).all(...(id?[userId,id]:[userId])) as any[];for(const row of rows)row.items=db.prepare(`SELECT ri.position,ri.element_id elementId,COALESCE(e.code,ri.code_snapshot) code,COALESCE(e.name,ri.name_snapshot) name FROM routine_items ri LEFT JOIN elements e ON e.id=ri.element_id AND e.deleted_at IS NULL WHERE routine_id=? ORDER BY position`).all(row.id);return rows;}
 function saveRoutine(db:Db,userId:number,b:any,id?:number){const name=text(b.name,'Nazwa układu');const slotCount=Math.max(1,Math.min(100,Number(b.slotCount??10)));const items=Array.isArray(b.items)?b.items:[];return db.transaction(()=>{if(id){const info=db.prepare('UPDATE routines SET name=?,slot_count=?,template_version=template_version+1 WHERE id=? AND user_id=? AND deleted_at IS NULL').run(name,slotCount,id,userId);if(!info.changes)throw new Error('Nie znaleziono układu.');db.prepare('DELETE FROM routine_items WHERE routine_id=?').run(id);}else id=Number(db.prepare('INSERT INTO routines(user_id,name,slot_count) VALUES(?,?,?)').run(userId,name,slotCount).lastInsertRowid);const insert=db.prepare('INSERT INTO routine_items(routine_id,position,element_id,code_snapshot,name_snapshot) VALUES(?,?,?,?,?)');items.forEach((item:any,index:number)=>{let code=item.code,nameValue=item.name??null;if(item.elementId){const element=db.prepare('SELECT code,name FROM elements WHERE id=? AND user_id=? AND deleted_at IS NULL').get(item.elementId,userId) as any;if(!element)throw new Error('Wybrany element nie istnieje.');code=element.code;nameValue=element.name;}insert.run(id,index+1,item.elementId??null,text(code,'Kod elementu'),nameValue);});return id!;})();}
-function hasCoachAccess(db:Db,athleteId:number,coachId:number){return Boolean(db.prepare('SELECT 1 FROM coach_links WHERE athlete_id=? AND coach_id=?').get(athleteId,coachId));}
+function hasEnabledProfile(db:Db,userId:number,profile:'athlete'|'coach'){const column=profile==='athlete'?'athlete_enabled':'coach_enabled';return Boolean(db.prepare(`SELECT 1 FROM users WHERE id=? AND deleted_at IS NULL AND ${column}=1`).get(userId));}
+function hasCoachAccess(db:Db,athleteId:number,coachId:number){return Boolean(db.prepare(`SELECT 1 FROM coach_links cl JOIN users a ON a.id=cl.athlete_id JOIN users c ON c.id=cl.coach_id
+  WHERE cl.athlete_id=? AND cl.coach_id=? AND a.deleted_at IS NULL AND c.deleted_at IS NULL AND a.athlete_enabled=1 AND c.coach_enabled=1`).get(athleteId,coachId));}
+function coachDenied(reply:any){return reply.status(403).send({message:'Brak dostępu do danych zawodnika.'});}
+function findPendingInvitation(db:Db,credential:string){return db.prepare(`SELECT i.id,i.creator_id,i.role,i.expires_at,u.username creator_username FROM invitations i JOIN users u ON u.id=i.creator_id
+  WHERE (i.token_hash=? OR i.short_code_hash=?) AND i.used_at IS NULL AND i.cancelled_at IS NULL AND i.expires_at>datetime('now') AND u.deleted_at IS NULL`).get(hashToken(credential),hashToken(credential.toUpperCase())) as any;}
+function listElements(db:Db,userId:number){return db.prepare(`SELECT id,code,name,favorite,hidden,quarter_count quarterCount,salto_count saltoCount,total_twist_halves/2.0 totalTwists,direction,position_symbol positionSymbol
+  FROM elements WHERE user_id=? AND deleted_at IS NULL ORDER BY favorite DESC,code`).all(userId);}
+function listTrainings(db:Db,conditions:string[],values:any[]){return db.prepare(`SELECT t.id,t.training_date date,t.created_at createdAt,t.updated_at updatedAt,
+  (SELECT COUNT(*) FROM training_entries te WHERE te.training_id=t.id) entriesCount,
+  COALESCE((SELECT SUM(CASE WHEN a.kind='element' THEN a.repetitions ELSE a.repetitions*(SELECT COUNT(*) FROM activity_elements ae WHERE ae.activity_id=a.id) END) FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=t.id),0) totalElements
+  FROM trainings t WHERE ${conditions.join(' AND ')} ORDER BY t.training_date DESC,t.id DESC`).all(...values);}
+function elementHistory(db:Db,userId:number,id:number,reply:any){
+  const element=db.prepare('SELECT id,code,name FROM elements WHERE id=? AND user_id=?').get(id,userId) as any;
+  if(!element)return reply.status(404).send({message:'Nie znaleziono elementu.'});
+  const direct=db.prepare(`SELECT t.id trainingId,t.training_date date,SUM(a.repetitions) count FROM trainings t JOIN training_entries te ON te.training_id=t.id JOIN activities a ON a.entry_id=te.id WHERE t.user_id=? AND a.kind='element' AND a.source_element_id=? GROUP BY t.id`).all(userId,id) as any[];
+  const nested=db.prepare(`SELECT t.id trainingId,t.training_date date,SUM(a.repetitions) count FROM trainings t JOIN training_entries te ON te.training_id=t.id JOIN activities a ON a.entry_id=te.id JOIN activity_elements ae ON ae.activity_id=a.id WHERE t.user_id=? AND ae.source_element_id=? GROUP BY t.id`).all(userId,id) as any[];
+  const map=new Map<number,any>();for(const row of [...direct,...nested]){const old=map.get(row.trainingId);map.set(row.trainingId,{trainingId:row.trainingId,date:row.date,count:Number(row.count)+(old?.count??0)});}const trainings=[...map.values()].sort((a,b)=>a.date.localeCompare(b.date));
+  const group=(format:string)=>db.prepare(`SELECT strftime('${format}',t.training_date) period,SUM(x.count) count FROM (SELECT te.training_id,SUM(a.repetitions) count FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE a.kind='element' AND a.source_element_id=? GROUP BY te.training_id UNION ALL SELECT te.training_id,SUM(a.repetitions) count FROM training_entries te JOIN activities a ON a.entry_id=te.id JOIN activity_elements ae ON ae.activity_id=a.id WHERE ae.source_element_id=? GROUP BY te.training_id) x JOIN trainings t ON t.id=x.training_id WHERE t.user_id=? GROUP BY period ORDER BY period`).all(id,id,userId);
+  return {element,trainings,weeks:group('%Y-W%W'),months:group('%Y-%m')};
+}
+function coachElementHistory(db:Db,userId:number,id:number,reply:any){
+  if(!db.prepare('SELECT 1 FROM elements WHERE id=? AND user_id=?').get(id,userId))return reply.status(404).send({message:'Nie znaleziono elementu.'});
+  const direct=db.prepare(`SELECT t.id trainingId,t.training_date date,a.execution_type_name landing,SUM(a.repetitions) count
+    FROM trainings t JOIN training_entries te ON te.training_id=t.id JOIN activities a ON a.entry_id=te.id
+    WHERE t.user_id=? AND a.kind='element' AND a.source_element_id=? GROUP BY t.id,a.execution_type_name`).all(userId,id) as any[];
+  const nested=db.prepare(`SELECT t.id trainingId,t.training_date date,ae.execution_type_name landing,SUM(a.repetitions) count
+    FROM trainings t JOIN training_entries te ON te.training_id=t.id JOIN activities a ON a.entry_id=te.id JOIN activity_elements ae ON ae.activity_id=a.id
+    WHERE t.user_id=? AND ae.source_element_id=? GROUP BY t.id,ae.execution_type_name`).all(userId,id) as any[];
+  const map=new Map<number,{trainingId:number;date:string;count:number;landingMap:Map<string,number>}>();
+  for(const row of [...direct,...nested]){const item=map.get(row.trainingId)??{trainingId:row.trainingId,date:row.date,count:0,landingMap:new Map<string,number>()};const count=Number(row.count);item.count+=count;item.landingMap.set(row.landing,(item.landingMap.get(row.landing)??0)+count);map.set(row.trainingId,item);}
+  return [...map.values()].sort((a,b)=>a.date.localeCompare(b.date)||a.trainingId-b.trainingId).map(({landingMap,...item})=>({...item,landings:[...landingMap.entries()].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name,'pl'))}));
+}

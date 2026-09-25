@@ -40,6 +40,15 @@ function migrate(db: Db): void {
     }
     db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(2)').run();
   })();
+
+  const invitationColumns = columns('invitations');
+  if (!invitationColumns.has('accepted_by_id')) db.exec('ALTER TABLE invitations ADD COLUMN accepted_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  if (!invitationColumns.has('cancelled_at')) db.exec('ALTER TABLE invitations ADD COLUMN cancelled_at TEXT');
+  if (!invitationColumns.has('created_at')) db.exec('ALTER TABLE invitations ADD COLUMN created_at TEXT');
+  db.transaction(() => {
+    db.prepare('UPDATE invitations SET created_at=COALESCE(created_at, CURRENT_TIMESTAMP)').run();
+    db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(3)').run();
+  })();
 }
 
 export function seedExecutionTypes(db: Db, userId: number): void {
