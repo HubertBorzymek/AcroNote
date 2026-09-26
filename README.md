@@ -69,6 +69,7 @@ Seeder nie nadpisuje istniejących rekordów.
 Seeder tworzy brakujące konta, nie zmieniając istniejących użytkowników ani ich haseł:
 
 - `demo` / `AcroNote-demo-2026` — 30 zróżnicowanych elementów, dwa układy i historia treningów;
+- `trener_demo` / `AcroNote-trener-2026` — aktywny profil trenera połączony z zawodnikiem `demo`; po zalogowaniu wybierz profil „Trener” w przełączniku profili;
 - `admin` / `AcroNote-admin-2026` — panel zarządzania kontami i ich danymi, bez dostępu do haseł, skrótów haseł i tokenów sesji.
 
 Są to jawne dane startowe do lokalnych testów. Przed udostępnieniem aplikacji innym osobom zmień hasło administratora i nie traktuj konta demo jako prywatnego.
@@ -94,6 +95,21 @@ npm start
 ```
 
 `SESSION_SECRET` jest zarezerwowany dla konfiguracji bezpieczeństwa, ale bieżąca implementacja generuje losowe tokeny sesji i zapisuje ich skróty w bazie. Pliki `.env` z sekretami nie powinny trafić do repozytorium.
+
+## Uruchomienie na telefonie w tej samej sieci Wi-Fi
+
+Do telefonu używaj produkcyjnego buildu (`npm start`), nie serwera deweloperskiego Vite. Najpierw sprawdź w `ipconfig` adres IPv4 komputera w domowej sieci, np. `192.168.1.50`, a następnie w PowerShell uruchom:
+
+```powershell
+npm run build
+$env:HOST = '192.168.1.50'
+$env:PORT = '3001'
+npm start
+```
+
+Na telefonie połączonym z tym samym Wi-Fi otwórz `http://192.168.1.50:3001` (podstawiając własny adres). Jeżeli Windows zapyta o zaporę, zezwól Node.js wyłącznie w sieci prywatnej. Nie wyłączaj całej zapory i nie przekierowuj portu 3001 na routerze. Po zakończeniu zatrzymaj serwer skrótem `Ctrl+C`.
+
+To rozwiązanie jest rozsądne do krótkich testów w zaufanej, domowej sieci WPA2/WPA3, ale nie jest wdrożeniem produkcyjnym. Połączenie używa zwykłego HTTP, więc hasło i ruch nie mają ochrony TLS przed innym urządzeniem zdolnym podsłuchiwać sieć. Nie używaj tego trybu w publicznym lub gościnnym Wi-Fi ani z prawdziwymi wrażliwymi danymi. Windows zaleca ograniczenie wyjątku zapory do zaufanego profilu prywatnego; dodanie wyjątku dla aplikacji jest bezpieczniejsze niż stałe otwarcie portu ([Microsoft Support](https://support.microsoft.com/en-us/windows/security/firewall/risks-of-allowing-apps-through-windows-firewall)).
 
 ## Baza danych i kopie zapasowe
 

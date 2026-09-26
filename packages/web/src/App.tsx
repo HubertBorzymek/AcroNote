@@ -10,6 +10,7 @@ import { StatsPage } from './pages/StatsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AdminPage } from './pages/AdminPage';
 import { CoachPage } from './pages/CoachPage';
+import { applyTheme, THEME_STORAGE_KEY, type Theme } from './theme';
 
 type Route = 'trainings' | 'elements' | 'routines' | 'stats' | 'coach' | 'profile' | 'admin';
 type ProfileMode = 'athlete' | 'coach';
@@ -17,16 +18,18 @@ const validRoutes: Route[] = ['trainings', 'elements', 'routines', 'stats', 'coa
 function routeFromUrl(): Route { const value = location.pathname.split('/').filter(Boolean)[0] as Route; if (location.pathname.startsWith('/connect') || location.pathname.startsWith('/zaproszenie')) return 'profile'; return validRoutes.includes(value) ? value : 'trainings'; }
 function invitationFromUrl() { const query = new URLSearchParams(location.search); return query.get('token') ?? query.get('invite') ?? (location.pathname.startsWith('/connect/') || location.pathname.startsWith('/zaproszenie/') ? location.pathname.split('/').filter(Boolean).at(-1) ?? '' : ''); }
 
-export function App() {
+export function App({ initialTheme = 'light' }: { initialTheme?: Theme }) {
   const [user, setUser] = useState<User | null>();
   const [loadError, setLoadError] = useState('');
   const [route, setRoute] = useState<Route>(routeFromUrl);
   const [dirty, setDirty] = useState(false);
   const [mode, setMode] = useState<ProfileMode>(() => localStorage.getItem('acronote-profile') === 'coach' ? 'coach' : 'athlete');
   const [invitationTarget, setInvitationTarget] = useState<ProfileMode>();
+  const [theme, setTheme] = useState<Theme>(initialTheme);
   const invitation = invitationFromUrl();
   async function loadUser() { setLoadError(''); try { setUser(await api.me()); } catch (reason) { if (reason instanceof ApiError && reason.status === 401) setUser(null); else setLoadError(reason instanceof Error ? reason.message : 'Nie udało się połączyć z serwerem.'); } }
   useEffect(() => { void loadUser(); }, []);
+  useEffect(() => { applyTheme(theme); localStorage.setItem(THEME_STORAGE_KEY, theme); }, [theme]);
   useEffect(() => {
     if (!user) return;
     const enabled = user.coachEnabled ?? user.coachProfile ?? false;
@@ -58,7 +61,7 @@ export function App() {
   const athleteEnabled = user.athleteEnabled ?? user.athleteProfile ?? true;
   const effectiveMode = (mode === 'coach' || !athleteEnabled) && coachEnabled ? 'coach' : 'athlete';
   function switchMode(next: ProfileMode) { if (next === 'coach' && !coachEnabled) { navigate('profile'); return; } setMode(next); localStorage.setItem('acronote-profile', next); const nextRoute = next === 'coach' ? 'coach' : 'trainings'; history.pushState({}, '', `/${nextRoute}`); setRoute(nextRoute); }
-  const profile = <ProfilePage user={user} onLogout={logout} onUserChange={setUser} invitation={invitationTarget === 'athlete' ? invitation : ''} pendingCoachInvitation={invitationTarget === 'coach' ? invitation : ''}/>;
+  const profile = <ProfilePage user={user} onLogout={logout} onUserChange={setUser} theme={theme} onThemeChange={setTheme} invitation={invitationTarget === 'athlete' ? invitation : ''} pendingCoachInvitation={invitationTarget === 'coach' ? invitation : ''}/>;
   const pages = { trainings: <TrainingsPage setDirty={setDirty}/>, elements: <ElementsPage setDirty={setDirty}/>, routines: <RoutinesPage setDirty={setDirty}/>, stats: <StatsPage/>, coach: <CoachPage invitation={invitationTarget === 'coach' ? invitation : ''}/>, profile, admin: user.isAdmin ? <AdminPage currentUser={user}/> : profile };
   const navigation: Array<[Route, string, Parameters<typeof Icon>[0]['name']]> = effectiveMode === 'coach' ? [['coach', 'Zawodnicy', 'user'], ['profile', 'Profil', 'admin']] : [['trainings', 'Treningi', 'home'], ['elements', 'Elementy', 'spark'], ['routines', 'Układy', 'routine'], ['stats', 'Statystyki', 'chart'], ['profile', 'Profil', 'user']];
   if (user.isAdmin) navigation.push(['admin', 'Admin', 'admin']);

@@ -98,6 +98,9 @@ describe('profil trenera i zgody na udostępnienie historii', () => {
     await app.inject({method:'POST',url:'/api/coach/invitations/accept',headers:{cookie:coachCookie},payload:{token:invitation.json().token}});
     await app.inject({method:'PUT',url:'/api/profile',headers:{cookie:coachCookie},payload:{athleteEnabled:true,coachEnabled:false}});
     expect((await app.inject({method:'GET',url:`/api/coach/athletes/${athlete.json().id}/trainings`,headers:{cookie:coachCookie}})).statusCode).toBe(403);
+    expect((db.prepare('SELECT COUNT(*) count FROM coach_links WHERE athlete_id=? AND coach_id=?').get(athlete.json().id,coach.json().id) as any).count).toBe(1);
+    await app.inject({method:'PUT',url:'/api/profile',headers:{cookie:coachCookie},payload:{athleteEnabled:true,coachEnabled:true}});
+    expect((await app.inject({method:'GET',url:`/api/coach/athletes/${athlete.json().id}/trainings`,headers:{cookie:coachCookie}})).statusCode).toBe(200);
     await app.close();db.close();
   });
 });

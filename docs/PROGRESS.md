@@ -8,7 +8,7 @@
 
 **Etap:** kompletna lokalna wersja profilu zawodnika, profilu trenera tylko do odczytu i panelu administratora
 
-**Weryfikacja:** 53 testy automatyczne, kontrola typów, build, audyt zależności, migracja kopii istniejącej bazy oraz testy przeglądarkowe desktop/mobile na odizolowanej bazie
+**Weryfikacja:** 55 testów automatycznych, kontrola typów, build, audyt zależności, migracja kopii istniejącej bazy oraz testy przeglądarkowe desktop/mobile na odizolowanej bazie
 
 ## Zrealizowany zakres
 
@@ -60,10 +60,18 @@
 - Dostęp jest wyłącznie do odczytu. Każdy endpoint trenera weryfikuje aktywny profil i bieżące połączenie po stronie API.
 - Nowe zapisane wejścia są widoczne po użyciu „Odśwież”, bez potrzeby zamykania treningu przez zawodnika.
 - Zawodnik i trener mogą zakończyć połączenie; utrata dostępu jest natychmiastowa i nie usuwa historii.
+- Profil trenera można wyłączyć i ponownie włączyć; wyłączenie natychmiast blokuje odczyt, ale zachowuje połączenia.
+
+### Wygląd i dostęp lokalny
+
+- Tryb jasny i ciemny zachowują zielony motyw przewodni. Pierwsze uruchomienie respektuje motyw systemu, a ręczny wybór jest zapamiętywany w przeglądarce.
+- Oba motywy sprawdzono na szerokim widoku, a tryb ciemny dodatkowo na telefonicznym widoku 390×844.
+- README opisuje ograniczone udostępnienie produkcyjnego buildu telefonowi w tej samej prywatnej sieci Wi-Fi oraz ryzyka wynikające z braku HTTPS.
 
 ### Konto demo i administrator
 
 - `demo` / `AcroNote-demo-2026`: 30 zróżnicowanych elementów, dwa układy (drugi zawiera duplikat) i siedem treningów startowych.
+- `trener_demo` / `AcroNote-trener-2026`: profil zawodnika i trenera, połączony z kontem `demo`; seeder nie nadpisuje istniejącego hasła ani nie powiela relacji.
 - `admin` / `AcroNote-admin-2026`: osobny panel kont.
 - Administrator może tworzyć konto, zmieniać jego nazwę i rolę, ustawić hasło tymczasowe, miękko usunąć i odzyskać konto.
 - Może przeglądać i usuwać/odzyskiwać elementy i układy użytkownika oraz przeglądać i usuwać treningi.
@@ -73,15 +81,18 @@
 
 | Kontrola | Wynik | Szczegóły |
 |---|---|---|
-| `npm test` | **PASS** | API: 6 plików / 36 testów; web: 2 pliki / 17 testów; razem 53 |
+| `npm test` | **PASS** | API: 6 plików / 36 testów; web: 3 pliki / 19 testów; razem 55 |
 | `npm run typecheck` | **PASS** | `shared`, `web`, `api` |
 | `npm run build` | **PASS** | produkcyjny build Vite i API |
 | `npm audit --audit-level=moderate` | **PASS** | 0 znanych podatności |
 | `git diff --check` | **PASS** | brak błędów białych znaków; tylko informacyjne ostrzeżenia CRLF |
 | migracja bazy | **PASS** | najpierw kopia, potem baza lokalna: v3, zachowane 3 konta / 8 treningów / 34 elementy, idempotencja i `integrity_check=ok` |
+| dodanie demo trenera | **PASS** | kopia przed zmianą; po seedzie 4 konta / 8 treningów / 34 elementy, jedno połączenie `trener_demo` → `demo`, `integrity_check=ok` |
 | profil trenera — przeglądarka | **PASS** | dwa kierunki zaproszeń, aktywacja/przełączanie, zgoda, historia/elementy/układy/statystyki i nowy wpis po odświeżeniu |
 | bezpieczeństwo relacji | **PASS** | zapis cudzej historii zwraca 404; po odłączeniu odczyt trenera zwraca 403 |
 | responsywność | **PASS** | widok trenera i statystyk sprawdzony przy 390×844 |
+| motyw jasny/ciemny | **PASS** | oba motywy na desktopie, ciemny przy 390×844, wybór zachowany po przeładowaniu |
+| demo i dezaktywacja trenera | **PASS** | `trener_demo` widzi `demo`; wyłączenie daje 403, ponowne włączenie 200 bez utraty relacji |
 
 ## Pokrycie automatyczne
 
@@ -105,5 +116,7 @@
 
 - Nie uruchamiaj testów na `data/acronote.db`; używaj `:memory:` albo jawnej kopii.
 - Spójna kopia sprzed migracji profilu trenera znajduje się w `data/backups/acronote-before-coach-20260925.db`.
+- Spójna kopia sprzed dodania konta `trener_demo` znajduje się w `data/backups/acronote-before-demo-coach-20260926.db`.
 - Link i QR zawierają adres, z którego otwarto aplikację. Przy użyciu na drugim urządzeniu serwer musi być dostępny pod adresem sieciowym zamiast domyślnego `127.0.0.1`.
+- Dostęp z telefonu po HTTP jest przeznaczony tylko do krótkich testów w zaufanej sieci prywatnej. Nie przekierowuj portu na routerze i nie wyłączaj zapory.
 - Jawne hasło startowe administratora trzeba zmienić przed udostępnieniem aplikacji innym osobom.

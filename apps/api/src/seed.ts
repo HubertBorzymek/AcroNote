@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
 export const DEMO_CREDENTIALS = { username: 'demo', password: 'AcroNote-demo-2026' } as const;
+export const COACH_DEMO_CREDENTIALS = { username: 'trener_demo', password: 'AcroNote-trener-2026' } as const;
 export const ADMIN_CREDENTIALS = { username: 'admin', password: 'AcroNote-admin-2026' } as const;
 
 const demoElements = [
@@ -21,13 +22,16 @@ const demoElements = [
   ['12100/','Potrójne z półśrubą na początku'],['12111o','Potrójne po pół śruby'],['12303<','Potrójne w mieszanej konfiguracji']
 ] as const;
 
-export async function seedDemoAndAdmin(db: Db): Promise<{ demoCreated:boolean; adminCreated:boolean }> {
-  let demoCreated=false;let adminCreated=false;
+export async function seedDemoAndAdmin(db: Db): Promise<{ demoCreated:boolean; coachDemoCreated:boolean; coachLinkCreated:boolean; adminCreated:boolean }> {
+  let demoCreated=false;let coachDemoCreated=false;let adminCreated=false;
   let demo=db.prepare('SELECT id FROM users WHERE username=?').get(DEMO_CREDENTIALS.username) as {id:number}|undefined;
   if(!demo){const id=Number(db.prepare("INSERT INTO users(username,password_hash,role) VALUES(?,?,'user')").run(DEMO_CREDENTIALS.username,await bcrypt.hash(DEMO_CREDENTIALS.password,12)).lastInsertRowid);demo={id};demoCreated=true;seedExecutionTypes(db,id);seedDemoContent(db,id);}
+  let coachDemo=db.prepare('SELECT id FROM users WHERE username=?').get(COACH_DEMO_CREDENTIALS.username) as {id:number}|undefined;
+  if(!coachDemo){const id=Number(db.prepare("INSERT INTO users(username,password_hash,athlete_enabled,coach_enabled,role) VALUES(?,?,1,1,'user')").run(COACH_DEMO_CREDENTIALS.username,await bcrypt.hash(COACH_DEMO_CREDENTIALS.password,12)).lastInsertRowid);coachDemo={id};coachDemoCreated=true;seedExecutionTypes(db,id);}
+  const coachLinkCreated=Boolean(db.prepare('INSERT OR IGNORE INTO coach_links(athlete_id,coach_id) VALUES(?,?)').run(demo.id,coachDemo.id).changes);
   let admin=db.prepare('SELECT id FROM users WHERE username=?').get(ADMIN_CREDENTIALS.username) as {id:number}|undefined;
   if(!admin){const id=Number(db.prepare("INSERT INTO users(username,password_hash,role) VALUES(?,?,'admin')").run(ADMIN_CREDENTIALS.username,await bcrypt.hash(ADMIN_CREDENTIALS.password,12)).lastInsertRowid);admin={id};adminCreated=true;seedExecutionTypes(db,id);}
-  return {demoCreated,adminCreated};
+  return {demoCreated,coachDemoCreated,coachLinkCreated,adminCreated};
 }
 
 function seedDemoContent(db:Db,userId:number):void {
@@ -51,7 +55,9 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   try {
     const result=await seedDemoAndAdmin(db);
     console.log(`${result.demoCreated?'Utworzono':'Pozostawiono istniejące'} konto demo. Dane logowania dla nowego konta: ${DEMO_CREDENTIALS.username} / ${DEMO_CREDENTIALS.password}`);
+    console.log(`${result.coachDemoCreated?'Utworzono':'Pozostawiono istniejące'} konto demo trenera. Dane logowania dla nowego konta: ${COACH_DEMO_CREDENTIALS.username} / ${COACH_DEMO_CREDENTIALS.password}`);
+    console.log(`${result.coachLinkCreated?'Połączono':'Pozostawiono połączenie'} konto demo trenera z zawodnikiem demo.`);
     console.log(`${result.adminCreated?'Utworzono':'Pozostawiono istniejące'} konto admin. Dane logowania dla nowego konta: ${ADMIN_CREDENTIALS.username} / ${ADMIN_CREDENTIALS.password}`);
-    if(!result.demoCreated||!result.adminCreated)console.log('Istniejących kont i ich haseł ani danych nie zmieniono.');
+    if(!result.demoCreated||!result.coachDemoCreated||!result.adminCreated)console.log('Istniejących kont i ich haseł ani danych nie zmieniono.');
   } finally {db.close();}
 }

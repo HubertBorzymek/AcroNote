@@ -46,6 +46,7 @@ Ukończono naprawy elementów/układów, dodawanie elementu z wejścia, dialog z
 - Utworzenie zaproszenia jest zgodą jego twórcy; odbiorca widzi nadawcę i akceptuje. Jeśli odbiorcą jest zawodnik, musi dodatkowo zaznaczyć wyraźną zgodę na udostępnienie pełnej historii.
 - Dostęp trenera wykorzystuje osobne endpointy GET i wspólne mapowania treningów/statystyk. Nie ma endpointów zapisu w przestrzeni trenera.
 - Relacja jest sprawdzana na każde żądanie. Odłączenie lub wyłączenie profilu natychmiast odbiera dostęp.
+- Wyłączenie profilu trenera nie usuwa relacji; po ponownej aktywacji dostęp wraca bez nowego zaproszenia.
 
 ### Zaimplementowane
 
@@ -59,6 +60,10 @@ Ukończono naprawy elementów/układów, dodawanie elementu z wejścia, dialog z
 - zarządzanie trenerami zawodnika i zakończenie połączenia przez obie strony;
 - „Zapisz i kontynuuj” aktualizuje zapisany trening zamiast tworzyć kolejne rekordy;
 - nazewnictwo miejsc lądowania oraz rozkład ogólny i dla wybranego kodu w statystykach.
+- profil demonstracyjny `trener_demo`, połączony z zawodnikiem `demo`;
+- lokalny tryb jasny/ciemny, domyślnie zgodny z ustawieniem systemu i zapamiętywany w przeglądarce;
+- możliwość wyłączenia i ponownego włączenia profilu trenera bez usuwania zapisanych połączeń;
+- instrukcja krótkiego testu na telefonie w tej samej zaufanej sieci Wi-Fi.
 
 Commity funkcjonalne:
 
@@ -75,11 +80,12 @@ Końcowe zmiany tej iteracji obejmują bezwzględny adres linku/QR, test jego ko
 - Po migracji istnieją wersje 1–3, zaproszenia mają wszystkie nowe kolumny, a liczby 3 kont / 8 treningów / 34 elementów pozostały bez zmian.
 - Ponowne otwarcie nie dodało migracji ani rekordów; `PRAGMA integrity_check` zwróciło `ok`.
 - Po tej weryfikacji otwarto właściwą `data/acronote.db` aktualną warstwą bazy. Migracja v3 została zastosowana; pozostały 3 konta / 8 treningów / 34 elementy, a `integrity_check` nadal zwraca `ok`.
+- Przed dodaniem konta demo trenera wykonano spójną kopię `data/backups/acronote-before-demo-coach-20260926.db`. Seeder dodał wyłącznie `trener_demo` i relację z `demo`: baza ma teraz 4 konta / 8 treningów / 34 elementy, a `integrity_check` zwraca `ok`.
 - Pliki testowych baz są ignorowane przez Git.
 
 ## Weryfikacja 2026-09-26
 
-- `npm test`: 53/53 (API: 6 plików / 36, web: 2 pliki / 17).
+- `npm test`: 55/55 (API: 6 plików / 36, web: 3 pliki / 19).
 - `npm run typecheck`: PASS.
 - `npm run build`: PASS.
 - `npm audit --audit-level=moderate`: 0 podatności.
@@ -89,10 +95,13 @@ Końcowe zmiany tej iteracji obejmują bezwzględny adres linku/QR, test jego ko
 - Po dopisaniu nowego wejścia przez zawodnika otwarty widok trenera po „Odśwież” zmienił sumę z 30 na 31 bez wylogowania ani zamykania treningu.
 - Próba zapisu treningu zawodnika z sesji trenera zwróciła 404; po zakończeniu relacji ponowny odczyt zwrócił 403.
 - Responsywność profilu trenera i statystyk sprawdzona przy 390×844; przełącznik profili, zakładki i dolna nawigacja pozostają dostępne.
+- Tryb jasny i ciemny sprawdzono na szerokim widoku, a ciemny także przy 390×844; zielony pozostaje głównym kolorem interfejsu, a wybór przetrwał przeładowanie strony.
+- Na izolowanej bazie `trener_demo` widzi połączonego zawodnika `demo`; dezaktywacja zwróciła 403 dla jego historii, reaktywacja przywróciła 200 i zachowane połączenie.
 
 ## Konta startowe
 
 - `demo` / `AcroNote-demo-2026`
+- `trener_demo` / `AcroNote-trener-2026` — połączony z zawodnikiem `demo`
 - `admin` / `AcroNote-admin-2026`
 
 Hasła są jawne wyłącznie dlatego, że są to lokalne konta startowe. Hasło `admin` należy zmienić przed udostępnieniem aplikacji.
@@ -101,5 +110,6 @@ Hasła są jawne wyłącznie dlatego, że są to lokalne konta startowe. Hasło 
 
 - Odłożone zgodnie z wymaganiami: pomoc trenera w odzyskiwaniu konta, komentarze, cele treningowe i grupy klubowe.
 - Link/QR działa na urządzeniach, które mogą otworzyć adres aplikacji. Domyślne `127.0.0.1` jest osiągalne tylko na tym samym komputerze; udostępnienie w sieci wymaga jawnej konfiguracji `HOST`, adresu sieciowego i późniejszego utwardzenia bezpieczeństwa.
+- Tryb dostępu z telefonu używa zwykłego HTTP. Jest przeznaczony wyłącznie do krótkich testów w zaufanej, prywatnej sieci; nie należy wystawiać portu w Internecie ani używać publicznego Wi-Fi.
 - Nie ma automatycznego E2E w wielu silnikach przeglądarek; krytyczne ścieżki mają testy integracyjne i zostały dodatkowo wykonane ręcznie w Chromium.
 - Przed każdym kolejnym wydaniem trzeba powtórzyć komplet kontroli z `AGENTS.md`.

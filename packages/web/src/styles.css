@@ -1,8 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap');
 
-:root { font-family: 'DM Sans', system-ui, sans-serif; color: #19211d; background: #f3f5f1; font-synthesis: none; --ink:#19211d; --muted:#68736c; --line:#dfe4de; --paper:#fff; --green:#235f4c; --green-2:#377b65; --lime:#ddec72; --soft:#edf3ee; --danger:#ad3f39; }
+:root { font-family: 'DM Sans', system-ui, sans-serif; color: #19211d; background: #f3f5f1; font-synthesis: none; color-scheme:light; --ink:#19211d; --muted:#68736c; --line:#dfe4de; --paper:#fff; --green:#235f4c; --green-2:#377b65; --lime:#ddec72; --soft:#edf3ee; --danger:#ad3f39; --page:#f4f6f2; --page-glow:#e8f0e8; --divider:#edf0ed; --sheet:#f7f8f5; --subtle:#fbfcfa; --nav:rgba(255,255,255,.94); }
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 80% 0,#e8f0e8 0,transparent 26rem),#f4f6f2; }
+body { margin: 0; min-width: 320px; min-height: 100vh; color:var(--ink); background: radial-gradient(circle at 80% 0,var(--page-glow) 0,transparent 26rem),var(--page); }
 button,input,select { font: inherit; } button { color: inherit; } button:focus-visible,input:focus-visible,select:focus-visible { outline: 3px solid rgba(55,123,101,.25); outline-offset: 2px; }
 h1,h2,p { margin-top: 0; } h1,h2,strong { font-family: Manrope, sans-serif; } .icon { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .app-shell { min-height:100vh; }.content { max-width:1100px; margin:0 auto; padding:28px 28px 110px; }.page { width:100%; }.page-header { min-height:72px; display:flex; gap:14px; align-items:center; margin-bottom:26px; }.page-title { flex:1; }.page-title>span,.kicker { color:var(--green-2); font-size:.73rem; letter-spacing:.13em; font-weight:800; text-transform:uppercase; }.page-title h1 { margin:3px 0 0; font-size:clamp(1.65rem,4vw,2.25rem); letter-spacing:-.04em; }.icon-button { width:44px;height:44px;border:1px solid var(--line);background:white;border-radius:13px;display:grid;place-items:center;cursor:pointer; }
@@ -36,3 +36,27 @@ h1,h2,p { margin-top: 0; } h1,h2,strong { font-family: Manrope, sans-serif; } .i
 .landing-stats{background:white;border:1px solid var(--line);border-radius:18px;padding:17px;margin-bottom:14px}.landing-stats header{display:flex;justify-content:space-between;gap:14px}.landing-stats header>div>span{color:var(--green-2);text-transform:uppercase;letter-spacing:.1em;font-size:.67rem;font-weight:700}.landing-stats h2{font-size:1rem;margin:3px 0 15px}.landing-stats header>small{color:var(--muted);font-size:.67rem;max-width:240px}.landing-stats article{padding:8px 0}.landing-stats article>div{display:flex;justify-content:space-between;font-size:.78rem}.landing-stats article span{color:var(--muted)}.landing-stats article>i{display:block;height:8px;background:#edf1ed;border-radius:5px;overflow:hidden;margin-top:5px}.landing-stats article>i>b{display:block;height:100%;background:linear-gradient(90deg,#78ad95,#235f4c)}
 @media(max-width:560px){.sticky-save{align-items:flex-start}.sticky-save>span{display:none}.sticky-save>div{width:100%}.sticky-save>div .button{flex:1;padding:0 9px;font-size:.76rem}.connections-grid{grid-template-columns:1fr}.connection-action p{min-height:0}.invitation-ticket{grid-template-columns:1fr}.invitation-ticket img{grid-row:auto;width:150px;height:150px;margin:auto}.athlete-list{grid-template-columns:1fr}.landing-stats header{flex-direction:column}.history-panel>div{grid-template-columns:90px 35px 1fr}.readonly-card>header{align-items:flex-start;gap:8px;flex-direction:column}}
 @media(min-width:760px){.mobile-profile-switch{display:none}}
+
+/* Motyw i wybór wyglądu. Zielony pozostaje kolorem głównym w obu wariantach. */
+.profile-option-actions{flex:0 0 auto!important;align-items:flex-end;gap:3px}.profile-option-actions>b{font-size:.65rem;color:var(--green);background:#dcece2;padding:4px 7px;border-radius:999px}.theme-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:13px}.theme-options button{min-height:64px;border:1px solid var(--line);background:var(--soft);color:var(--muted);border-radius:13px;display:flex;align-items:center;justify-content:center;gap:9px;cursor:pointer}.theme-options button span{font-size:1.25rem}.theme-options button.active{border-color:var(--green-2);background:#dcece2;color:var(--green);box-shadow:0 0 0 2px rgba(55,123,101,.12)}
+:root[data-theme='dark']{color-scheme:dark;color:#edf6f0;background:#0f1914;--ink:#edf6f0;--muted:#a8b8af;--line:#34493f;--paper:#18261f;--green:#3f9272;--green-2:#7bc4a1;--lime:#ddec72;--soft:#22372d;--danger:#ff928a;--page:#0f1914;--page-glow:#193126;--divider:#2a4035;--sheet:#14221b;--subtle:#1d3026;--nav:rgba(15,25,20,.96)}
+:root[data-theme='dark'] :is(input,select){color:var(--ink)}
+:root[data-theme='dark'] :is(.icon-button,.button.secondary,.training-card,.search,.search input,.filter-row button,.element-card,.routine-card,.element-tools select,.element-tools button,.stats-element-filter select,.code-help,.confirm-dialog,.form-stack input,.activity-editor select,.date-panel input,.execution-select select,.check-row,.slot,.pick-list button,.date-panel,.entry-card,.counter,.counter input,.activity-title,.snapshot-elements,.range-fields select,.stat-card,.chart-card,.ranking,.settings-card,.stats-element-filter,.admin-users article,.admin-data section,.auth-card,.segmented button.active,.invitation-input input,.invitation-ticket input,.invitation-preview,.athlete-list>button,.readonly-summary span,.history-panel,.landing-stats){background:var(--paper)}
+:root[data-theme='dark'] :is(.bottom-nav,.sticky-save){background:var(--nav)}
+:root[data-theme='dark'] .sheet{background:var(--sheet)}
+:root[data-theme='dark'] :is(.activity,.admin-users article.deleted){background:var(--subtle);border-color:var(--line)}
+:root[data-theme='dark'] :is(.empty-icon,.state-mark,.segmented,.mobile-profile-switch,.connection-action,.profile-option>span,.settings-row>span,.training-index,.routine-preview span,.slot-number,.date-panel>div,.admin-actions button,.admin-data section>div button,.settings-heading button,.execution-settings button,.linked-people>div>span){background:var(--soft)}
+:root[data-theme='dark'] :is(.card-actions,.routine-card footer,.snapshot-elements>div:not(.field-label),.rank-row,.profile-option,.settings-row,.execution-settings>div,.invitation-list>div,.linked-people>div,.history-panel>div,.readonly-elements){border-color:var(--divider)}
+:root[data-theme='dark'] :is(.hint,.admin-notice,.add-entry){background:#1d3529;color:#b6c9bf}
+:root[data-theme='dark'] :is(.add-slot,.add-activity button){background:#182d23;border-color:#51715f}
+:root[data-theme='dark'] .slot.duplicate{background:#332b1b;border-color:#8f733b}
+:root[data-theme='dark'] .duplicate-tag{background:#47391f;color:#f0c978}
+:root[data-theme='dark'] .button.danger{background:#3a211f;border-color:#70413d}
+:root[data-theme='dark'] .logout-button{background:#2c1c1b;border-color:#6a3d39}
+:root[data-theme='dark'] .form-error{background:#3a211f}
+:root[data-theme='dark'] .invitation-ticket{background:#1b3025;border-color:#3d5b4c}
+:root[data-theme='dark'] .invitation-prompt{background:#1a3025;border-color:#416451}
+:root[data-theme='dark'] :is(.rank-row>div,.landing-stats article>i){background:#263a30}
+:root[data-theme='dark'] .coach-tabs{background:var(--page)}
+:root[data-theme='dark'] .theme-options button.active{background:#214632;color:#9ed6b9}
+:root[data-theme='dark'] :is(.profile-switch button.active,.mobile-profile-switch button.active){background:#dcece2;color:#235f4c}

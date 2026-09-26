@@ -111,6 +111,8 @@ Oś czasu agreguje wiele treningów tej samej daty do jednego punktu. Opcjonalny
 
 Frontend organizuje widoki według zadań użytkownika: treningi, elementy, układy, statystyki i profil. Stan serwerowy pochodzi z REST API, natomiast stan niezapisanego formularza pozostaje lokalny do momentu potwierdzonego zapisu.
 
+Wybrany motyw (`light`/`dark`) jest ustawieniem danego urządzenia przechowywanym w `localStorage`; nie jest daną konta i nie wymaga migracji bazy. Przy braku zapisanego wyboru aplikacja respektuje preferencję systemową. Oba warianty używają wspólnego zestawu zielonych akcentów i zmiennych CSS.
+
 Formularze edycyjne powinny:
 
 - zachowywać dane po błędzie API;

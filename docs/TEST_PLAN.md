@@ -45,6 +45,9 @@ Testy nie używają pliku `data/acronote.db`. Każdy zestaw integracyjny otrzymu
 | T26 | Uprawnienia trenera | Połączony trener widzi wszystkie zasoby tylko do odczytu; obcy i zapis otrzymują odmowę |
 | T27 | Odłączenie/profil | Odłączenie lub wyłączenie profilu natychmiast odbiera dostęp bez usunięcia historii |
 | T28 | Zapis w trakcie treningu | „Zapisz i kontynuuj” publikuje bieżące wejścia i kolejne PUT są widoczne po odświeżeniu trenera |
+| T29 | Dane demo trenera | Seeder tworzy `trener_demo`, łączy go z `demo` i pozostaje idempotentny |
+| T30 | Wyłączenie profilu trenera | Dostęp znika od razu, relacja pozostaje, a reaktywacja przywraca odczyt |
+| T31 | Motyw | Jawny wybór jasny/ciemny ma pierwszeństwo, a pierwszy start respektuje ustawienie urządzenia |
 
 ## Konta i uprawnienia
 
@@ -78,6 +81,8 @@ Na telefonowym rozmiarze widoku należy sprawdzić:
 13. zaproszenie w obu kierunkach przez kod oraz link/QR, podgląd nadawcy i zgodę zawodnika;
 14. pełny podgląd zawodnika tylko do odczytu oraz utratę dostępu po odłączeniu;
 15. rozkład miejsc lądowania ogółem i dla kodu, również w układzie `41o + 800o`.
+16. jasny i ciemny motyw na desktopie i telefonie, w tym zapamiętanie wyboru po odświeżeniu;
+17. wyłączenie profilu trenera po potwierdzeniu i możliwość ponownej aktywacji bez utraty połączeń.
 
 ## Macierz przeglądarek
 

@@ -96,6 +96,7 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **UI-03:** główna nawigacja obejmuje treningi/kalendarz, elementy, układy, statystyki oraz profil/ustawienia.
 - **UI-04:** użytkownik może szybko wrócić do edytowanego wejścia i sprawnie dodawać elementy.
 - **UI-05:** interfejs pozostaje funkcjonalny na komputerze; nie wymaga instalacji PWA.
+- **UI-06:** użytkownik może wybrać jasny lub ciemny motyw; wybór jest zapamiętywany lokalnie, a zielony pozostaje kolorem głównym.
 
 ### Administracja
 
@@ -122,6 +123,7 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - Konto może przełączać się między osobnym interfejsem zawodnika i trenera bez ponownego logowania.
 - Zawodnik może mieć dowolną liczbę równorzędnych trenerów, a trener dowolną liczbę zawodników.
 - Zawodnik może odłączyć trenera, co natychmiast odbiera dostęp; po połączeniu trener widzi całą historię.
+- Użytkownik może wyłączyć i ponownie aktywować profil trenera. Wyłączenie natychmiast wstrzymuje dostęp, ale nie usuwa relacji z zawodnikami.
 - Obie strony mogą inicjować zaproszenie linkiem, QR lub krótkim kodem, lecz zawodnik zawsze świadomie zatwierdza dostęp.
 - Zaproszenia wygasają, a próby kodów są limitowane; sam link nie przyznaje dostępu.
 - Zaimplementowany zakres nie obejmuje pomocy w odzyskiwaniu konta, komentarzy, celów ani grup klubowych.
