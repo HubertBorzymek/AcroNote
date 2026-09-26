@@ -24,6 +24,7 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **ACC-04:** każde zapytanie do danych zawodnika jest autoryzowane po stronie serwera i ograniczone do właściwego użytkownika.
 - **ACC-05:** po zalogowaniu użytkownik może zmienić hasło.
 - **ACC-06:** konto może mieć profil zawodnika, trenera albo oba i przełączać się bez ponownego logowania.
+- **ACC-07:** nazwa użytkownika może być imieniem i nazwiskiem ze spacją, np. `Maria Kowalska`; znaki nowej linii i znaki sterujące są niedozwolone.
 
 ### Własne elementy
 

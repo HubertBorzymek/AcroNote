@@ -3,6 +3,19 @@ import { buildApp } from '../src/app.js';
 import { openDatabase } from '../src/db.js';
 
 describe('uwierzytelnianie i izolacja danych',()=>{
+  it('pozwala użyć imienia i nazwiska ze spacją, ale odrzuca znaki nowej linii',async()=>{
+    const db=openDatabase(':memory:'); const app=await buildApp({db});
+    const registered=await app.inject({method:'POST',url:'/api/auth/register',payload:{username:'  Maria  Kowalska  ',password:'bardzo-bezpieczne-haslo'}});
+    expect(registered.statusCode).toBe(201);
+    expect(registered.json().username).toBe('Maria Kowalska');
+    const login=await app.inject({method:'POST',url:'/api/auth/login',payload:{username:'Maria Kowalska',password:'bardzo-bezpieczne-haslo'}});
+    expect(login.statusCode).toBe(200);
+    expect(login.json().username).toBe('Maria Kowalska');
+    const invalid=await app.inject({method:'POST',url:'/api/auth/register',payload:{username:'Maria\nKowalska',password:'bardzo-bezpieczne-haslo'}});
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().message).toBe('Nazwa użytkownika zawiera niedozwolone znaki.');
+    await app.close();db.close();
+  });
   it('ogranicza serię rejestracji na pięć minut i zwraca polski komunikat',async()=>{
     const db=openDatabase(':memory:'); const app=await buildApp({db});
     for(let index=0;index<10;index++){

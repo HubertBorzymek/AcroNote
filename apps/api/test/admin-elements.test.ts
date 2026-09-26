@@ -35,6 +35,13 @@ describe('elementy i administracja', () => {
     const response=await app.inject({method:'GET',url:'/api/admin/users?includeDeleted=true',headers:auth(adminCookie)});expect(response.statusCode).toBe(200);expect(response.body).not.toContain('password_hash');expect(response.body).not.toContain('token_hash');
   });
 
+  it('pozwala administratorowi tworzyć i zmieniać nazwy kont zawierające spację',async()=>{
+    const created=await app.inject({method:'POST',url:'/api/admin/users',headers:auth(adminCookie),payload:{username:'Anna Nowak',password:'bezpieczne-haslo'}});
+    expect(created.statusCode).toBe(201);expect(created.json().username).toBe('Anna Nowak');
+    const updated=await app.inject({method:'PUT',url:`/api/admin/users/${created.json().id}`,headers:auth(adminCookie),payload:{username:'Anna Kowalska'}});
+    expect(updated.statusCode).toBe(200);expect(updated.json().username).toBe('Anna Kowalska');
+  });
+
   it('unieważnia sesje po soft-delete i pozwala przywrócić konto',async()=>{
     expect((await app.inject({method:'DELETE',url:`/api/admin/users/${userId}`,headers:auth(adminCookie)})).statusCode).toBe(200);
     expect((await app.inject({method:'GET',url:'/api/auth/me',headers:auth(userCookie)})).statusCode).toBe(401);

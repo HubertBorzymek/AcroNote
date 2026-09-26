@@ -18,6 +18,12 @@ const text = (value: unknown, label: string, min = 1) => {
   if (typeof value !== 'string' || value.trim().length < min) throw new Error(`${label} jest nieprawidłowe.`);
   return value.trim();
 };
+const usernameText = (value: unknown) => {
+  if (typeof value !== 'string' || /[\r\n\t]/u.test(value)) throw new Error('Nazwa użytkownika zawiera niedozwolone znaki.');
+  const username = value.trim().replace(/ {2,}/g, ' ');
+  if (username.length < 3 || username.length > 80 || !/^[\p{L}\p{N}_.-]+(?: [\p{L}\p{N}_.-]+)*$/u.test(username)) throw new Error('Nazwa użytkownika zawiera niedozwolone znaki.');
+  return username;
+};
 
 declare module 'fastify' { interface FastifyRequest { userId: number; userRole: 'user' | 'admin' } }
 
@@ -62,9 +68,8 @@ export async function buildApp(options: { db?: Db; logger?: boolean } = {}) {
   app.get('/api/health', async () => ({ ok: true }));
   app.post('/api/auth/register', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
     const body = request.body as any;
-    const username = text(body?.username, 'Nazwa użytkownika', 3);
+    const username = usernameText(body?.username);
     const password = text(body?.password, 'Hasło', 10);
-    if (!/^[\p{L}\p{N}_.-]+$/u.test(username)) throw new Error('Nazwa użytkownika zawiera niedozwolone znaki.');
     const passwordHash = await bcrypt.hash(password, 12);
     let userId: number;
     try { userId = Number(db.prepare('INSERT INTO users(username,password_hash) VALUES(?,?)').run(username, passwordHash).lastInsertRowid); }
@@ -75,7 +80,7 @@ export async function buildApp(options: { db?: Db; logger?: boolean } = {}) {
   });
   app.post('/api/auth/login', { config: { rateLimit: { max: 15, timeWindow: '15 minutes' } } }, async (request, reply) => {
     const body = request.body as any;
-    const username = text(body?.username, 'Nazwa użytkownika');
+    const username = usernameText(body?.username);
     const password = text(body?.password, 'Hasło');
     const user = db.prepare('SELECT id,username,password_hash,athlete_enabled,coach_enabled,role FROM users WHERE username=? AND deleted_at IS NULL').get(username) as any;
     if (!user || !(await bcrypt.compare(password, user.password_hash))) return reply.status(401).send({ message: 'Nieprawidłowa nazwa użytkownika lub hasło.' });
@@ -167,7 +172,7 @@ export async function buildApp(options: { db?: Db; logger?: boolean } = {}) {
     return user??reply.status(404).send({message:'Nie znaleziono konta.'});
   });
   app.post('/api/admin/users', adminAuth, async (request,reply) => {
-    const b=request.body as any; const username=text(b?.username,'Nazwa użytkownika',3);const password=text(b?.password,'Hasło',10);const role=b?.role==='admin'?'admin':'user';
+    const b=request.body as any; const username=usernameText(b?.username);const password=text(b?.password,'Hasło',10);const role=b?.role==='admin'?'admin':'user';
     let id:number;try{id=Number(db.prepare('INSERT INTO users(username,password_hash,athlete_enabled,coach_enabled,role) VALUES(?,?,?,?,?)').run(username,await bcrypt.hash(password,12),bool(b.athleteEnabled??true),bool(b.coachEnabled),role).lastInsertRowid);}catch{return reply.status(409).send({message:'Ta nazwa użytkownika jest już zajęta.'});}
     seedExecutionTypes(db,id);return reply.status(201).send(adminUser(db,id));
   });
@@ -175,7 +180,8 @@ export async function buildApp(options: { db?: Db; logger?: boolean } = {}) {
     const userId=Number((request.params as any).userId);const b=request.body as any;const current=db.prepare('SELECT * FROM users WHERE id=?').get(userId) as any;if(!current)return reply.status(404).send({message:'Nie znaleziono konta.'});
     const role=b.role===undefined?current.role:(b.role==='admin'?'admin':'user');
     if(userId===request.userId&&role!=='admin')return reply.status(400).send({message:'Nie możesz odebrać sobie roli administratora.'});
-    try{db.prepare('UPDATE users SET username=?,athlete_enabled=?,coach_enabled=?,role=? WHERE id=?').run(b.username===undefined?current.username:text(b.username,'Nazwa użytkownika',3),bool(b.athleteEnabled??current.athlete_enabled),bool(b.coachEnabled??current.coach_enabled),role,userId);}catch{return reply.status(409).send({message:'Ta nazwa użytkownika jest już zajęta.'});}
+    const username=b.username===undefined?current.username:usernameText(b.username);
+    try{db.prepare('UPDATE users SET username=?,athlete_enabled=?,coach_enabled=?,role=? WHERE id=?').run(username,bool(b.athleteEnabled??current.athlete_enabled),bool(b.coachEnabled??current.coach_enabled),role,userId);}catch{return reply.status(409).send({message:'Ta nazwa użytkownika jest już zajęta.'});}
     if(b.password!==undefined)db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(await bcrypt.hash(text(b.password,'Hasło',10),12),userId);
     return adminUser(db,userId);
   });

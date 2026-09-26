@@ -85,7 +85,7 @@ Końcowe zmiany tej iteracji obejmują bezwzględny adres linku/QR, test jego ko
 
 ## Weryfikacja 2026-09-26
 
-- `npm test`: 55/55 (API: 6 plików / 36, web: 3 pliki / 19).
+- `npm test`: 57/57 (API: 6 plików / 38, web: 3 pliki / 19).
 - `npm run typecheck`: PASS.
 - `npm run build`: PASS.
 - `npm audit --audit-level=moderate`: 0 podatności.
@@ -97,6 +97,8 @@ Końcowe zmiany tej iteracji obejmują bezwzględny adres linku/QR, test jego ko
 - Responsywność profilu trenera i statystyk sprawdzona przy 390×844; przełącznik profili, zakładki i dolna nawigacja pozostają dostępne.
 - Tryb jasny i ciemny sprawdzono na szerokim widoku, a ciemny także przy 390×844; zielony pozostaje głównym kolorem interfejsu, a wybór przetrwał przeładowanie strony.
 - Na izolowanej bazie `trener_demo` widzi połączonego zawodnika `demo`; dezaktywacja zwróciła 403 dla jego historii, reaktywacja przywróciła 200 i zachowane połączenie.
+- Rejestracja, logowanie oraz panel administratora akceptują nazwy ze spacją, np. `Maria Kowalska`; nadmiarowe spacje są normalizowane, a Enter i tabulatory odrzucane.
+- Karty układów na telefonie pokazują elementy w trzykolumnowej siatce bez poszerzania strony. Lista i edytor zostały sprawdzone przy 390×844, wraz z widoczną dolną nawigacją.
 
 ## Konta startowe
 

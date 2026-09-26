@@ -8,13 +8,14 @@
 
 **Etap:** kompletna lokalna wersja profilu zawodnika, profilu trenera tylko do odczytu i panelu administratora
 
-**Weryfikacja:** 55 testów automatycznych, kontrola typów, build, audyt zależności, migracja kopii istniejącej bazy oraz testy przeglądarkowe desktop/mobile na odizolowanej bazie
+**Weryfikacja:** 57 testów automatycznych, kontrola typów, build, audyt zależności, migracja kopii istniejącej bazy oraz testy przeglądarkowe desktop/mobile na odizolowanej bazie
 
 ## Zrealizowany zakres
 
 ### Konta i bezpieczeństwo
 
 - Rejestracja, logowanie, wylogowanie i zmiana hasła (minimum 10 znaków).
+- Nazwa konta może zawierać pojedyncze spacje, np. `Maria Kowalska`; aplikacja normalizuje nadmiarowe spacje i blokuje znaki nowej linii.
 - Limit serii rejestracji wynosi 10 prób na 5 minut; komunikat błędu jest po polsku.
 - Hasła `bcrypt`; losowe sesje przechowywane jako skróty i przesyłane w `HttpOnly`, `SameSite=Strict`.
 - Kontrola właściciela zasobu w API i test izolacji użytkowników.
@@ -32,6 +33,7 @@
 ### Układy i treningi
 
 - Tworzenie, edycja, kolejność, duplikaty i usuwanie układów.
+- Na telefonie elementy zapisanych układów układają się w trzy kolumny, nie poszerzają strony i pozostawiają dostępną dolną nawigację.
 - Element można utworzyć bezpośrednio z wyboru w wejściu, po czym aplikacja wraca do tego samego miejsca bez utraty formularza.
 - Cofnięcie z niezapisanymi zmianami pokazuje „Zapisz”, „Odrzuć” i „Zostań”; zapis wykonuje prawdziwe żądanie do API.
 - „Zapisz i kontynuuj” utrzymuje identyfikator zapisanego treningu, więc kolejne zapisy aktualizują ten sam rekord i są od razu widoczne trenerowi po odświeżeniu.
@@ -81,7 +83,7 @@
 
 | Kontrola | Wynik | Szczegóły |
 |---|---|---|
-| `npm test` | **PASS** | API: 6 plików / 36 testów; web: 3 pliki / 19 testów; razem 55 |
+| `npm test` | **PASS** | API: 6 plików / 38 testów; web: 3 pliki / 19 testów; razem 57 |
 | `npm run typecheck` | **PASS** | `shared`, `web`, `api` |
 | `npm run build` | **PASS** | produkcyjny build Vite i API |
 | `npm audit --audit-level=moderate` | **PASS** | 0 znanych podatności |
@@ -93,6 +95,8 @@
 | responsywność | **PASS** | widok trenera i statystyk sprawdzony przy 390×844 |
 | motyw jasny/ciemny | **PASS** | oba motywy na desktopie, ciemny przy 390×844, wybór zachowany po przeładowaniu |
 | demo i dezaktywacja trenera | **PASS** | `trener_demo` widzi `demo`; wyłączenie daje 403, ponowne włączenie 200 bez utraty relacji |
+| nazwa ze spacją | **PASS** | rejestracja/logowanie `Maria Kowalska`, tworzenie i zmiana nazwy przez administratora, odrzucenie Entera |
+| układy mobile | **PASS** | lista i edytor przy 390×844; pełna siatka elementów bez poziomego przepełnienia, widoczna dolna nawigacja |
 
 ## Pokrycie automatyczne
 

@@ -32,7 +32,7 @@ export function Auth({ onAuthenticated }: { onAuthenticated: (user: User) => voi
       </div>
       <div className="auth-heading"><span className="kicker">Witaj w AcroNote</span><h1>{mode === 'login' ? 'Dobrze Cię widzieć' : 'Zacznij swój dziennik'}</h1><p>{mode === 'login' ? 'Zaloguj się, by wrócić do swoich treningów.' : 'Twoje elementy i treningi będą dostępne tylko dla Ciebie.'}</p></div>
       <form onSubmit={submit} className="form-stack">
-        <label>Nazwa użytkownika<input autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required minLength={3} placeholder="np. ola_kowalska"/></label>
+        <label>Nazwa użytkownika<input autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required minLength={3} maxLength={80} placeholder="np. Maria Kowalska"/><small>Możesz wpisać imię i nazwisko ze spacją.</small></label>
         <label>Hasło<input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Minimum 8 znaków"/></label>
         {mode === 'register' && <label>Powtórz hasło<input type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required/></label>}
         {error && <p className="form-error" role="alert">{error}</p>}

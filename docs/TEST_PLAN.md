@@ -48,6 +48,7 @@ Testy nie używają pliku `data/acronote.db`. Każdy zestaw integracyjny otrzymu
 | T29 | Dane demo trenera | Seeder tworzy `trener_demo`, łączy go z `demo` i pozostaje idempotentny |
 | T30 | Wyłączenie profilu trenera | Dostęp znika od razu, relacja pozostaje, a reaktywacja przywraca odczyt |
 | T31 | Motyw | Jawny wybór jasny/ciemny ma pierwszeństwo, a pierwszy start respektuje ustawienie urządzenia |
+| T32 | Nazwa użytkownika ze spacją | Rejestracja, logowanie i administracja akceptują `Maria Kowalska`, normalizują nadmiarowe spacje i odrzucają nową linię |
 
 ## Konta i uprawnienia
 
