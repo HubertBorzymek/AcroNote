@@ -213,8 +213,10 @@ export async function buildApp(options: { db?: Db; logger?: boolean } = {}) {
     const token=randomBytes(24).toString('base64url'); const shortCode=randomBytes(4).toString('hex').toUpperCase();
     const id=Number(db.prepare("INSERT INTO invitations(creator_id,role,token_hash,short_code_hash,expires_at) VALUES(?,?,?,?,datetime('now',?))").run(request.userId,role,hashToken(token),hashToken(shortCode),`+${expiresInHours} hours`).lastInsertRowid);
     const row=db.prepare('SELECT created_at createdAt,expires_at expiresAt FROM invitations WHERE id=?').get(id) as any;
-    const path=`/zaproszenie/${token}`; const qrDataUrl=await QRCode.toDataURL(path,{margin:1,width:280});
-    return reply.status(201).send({id,role,token,shortCode,path,qrDataUrl,expiresInHours,...row,status:'pending'});
+    const path=`/zaproszenie/${token}`;
+    const url=`${request.protocol}://${request.headers.host ?? '127.0.0.1'}${path}`;
+    const qrDataUrl=await QRCode.toDataURL(url,{margin:1,width:280});
+    return reply.status(201).send({id,role,token,shortCode,path,url,qrDataUrl,expiresInHours,...row,status:'pending'});
   });
   app.get('/api/coach/invitations/preview', { ...auth, config:{rateLimit:{max:20,timeWindow:'5 minutes'}} }, async (request,reply) => {
     const q=request.query as any; const credential=text(q.token??q.shortCode??q.credential,'Kod zaproszenia');

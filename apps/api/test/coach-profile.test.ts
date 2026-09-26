@@ -33,6 +33,7 @@ describe('profil trenera i zgody na udostępnienie historii', () => {
     const invitation=await app.inject({method:'POST',url:'/api/coach/invitations',headers:{cookie:athleteCookie},payload:{role:'athlete',expiresInHours:2}});
     expect(invitation.statusCode).toBe(201);
     expect(invitation.json()).toMatchObject({role:'athlete',status:'pending',expiresInHours:2});
+    expect(invitation.json().url).toMatch(/^http:\/\/localhost(?::\d+)?\/zaproszenie\//);
     const preview=await app.inject({method:'GET',url:`/api/coach/invitations/preview?credential=${invitation.json().shortCode.toLowerCase()}`,headers:{cookie:coachCookie}});
     expect(preview.json()).toMatchObject({creatorUsername:'zawodnik',requiredProfile:'coach'});
     expect((await app.inject({method:'GET',url:'/api/coach/invitations',headers:{cookie:athleteCookie}})).json()[0]).not.toHaveProperty('token');

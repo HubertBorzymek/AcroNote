@@ -57,7 +57,7 @@ export function InvitationPanel({ role, initialValue = '', onConnected }: { role
   }
   if (invitations.loading) return <Loading/>;
   if (invitations.error) return <ErrorState message={invitations.error} retry={invitations.reload}/>;
-  const shareUrl = created ? new URL(created.path ?? `/connect?token=${created.token ?? ''}`, location.origin).toString() : '';
+  const shareUrl = created ? created.url ?? new URL(created.path ?? `/connect?token=${created.token ?? ''}`, location.origin).toString() : '';
   return <div className="connections-panel">
     <div className="connections-grid">
       <section className="connection-action"><h3>Wyślij zaproszenie</h3><p>{role === 'athlete' ? 'Trener po zaakceptowaniu zobaczy Twoją historię tylko do odczytu.' : 'Zawodnik musi świadomie zaakceptować udostępnienie historii.'}</p><button className="button primary" disabled={busy} onClick={() => void create()}>Utwórz kod, link i QR</button></section>

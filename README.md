@@ -2,7 +2,7 @@
 
 AcroNote to polskojęzyczny, responsywny dziennik treningów akrobatycznych na trampolinie. Aplikacja łączy frontend React/Vite, REST API Fastify i lokalną bazę SQLite w jednym monorepo npm.
 
-> Dostępna jest kompletna, lokalna wersja dziennika zawodnika wraz z panelem administratora. Profil trenera pozostaje świadomie odłożony. Aktualny, zweryfikowany zakres opisuje [docs/PROGRESS.md](docs/PROGRESS.md).
+> Dostępna jest kompletna, lokalna wersja dziennika zawodnika, profilu trenera tylko do odczytu oraz panelu administratora. Aktualny, zweryfikowany zakres opisuje [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Wymagania
 
@@ -54,7 +54,7 @@ npm test
 npm run typecheck
 ```
 
-`npm test` uruchamia testy backendu i frontendu. Obejmują one migawki historyczne, statystyki, izolację danych, administrację, migrację istniejącej bazy, seeder, parser kodów i klienta HTTP. Szczegółowy zakres znajduje się w [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
+`npm test` uruchamia testy backendu i frontendu. Obejmują one migawki historyczne, statystyki lądowań, izolację danych, profil trenera, zaproszenia i zgody, administrację, migrację istniejącej bazy, seeder, parser kodów i klienta HTTP. Szczegółowy zakres znajduje się w [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
 
 ## Dane demonstracyjne
 
@@ -103,7 +103,7 @@ Przed ręcznym kopiowaniem bazy zatrzymaj aplikację. Przy wdrożeniu na serwerz
 
 ## Najważniejsze założenie danych historycznych
 
-Wykonania układów są zapisywane jako niezależne migawki kodów, nazw, kolejności i rodzajów wykonania. Dzięki temu późniejsza zmiana szablonu układu albo elementu nie powinna zmienić dawnych treningów i statystyk. Szczegóły zawiera [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Wykonania układów są zapisywane jako niezależne migawki kodów, nazw, kolejności i miejsc lądowania. Dzięki temu późniejsza zmiana szablonu układu albo elementu nie powinna zmienić dawnych treningów i statystyk. Szczegóły zawiera [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Rozwiązywanie problemów
 
@@ -122,4 +122,4 @@ Wykonania układów są zapisywane jako niezależne migawki kodów, nazw, kolejn
 
 ## Funkcje przyszłe
 
-PWA i offline, import/eksport, kluby, komentarze i cele, generator kodów oraz punktacja pozostają poza bieżącym zakresem. Profile trenera i zaproszenia należy traktować jako osobny etap, dopóki `PROGRESS.md` nie potwierdzi ich implementacji i testów.
+PWA i offline, import/eksport, kluby i grupy, komentarze trenera, cele, pomoc trenera w odzyskiwaniu konta, generator kodów oraz punktacja pozostają poza bieżącym zakresem.

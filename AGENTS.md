@@ -11,13 +11,14 @@ Po pracy zaktualizuj `docs/WORKLOG.md` i `docs/PROGRESS.md`. Nie deklaruj ukońc
 
 ## Nienaruszalne zasady
 
-- Historyczne wykonania przechowują własne migawki. Zmiana katalogu elementów, układu lub rodzaju wykonania nie może zmienić dawnych treningów.
+- Historyczne wykonania przechowują własne migawki. Zmiana katalogu elementów, układu lub miejsca lądowania nie może zmienić dawnych treningów.
 - Statystyki liczą zapisane migawki, nie bieżące szablony.
 - Każdy odczyt i zapis danych użytkownika wymaga kontroli właściciela po stronie API.
 - Administrator nigdy nie otrzymuje haseł, skrótów haseł ani tokenów sesji.
 - Nie modyfikuj ani nie usuwaj `data/acronote.db` podczas testów. Używaj SQLite `:memory:` albo jawnie wskazanej bazy testowej.
 - Cały interfejs użytkownika jest po polsku; nazwy w kodzie są po angielsku.
-- Nie dodawaj profilu trenera do interfejsu, dopóki użytkownik nie rozszerzy zakresu.
+- Profil trenera jest wyłącznie do odczytu danych połączonego zawodnika. Nie dodawaj trenerowi operacji zapisu ani nie obchodź kontroli relacji po stronie API.
+- Techniczne pola i tabela `execution_types` pozostają dla kompatybilności, ale w interfejsie i dokumentacji oznaczają **miejsca lądowania**.
 
 ## Kontrola przed commitem
 

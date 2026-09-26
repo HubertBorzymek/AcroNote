@@ -8,7 +8,7 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 
 ## Priorytety jakościowe
 
-- **Historyczna niezmienność:** zmiany bieżących elementów, układów i rodzajów wykonania nie mogą zmieniać dawnych wykonań.
+- **Historyczna niezmienność:** zmiany bieżących elementów, układów i miejsc lądowania nie mogą zmieniać dawnych wykonań.
 - **Poprawne statystyki:** obliczenia bazują na migawkach zapisanych czynności, nie na aktualnych szablonach.
 - **Mobile first:** najczęstsze czynności muszą być wygodne do wykonania dotykiem bezpośrednio po zejściu z trampoliny.
 - **Trwałość i bezpieczeństwo:** dane mają przetrwać restart; hasła nie mogą być przechowywane jawnie; separacja użytkowników musi być egzekwowana przez API.
@@ -23,7 +23,7 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **ACC-03:** hasło jest przechowywane wyłącznie jako bezpieczny skrót.
 - **ACC-04:** każde zapytanie do danych zawodnika jest autoryzowane po stronie serwera i ograniczone do właściwego użytkownika.
 - **ACC-05:** po zalogowaniu użytkownik może zmienić hasło.
-- **ACC-06:** konto może docelowo mieć profil zawodnika, trenera albo oba; pierwszeństwo ma interfejs zawodnika.
+- **ACC-06:** konto może mieć profil zawodnika, trenera albo oba i przełączać się bez ponownego logowania.
 
 ### Własne elementy
 
@@ -59,17 +59,18 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **TRN-07:** zapis jest potwierdzany dopiero po sukcesie API; błąd zachowuje dane formularza i umożliwia ponowienie.
 - **TRN-08:** formularz z niezapisanymi zmianami ostrzega przy nawigacji i, o ile pozwala przeglądarka, przy zamykaniu lub odświeżaniu karty.
 
-### Rodzaje wykonania
+### Miejsca lądowania
 
-- **EXE-01:** użytkownik otrzymuje rodzaje „Siatka”, „Materac” i „Gąbki”.
-- **EXE-02:** użytkownik może dodawać własne rodzaje, zmieniać ich nazwy i kolejność oraz je ukrywać.
-- **EXE-03:** rodzaj wejścia jest kopiowany do nowo dodanej czynności, ale późniejsza zmiana wejścia nie modyfikuje tej czynności.
-- **EXE-04:** rodzaj czynności można nadpisać, a w wykonaniu układu można nadpisać rodzaj poszczególnych elementów.
-- **EXE-05:** zmiana nazwy lub usunięcie rodzaju nie zmienia zapisanej historii.
+- **EXE-01:** użytkownik otrzymuje miejsca lądowania „Siatka”, „Materac” i „Gąbki”.
+- **EXE-02:** użytkownik może dodawać własne miejsca, zmieniać ich nazwy i kolejność oraz je ukrywać.
+- **EXE-03:** domyślne miejsce wejścia jest kopiowane do nowo dodanej czynności, ale późniejsza zmiana wejścia nie modyfikuje tej czynności.
+- **EXE-04:** miejsce czynności można nadpisać, a w wykonaniu układu można wskazać inne lądowanie każdego elementu.
+- **EXE-05:** zmiana nazwy lub usunięcie miejsca nie zmienia zapisanej historii.
+- **EXE-06:** statystyki pokazują rozkład miejsc lądowania łącznie i dla wybranego kodu, uwzględniając osobno elementy wewnątrz układów.
 
 ### Migawki historyczne
 
-- **HIS-01:** wykonanie układu zapisuje niezależną migawkę rzeczywistej zawartości: kody i nazwy elementów, kolejność oraz rodzaje wykonania.
+- **HIS-01:** wykonanie układu zapisuje niezależną migawkę rzeczywistej zawartości: kody i nazwy elementów, kolejność oraz miejsca lądowania.
 - **HIS-02:** migawka zachowuje także źródłowy układ, jego nazwę i wybrany zakres z chwili zapisu.
 - **HIS-03:** zmiany nazwy lub składu układu, kolejności pozycji oraz kodu lub nazwy elementu nie aktualizują dawnych migawek.
 - **HIS-04:** ręczna edycja historycznej czynności zmienia wyłącznie tę czynność i jej statystyki.
@@ -116,16 +117,14 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **OPS-08:** mechanizm danych demonstracyjnych jest opcjonalny, jawnie uruchamiany i nie nadpisuje istniejących danych.
 - **OPS-09:** docelowe środowisko serwerowe musi udostępniać Node.js oraz trwały zapis pliku SQLite; statyczny hosting bez procesu Node.js nie wystarczy.
 
-## Profile trenerów i połączenia — zakres późniejszego etapu
-
-Poniższe wymagania należą do etapu kont i trenerów. Nie należy uznawać ich za gotowe bez potwierdzenia w `PROGRESS.md`.
+## Profile trenerów i połączenia
 
 - Konto może przełączać się między osobnym interfejsem zawodnika i trenera bez ponownego logowania.
-- Zawodnik ma jednego trenera głównego i dowolną liczbę dodatkowych; wszyscy mają tylko odczyt treningów.
+- Zawodnik może mieć dowolną liczbę równorzędnych trenerów, a trener dowolną liczbę zawodników.
 - Zawodnik może odłączyć trenera, co natychmiast odbiera dostęp; po połączeniu trener widzi całą historię.
 - Obie strony mogą inicjować zaproszenie linkiem, QR lub krótkim kodem, lecz zawodnik zawsze świadomie zatwierdza dostęp.
 - Zaproszenia wygasają, a próby kodów są limitowane; sam link nie przyznaje dostępu.
-- Pomoc trenera w odzyskiwaniu konta jest osobnym, odwoływalnym uprawnieniem i nie pozwala poznać starego hasła.
+- Zaimplementowany zakres nie obejmuje pomocy w odzyskiwaniu konta, komentarzy, celów ani grup klubowych.
 
 ## Poza bieżącym zakresem
 

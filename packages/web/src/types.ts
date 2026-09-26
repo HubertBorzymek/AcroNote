@@ -144,6 +144,7 @@ export interface CoachInvitation {
   token?: string;
   shortCode?: string;
   path?: string;
+  url?: string;
   qrDataUrl?: string;
   expiresAt: string;
   createdAt: string;

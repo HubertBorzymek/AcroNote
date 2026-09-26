@@ -60,15 +60,15 @@ Reguły historycznej niezmienności i statystyk nie powinny być duplikowane w k
 Nazwy fizycznych tabel mogą ewoluować, lecz model logiczny obejmuje:
 
 - **users / sessions** — tożsamość, rola, stan miękkiego usunięcia, skrót hasła i sesje;
-- **profiles** — aktywne role zawodnika i trenera;
+- **users** przechowują niezależne flagi aktywnego profilu zawodnika i trenera; jedno konto może mieć oba;
 - **elements** — bieżąca, prywatna lista elementów zawodnika;
-- **execution_types** — prywatne rodzaje wykonania i ich kolejność;
+- **execution_types** — prywatne miejsca lądowania i ich kolejność (nazwa techniczna zachowana dla kompatybilności);
 - **routines / routine_items** — aktualne szablony układów i uporządkowane pozycje;
 - **trainings** — odrębne treningi przypisane do daty i właściciela;
 - **entries** — uporządkowane wejścia należące do treningu;
 - **activities** — uporządkowane czynności elementowe lub układowe z liczbą powtórzeń;
 - **activity_elements** — uporządkowane, historyczne migawki elementów składających się na czynność układową;
-- **coach_links / invitations** — przyszłe relacje i ograniczone czasowo zaproszenia.
+- **coach_links / invitations** — aktywne relacje trener–zawodnik oraz ograniczone czasowo zaproszenia.
 
 Każda tabela z danymi użytkownika jest powiązana z właścicielem bezpośrednio lub przez nadrzędny zasób. API nie ufa identyfikatorowi przekazanemu przez klienta: przed odczytem lub zmianą weryfikuje właściciela na podstawie sesji.
 
@@ -76,21 +76,21 @@ Każda tabela z danymi użytkownika jest powiązana z właścicielem bezpośredn
 
 To centralna decyzja architektoniczna. Identyfikator aktualnego elementu lub układu służy jedynie jako opcjonalna informacja o źródle. Historyczny zapis przechowuje skopiowane wartości potrzebne do samodzielnego odtworzenia wykonania.
 
-Dla pojedynczego elementu migawka obejmuje co najmniej kod, opcjonalną nazwę oraz nazwę rodzaju wykonania. Dla układu czynność przechowuje:
+Dla pojedynczego elementu migawka obejmuje co najmniej kod, opcjonalną nazwę oraz miejsce lądowania. Dla układu czynność przechowuje:
 
 - identyfikator i nazwę źródłowego układu z chwili zapisu;
 - początek i koniec wybranego zakresu oraz informację, czy zakres był pełny;
-- liczbę powtórzeń i rodzaj wykonania czynności;
-- uporządkowaną listę elementów z kodem, nazwą, pozycją i indywidualnym rodzajem wykonania;
+- liczbę powtórzeń i domyślne miejsce lądowania czynności;
+- uporządkowaną listę elementów z kodem, nazwą, pozycją i indywidualnym miejscem lądowania;
 - informację pozwalającą rozpoznać wykonanie zmodyfikowane względem zapisanej wersji.
 
 Identyfikatory źródłowe mogą być puste po usunięciu encji i nie są wymagane do statystyk. Zmiana szablonu nie uruchamia aktualizacji dawnych `activities` ani `activity_elements`. Edycja starego wykonania zastępuje wyłącznie wskazaną migawkę, najlepiej w jednej transakcji.
 
-## Rodzaje wykonania jako wartości kopiowane
+## Miejsca lądowania jako wartości kopiowane
 
-Domyślny rodzaj wejścia jest wartością startową formularza. Podczas utworzenia czynności jego identyfikator i nazwa są kopiowane. Analogicznie ustawienie czynności jest kopiowane do nowych elementów migawki. Późniejsze zmiany ustawień nadrzędnych nie propagują się wstecz.
+Domyślne miejsce lądowania wejścia jest wartością startową formularza. Podczas utworzenia czynności jego identyfikator i nazwa są kopiowane. Analogicznie ustawienie czynności jest kopiowane do nowych elementów migawki. Każda pozycja układu może mieć inne miejsce, np. `41o` na siatkę i następujące `800o` na materac. Późniejsze zmiany ustawień nadrzędnych nie propagują się wstecz.
 
-Przechowanie nazwy historycznej obok opcjonalnego identyfikatora zabezpiecza zapis przed zmianą nazwy lub usunięciem rodzaju z bieżącej listy.
+Przechowanie historycznej nazwy obok opcjonalnego identyfikatora zabezpiecza zapis przed zmianą nazwy lub usunięciem miejsca z bieżącej listy. Fizyczne nazwy `execution_types`, `execution_type_id` i `execution_type_name` pozostają bez zmian dla kompatybilności migracji.
 
 ## Statystyki
 
@@ -101,6 +101,7 @@ Statystyki są wyprowadzane z zapisanych czynności i ich migawek:
 - łączna liczba elementów dla układu to `liczba elementów migawki × repetitions`;
 - liczba wejść jest liczona niezależnie od liczby czynności;
 - pełne układy, pełne zmodyfikowane wykonania i fragmenty są klasyfikowane z danych zapisanych w czynności, a nie z aktualnego szablonu.
+- statystyki miejsc lądowania liczą pojedyncze elementy bezpośrednie i każdą pozycję migawki układu osobno; można je filtrować po kodzie.
 
 Agregacje dzienne, tygodniowe i miesięczne używają daty kalendarzowej treningu. Na obecnym etapie obliczenia mogą być wykonywane zapytaniem na żądanie; materializowane statystyki byłyby przedwczesną optymalizacją i utrudniałyby poprawną edycję historii.
 
@@ -124,12 +125,12 @@ Formularze edycyjne powinny:
 - Sesja jest identyfikowana ciasteczkiem `HttpOnly`; w środowisku produkcyjnym wymaga również `Secure` i odpowiedniego `SameSite`.
 - Sekret sesji pochodzi ze środowiska i nie jest umieszczany w repozytorium.
 - Walidacja danych odbywa się po stronie API, niezależnie od walidacji interfejsu.
-- Wszystkie zapytania danych użytkownika filtrują po właścicielu; uprawnienia trenera, gdy zostaną dodane, pozostają tylko do odczytu.
-- Krótkie kody zaproszeń będą wymagały czasu wygaśnięcia, limitowania prób i jawnej akceptacji zawodnika.
+- Wszystkie zapytania danych użytkownika filtrują po właścicielu. Endpointy trenera dodatkowo wymagają aktywnego profilu i bieżącej relacji `coach_links`; udostępniają wyłącznie metody GET.
+- Krótkie kody zaproszeń mają czas wygaśnięcia, limit prób i wymagają jawnej akceptacji obu stron oraz świadomej zgody zawodnika.
 
 ## Schemat bazy i transakcje
 
-Przy uruchomieniu API implementacja tworzy brakujące tabele i wykonuje idempotentną migrację v2. Migracja sprawdza kolumny przez `PRAGMA table_info`, dodaje rolę i stan usunięcia użytkownika oraz metadane kodu elementu, uzupełnia je wspólnym parserem i zmienia bieżący rodzaj „Na płasko” na „Siatka”. Historyczne migawki nie są przepisywane.
+Przy uruchomieniu API implementacja tworzy brakujące tabele i wykonuje idempotentne migracje. V2 dodaje rolę, stan usunięcia użytkownika i metadane kodu oraz zmienia bieżącą nazwę „Na płasko” na „Siatka”. V3 rozszerza zaproszenia o datę utworzenia, odbiorcę akceptacji i anulowanie. Historyczne migawki nie są przepisywane.
 
 Zmiany obejmujące trening, czynności i elementy migawki są wykonywane transakcyjnie, aby przerwany zapis nie pozostawił częściowych danych. SQLite ma włączone klucze obce i tryb WAL.
 
@@ -137,7 +138,7 @@ Zmiany obejmujące trening, czynności i elementy migawki są wykonywane transak
 
 Build może działać na komputerze lokalnym lub serwerze klubu, ale wymaga procesu Node.js i trwałego, regularnie kopiowanego pliku SQLite. Hosting wyłącznie statyczny nie uruchomi API. Bieżąca konfiguracja nie jest deklaracją gotowości do publicznego Internetu: przed zewnętrznym wdrożeniem wymagane są HTTPS, silny sekret, kopie zapasowe, kontrola pochodzenia żądań, limity prób logowania i przegląd bezpieczeństwa.
 
-Backend zawiera już relacje trener–zawodnik, jednorazowe zaproszenia (token, krótki kod i QR) oraz endpointy trenerskie tylko do odczytu. Bieżący frontend udostępnia profil zawodnika i osobny panel administratora; interfejs trenera i obsługa zaproszeń pozostają następnym etapem zgodnie z decyzją użytkownika.
+Profil trenera wykorzystuje te same mapowania treningów i statystyk co profil zawodnika. Połączenie wymaga dwóch świadomych działań: utworzenie zaproszenia jest zgodą twórcy, a druga osoba podgląda nadawcę i jawnie je akceptuje. Gdy zaprasza trener, zawodnik dodatkowo zaznacza zgodę na udostępnienie całej historii. Zaproszenie ma krótki kod, link i QR, wygasa, może zostać anulowane i jest atomowo zużywane tylko raz. Odłączenie lub wyłączenie profilu natychmiast unieważnia dostęp.
 
 ## Świadomie odłożone decyzje
 

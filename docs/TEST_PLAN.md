@@ -28,7 +28,7 @@ Testy nie używają pliku `data/acronote.db`. Każdy zestaw integracyjny otrzymu
 | T09 | Brak podwójnego liczenia | Łączna liczba elementów nie dolicza „układu” obok jego pozycji |
 | T10 | Zmiana aktualnego szablonu | Odczyt i statystyki starszego treningu pozostają bez zmian |
 | T11 | Zmiana kodu/nazwy elementu | Starsza migawka zachowuje dawny kod i nazwę |
-| T12 | Zmiana rodzaju wejścia | Wcześniejsza czynność zachowuje skopiowany rodzaj |
+| T12 | Zmiana miejsca lądowania wejścia | Wcześniejsza czynność zachowuje skopiowane miejsce |
 | T13 | Edycja historycznej migawki | Zmienia się tylko wskazana czynność, nie szablon ani inne treningi |
 | T14 | Statystyki po edycji historii | Agregacja odzwierciedla nową treść bez pozostawienia starego wyniku |
 | T15 | Kilka treningów jednego dnia | Podsumowanie dnia sumuje je, zachowując odrębne treningi |
@@ -40,6 +40,11 @@ Testy nie używają pliku `data/acronote.db`. Każdy zestaw integracyjny otrzymu
 | T21 | Migracja istniejącej bazy | Rekordy pozostają, a nowe kolumny i „Siatka” są dodane idempotentnie |
 | T22 | Seeder na niepustej bazie | Dodaje tylko brakujące `demo`/`admin`, nie zmienia innych kont i jest idempotentny |
 | T23 | Administracja | Rola jest wymagana; operacje nie ujawniają haseł/tokenów; reset unieważnia sesje |
+| T24 | Lądowania w układzie | `41o` na siatkę i `800o` na materac trafiają do właściwych agregacji i filtra kodu |
+| T25 | Zaproszenie trener–zawodnik | Utworzenie + akceptacja tworzą relację; własne, wygasłe, anulowane i ponownie użyte zaproszenia są odrzucane |
+| T26 | Uprawnienia trenera | Połączony trener widzi wszystkie zasoby tylko do odczytu; obcy i zapis otrzymują odmowę |
+| T27 | Odłączenie/profil | Odłączenie lub wyłączenie profilu natychmiast odbiera dostęp bez usunięcia historii |
+| T28 | Zapis w trakcie treningu | „Zapisz i kontynuuj” publikuje bieżące wejścia i kolejne PUT są widoczne po odświeżeniu trenera |
 
 ## Konta i uprawnienia
 
@@ -69,6 +74,10 @@ Na telefonowym rozmiarze widoku należy sprawdzić:
 9. filtry elementów, pusty stan zakładki „Ukryte” i przywracanie elementu;
 10. obecność obu wykresów i historii wybranego elementu;
 11. panel administratora na koncie z rolą `admin`, bez wyświetlania danych logowania.
+12. aktywację i przełączanie profilu trenera bez wylogowania;
+13. zaproszenie w obu kierunkach przez kod oraz link/QR, podgląd nadawcy i zgodę zawodnika;
+14. pełny podgląd zawodnika tylko do odczytu oraz utratę dostępu po odłączeniu;
+15. rozkład miejsc lądowania ogółem i dla kodu, również w układzie `41o + 800o`.
 
 ## Macierz przeglądarek
 
