@@ -5,12 +5,12 @@ import { openDatabase } from '../src/db.js';
 describe('uwierzytelnianie i izolacja danych',()=>{
   it('pozwala użyć imienia i nazwiska ze spacją, ale odrzuca znaki nowej linii',async()=>{
     const db=openDatabase(':memory:'); const app=await buildApp({db});
-    const registered=await app.inject({method:'POST',url:'/api/auth/register',payload:{username:'  Maria  Kowalska  ',password:'bardzo-bezpieczne-haslo'}});
+    const registered=await app.inject({method:'POST',url:'/api/auth/register',payload:{username:'  Łukasz\u00a0 Żółć  ',password:'bardzo-bezpieczne-haslo'}});
     expect(registered.statusCode).toBe(201);
-    expect(registered.json().username).toBe('Maria Kowalska');
-    const login=await app.inject({method:'POST',url:'/api/auth/login',payload:{username:'Maria Kowalska',password:'bardzo-bezpieczne-haslo'}});
+    expect(registered.json().username).toBe('Łukasz Żółć');
+    const login=await app.inject({method:'POST',url:'/api/auth/login',payload:{username:'Łukasz Żo\u0301łć',password:'bardzo-bezpieczne-haslo'}});
     expect(login.statusCode).toBe(200);
-    expect(login.json().username).toBe('Maria Kowalska');
+    expect(login.json().username).toBe('Łukasz Żółć');
     const invalid=await app.inject({method:'POST',url:'/api/auth/register',payload:{username:'Maria\nKowalska',password:'bardzo-bezpieczne-haslo'}});
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json().message).toBe('Nazwa użytkownika zawiera niedozwolone znaki.');

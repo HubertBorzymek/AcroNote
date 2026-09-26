@@ -41,4 +41,13 @@ describe('request', () => {
     expect(preview.requiredProfile).toBe('athlete');
     expect(String(fetchMock.mock.calls[0][0])).toContain('/api/coach/invitations/preview?shortCode=ABC123');
   });
+
+  it('zachowuje wersję źródłowego układu przy edycji treningu', async () => {
+    const payload = { id: 9, date: '2026-09-26', entries: [{ defaultExecutionTypeName: 'Siatka', activities: [{ kind: 'routine', repetitions: 1, sourceRoutineId: 3, sourceRoutineName: 'Układ 1', sourceTemplateVersion: 4, rangeStart: 1, rangeEnd: 1, isFullRange: false, executionTypeName: 'Siatka', elements: [{ code: '40o', executionTypeName: 'Siatka' }] }] }] };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const training = await api.training('9');
+    await api.updateTraining('9', { date: training.date, entries: training.entries });
+    const body = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(body.entries[0].activities[0].sourceTemplateVersion).toBe(4);
+  });
 });

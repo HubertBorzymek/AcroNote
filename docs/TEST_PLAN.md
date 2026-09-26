@@ -49,6 +49,10 @@ Testy nie używają pliku `data/acronote.db`. Każdy zestaw integracyjny otrzymu
 | T30 | Wyłączenie profilu trenera | Dostęp znika od razu, relacja pozostaje, a reaktywacja przywraca odczyt |
 | T31 | Motyw | Jawny wybór jasny/ciemny ma pierwszeństwo, a pierwszy start respektuje ustawienie urządzenia |
 | T32 | Nazwa użytkownika ze spacją | Rejestracja, logowanie i administracja akceptują `Maria Kowalska`, normalizują nadmiarowe spacje i odrzucają nową linię |
+| T33 | Filtry we wszystkich selektorach | Ulubione, salta, śruby, kierunek i pozycja dają ten sam wynik na liście, w układzie i w wejściu |
+| T34 | Korekta zakresu układu | Niezmieniony szablon pozwala skrócić wykonanie; nowsza/usunięta wersja blokuje przebudowę i zachowuje migawkę |
+| T35 | Ponowny zapis historycznego treningu | Wersja źródłowa i elementy migawki pozostają bez zmian po aktualizacji bieżącego szablonu |
+| T36 | Dane demonstracyjne wielu wejść | Seeder idempotentnie zapewnia trening demo z pięcioma różnymi wejściami, układami, fragmentem i różnymi lądowaniami |
 
 ## Konta i uprawnienia
 
@@ -84,6 +88,9 @@ Na telefonowym rozmiarze widoku należy sprawdzić:
 15. rozkład miejsc lądowania ogółem i dla kodu, również w układzie `41o + 800o`.
 16. jasny i ciemny motyw na desktopie i telefonie, w tym zapamiętanie wyboru po odświeżeniu;
 17. wyłączenie profilu trenera po potwierdzeniu i możliwość ponownej aktywacji bez utraty połączeń.
+18. pełne filtry w wyborze elementu do wejścia, układu i edytowanego szablonu;
+19. czytelne numery i liczniki przy co najmniej pięciu wejściach;
+20. zmianę zakresu wykonania układu oraz komunikat po zmianie wersji jego szablonu.
 
 ## Macierz przeglądarek
 

@@ -8,7 +8,7 @@
 
 **Etap:** kompletna lokalna wersja profilu zawodnika, profilu trenera tylko do odczytu i panelu administratora
 
-**Weryfikacja:** 57 testów automatycznych, kontrola typów, build, audyt zależności, migracja kopii istniejącej bazy oraz testy przeglądarkowe desktop/mobile na odizolowanej bazie
+**Weryfikacja:** 61 testów automatycznych, kontrola typów, build, audyt zależności, migracja kopii istniejącej bazy oraz testy przeglądarkowe desktop/mobile na odizolowanej bazie
 
 ## Zrealizowany zakres
 
@@ -40,6 +40,10 @@
 - Dowolna liczba wejść, elementów, układów i fragmentów oraz liczniki powtórzeń.
 - Techniczny nagłówek migawki zastąpiono prostym „Gdzie lądował każdy element?”.
 - Klient HTTP nie wysyła `Content-Type: application/json` dla żądań bez ciała, co naprawia DELETE elementów, układów i połączeń.
+- Pełne filtry elementów są wspólne dla katalogu, wyboru do wejścia i wyboru podczas tworzenia lub edycji układu.
+- Szablon układu można edytować w trakcie dodawania go do treningu; zapis tworzy nową wersję tylko dla bieżących i przyszłych użyć.
+- Zakres wykonanego układu można skorygować, dopóki wersja szablonu jest zgodna. Po zmianie/usunięciu źródła aplikacja blokuje automatyczną przebudowę i wyjaśnia bezpieczną alternatywę.
+- Karty wejść mają wyraźny numer oraz liczbę czynności i elementów; okna edycji wskazują numer bieżącego wejścia.
 
 ### Miejsca lądowania i statystyki
 
@@ -72,7 +76,7 @@
 
 ### Konto demo i administrator
 
-- `demo` / `AcroNote-demo-2026`: 30 zróżnicowanych elementów, dwa układy (drugi zawiera duplikat) i siedem treningów startowych.
+- `demo` / `AcroNote-demo-2026`: 30 zróżnicowanych elementów, dwa układy (drugi zawiera duplikat) oraz trening startowy z pięcioma różnymi wejściami obok historii treningów.
 - `trener_demo` / `AcroNote-trener-2026`: profil zawodnika i trenera, połączony z kontem `demo`; seeder nie nadpisuje istniejącego hasła ani nie powiela relacji.
 - `admin` / `AcroNote-admin-2026`: osobny panel kont.
 - Administrator może tworzyć konto, zmieniać jego nazwę i rolę, ustawić hasło tymczasowe, miękko usunąć i odzyskać konto.
@@ -83,20 +87,22 @@
 
 | Kontrola | Wynik | Szczegóły |
 |---|---|---|
-| `npm test` | **PASS** | API: 6 plików / 38 testów; web: 3 pliki / 19 testów; razem 57 |
+| `npm test` | **PASS** | API: 6 plików / 39 testów; web: 4 pliki / 22 testy; razem 61 |
 | `npm run typecheck` | **PASS** | `shared`, `web`, `api` |
 | `npm run build` | **PASS** | produkcyjny build Vite i API |
 | `npm audit --audit-level=moderate` | **PASS** | 0 znanych podatności |
 | `git diff --check` | **PASS** | brak błędów białych znaków; tylko informacyjne ostrzeżenia CRLF |
 | migracja bazy | **PASS** | najpierw kopia, potem baza lokalna: v3, zachowane 3 konta / 8 treningów / 34 elementy, idempotencja i `integrity_check=ok` |
 | dodanie demo trenera | **PASS** | kopia przed zmianą; po seedzie 4 konta / 8 treningów / 34 elementy, jedno połączenie `trener_demo` → `demo`, `integrity_check=ok` |
+| trening demo wielu wejść | **PASS** | kopia przed zmianą; po seedzie 4 konta / 9 treningów / 34 elementy, maks. 5 wejść, `integrity_check=ok` |
 | profil trenera — przeglądarka | **PASS** | dwa kierunki zaproszeń, aktywacja/przełączanie, zgoda, historia/elementy/układy/statystyki i nowy wpis po odświeżeniu |
 | bezpieczeństwo relacji | **PASS** | zapis cudzej historii zwraca 404; po odłączeniu odczyt trenera zwraca 403 |
 | responsywność | **PASS** | widok trenera i statystyk sprawdzony przy 390×844 |
 | motyw jasny/ciemny | **PASS** | oba motywy na desktopie, ciemny przy 390×844, wybór zachowany po przeładowaniu |
 | demo i dezaktywacja trenera | **PASS** | `trener_demo` widzi `demo`; wyłączenie daje 403, ponowne włączenie 200 bez utraty relacji |
-| nazwa ze spacją | **PASS** | rejestracja/logowanie `Maria Kowalska`, tworzenie i zmiana nazwy przez administratora, odrzucenie Entera |
+| nazwa Unicode ze spacją | **PASS** | rejestracja/logowanie `Łukasz Żółć`, NFC, spacja nierozdzielająca z telefonu, administracja i odrzucenie Entera |
 | układy mobile | **PASS** | lista i edytor przy 390×844; pełna siatka elementów bez poziomego przepełnienia, widoczna dolna nawigacja |
+| trening mobile | **PASS** | pięć wejść przy 390×844, pełne filtry, edycja szablonu, korekta zakresu i blokada po zmianie wersji |
 
 ## Pokrycie automatyczne
 
@@ -108,6 +114,7 @@
 - autoryzacja właściciela i bezpieczne operacje administratora;
 - zaproszenia: wygaśnięcie, anulowanie, jednokrotność, błędny profil i próba połączenia z samym sobą;
 - pełny odczyt trenera, odmowa obcemu trenerowi i natychmiastowe odebranie dostępu.
+- wspólne filtry wyboru elementów, zachowanie wersji układu przy ponownym zapisie oraz wielowejściowe dane demo.
 
 ## Świadomie odłożone
 
@@ -121,6 +128,7 @@
 - Nie uruchamiaj testów na `data/acronote.db`; używaj `:memory:` albo jawnej kopii.
 - Spójna kopia sprzed migracji profilu trenera znajduje się w `data/backups/acronote-before-coach-20260925.db`.
 - Spójna kopia sprzed dodania konta `trener_demo` znajduje się w `data/backups/acronote-before-demo-coach-20260926.db`.
+- Spójna kopia sprzed dodania wielowejściowego treningu demo znajduje się w `data/backups/acronote-before-multi-entry-demo-20260926.db`.
 - Link i QR zawierają adres, z którego otwarto aplikację. Przy użyciu na drugim urządzeniu serwer musi być dostępny pod adresem sieciowym zamiast domyślnego `127.0.0.1`.
 - Dostęp z telefonu po HTTP jest przeznaczony tylko do krótkich testów w zaufanej sieci prywatnej. Nie przekierowuj portu na routerze i nie wyłączaj zapory.
 - Jawne hasło startowe administratora trzeba zmienić przed udostępnieniem aplikacji innym osobom.

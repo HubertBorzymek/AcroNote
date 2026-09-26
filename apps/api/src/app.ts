@@ -19,8 +19,8 @@ const text = (value: unknown, label: string, min = 1) => {
   return value.trim();
 };
 const usernameText = (value: unknown) => {
-  if (typeof value !== 'string' || /[\r\n\t]/u.test(value)) throw new Error('Nazwa użytkownika zawiera niedozwolone znaki.');
-  const username = value.trim().replace(/ {2,}/g, ' ');
+  if (typeof value !== 'string' || /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value)) throw new Error('Nazwa użytkownika zawiera niedozwolone znaki.');
+  const username = value.normalize('NFC').trim().replace(/\p{Zs}+/gu, ' ');
   if (username.length < 3 || username.length > 80 || !/^[\p{L}\p{N}_.-]+(?: [\p{L}\p{N}_.-]+)*$/u.test(username)) throw new Error('Nazwa użytkownika zawiera niedozwolone znaki.');
   return username;
 };

@@ -55,6 +55,7 @@ export interface Routine {
   id: ID;
   name: string;
   slots: RoutineSlot[];
+  templateVersion?: number;
   updatedAt?: string;
 }
 
@@ -77,6 +78,8 @@ export interface Activity {
   elementName?: string | null;
   routineId?: ID;
   routineName?: string;
+  sourceTemplateVersion?: number;
+  matchedOriginalTemplate?: boolean;
   rangeStart?: number;
   rangeEnd?: number;
   isFullRoutine?: boolean;

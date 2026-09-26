@@ -64,6 +64,12 @@ Ukończono naprawy elementów/układów, dodawanie elementu z wejścia, dialog z
 - lokalny tryb jasny/ciemny, domyślnie zgodny z ustawieniem systemu i zapamiętywany w przeglądarce;
 - możliwość wyłączenia i ponownego włączenia profilu trenera bez usuwania zapisanych połączeń;
 - instrukcja krótkiego testu na telefonie w tej samej zaufanej sieci Wi-Fi.
+- wspólne filtry elementów także w selektorach wejścia i układu;
+- edycja szablonu układu bezpośrednio z treningu, z zachowaniem dawnych migawek;
+- korekta zakresu wykonanego układu tylko dla zgodnej wersji szablonu oraz zrozumiałe ostrzeżenie po jego zmianie/usunięciu;
+- czytelniejsze numerowanie i podsumowania wielu wejść;
+- trening demonstracyjny z pięcioma zróżnicowanymi wejściami;
+- normalizacja znaków Unicode w nazwach kont: polskie litery, NFC i typowe spacje z klawiatur mobilnych.
 
 Commity funkcjonalne:
 
@@ -82,10 +88,11 @@ Końcowe zmiany tej iteracji obejmują bezwzględny adres linku/QR, test jego ko
 - Po tej weryfikacji otwarto właściwą `data/acronote.db` aktualną warstwą bazy. Migracja v3 została zastosowana; pozostały 3 konta / 8 treningów / 34 elementy, a `integrity_check` nadal zwraca `ok`.
 - Przed dodaniem konta demo trenera wykonano spójną kopię `data/backups/acronote-before-demo-coach-20260926.db`. Seeder dodał wyłącznie `trener_demo` i relację z `demo`: baza ma teraz 4 konta / 8 treningów / 34 elementy, a `integrity_check` zwraca `ok`.
 - Pliki testowych baz są ignorowane przez Git.
+- Przed uzupełnieniem treningu demo wykonano spójną kopię `data/backups/acronote-before-multi-entry-demo-20260926.db`. Seeder dodał jeden trening; baza ma 4 konta / 9 treningów / 34 elementy, konto `demo` ma trening z 5 wejściami, a `integrity_check` zwraca `ok`.
 
 ## Weryfikacja 2026-09-26
 
-- `npm test`: 57/57 (API: 6 plików / 38, web: 3 pliki / 19).
+- `npm test`: 61/61 (API: 6 plików / 39, web: 4 pliki / 22).
 - `npm run typecheck`: PASS.
 - `npm run build`: PASS.
 - `npm audit --audit-level=moderate`: 0 podatności.
@@ -99,6 +106,8 @@ Końcowe zmiany tej iteracji obejmują bezwzględny adres linku/QR, test jego ko
 - Na izolowanej bazie `trener_demo` widzi połączonego zawodnika `demo`; dezaktywacja zwróciła 403 dla jego historii, reaktywacja przywróciła 200 i zachowane połączenie.
 - Rejestracja, logowanie oraz panel administratora akceptują nazwy ze spacją, np. `Maria Kowalska`; nadmiarowe spacje są normalizowane, a Enter i tabulatory odrzucane.
 - Karty układów na telefonie pokazują elementy w trzykolumnowej siatce bez poszerzania strony. Lista i edytor zostały sprawdzone przy 390×844, wraz z widoczną dolną nawigacją.
+- Edytor treningu z pięcioma wejściami, oba selektory elementów, edycję szablonu i korektę zakresu sprawdzono przy 390×844. Po zapisaniu nowej wersji szablonu dawna czynność pokazała blokadę przebudowy, zachowując pełną migawkę.
+- Rejestracja i logowanie `Łukasz Żółć` przeszły z polskimi znakami, spacją nierozdzielającą z telefonu i wejściem w postaci Unicode NFD; zapisano postać NFC ze zwykłą spacją.
 
 ## Konta startowe
 

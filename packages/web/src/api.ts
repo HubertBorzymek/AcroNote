@@ -47,14 +47,14 @@ function mapActivity(raw: Record<string, unknown>): Activity {
   return {
     id: id(raw.id), type: kind, repetitions: Number(raw.repetitions ?? 1), executionTypeId: id(raw.executionTypeId), executionTypeName: String(raw.executionTypeName ?? ''),
     elementId: id(raw.sourceElementId ?? raw.elementId), elementCode: (raw.code ?? raw.elementCode) as string | undefined, elementName: (raw.name ?? raw.elementName) as string | null | undefined,
-    routineId: id(raw.sourceRoutineId ?? raw.routineId), routineName: (raw.sourceRoutineName ?? raw.routineName) as string | undefined, rangeStart: raw.rangeStart as number | undefined, rangeEnd: raw.rangeEnd as number | undefined,
+    routineId: id(raw.sourceRoutineId ?? raw.routineId), routineName: (raw.sourceRoutineName ?? raw.routineName) as string | undefined, sourceTemplateVersion: raw.sourceTemplateVersion as number | undefined, matchedOriginalTemplate: raw.matchedOriginalTemplate == null ? undefined : Boolean(raw.matchedOriginalTemplate), rangeStart: raw.rangeStart as number | undefined, rangeEnd: raw.rangeEnd as number | undefined,
     isFullRoutine: Boolean(raw.isFullRange ?? raw.isFullRoutine), elements: Array.isArray(raw.elements) ? raw.elements.map((item: Record<string, unknown>) => ({ elementId: id(item.sourceElementId ?? item.elementId), code: String(item.code), name: item.name as string | null | undefined, executionTypeId: id(item.executionTypeId), executionTypeName: String(item.executionTypeName ?? '') })) : undefined,
   };
 }
 function activityBody(activity: Activity) {
   const common = { kind: activity.type, repetitions: activity.repetitions, executionTypeId: apiId(activity.executionTypeId), executionTypeName: activity.executionTypeName };
   if (activity.type === 'element') return { ...common, sourceElementId: apiId(activity.elementId), code: activity.elementCode, name: activity.elementName ?? null };
-  return { ...common, sourceRoutineId: apiId(activity.routineId), sourceRoutineName: activity.routineName, rangeStart: activity.rangeStart, rangeEnd: activity.rangeEnd, isFullRange: activity.isFullRoutine,
+  return { ...common, sourceRoutineId: apiId(activity.routineId), sourceRoutineName: activity.routineName, sourceTemplateVersion: activity.sourceTemplateVersion, rangeStart: activity.rangeStart, rangeEnd: activity.rangeEnd, isFullRange: activity.isFullRoutine,
     elements: activity.elements?.map((item, index) => ({ sourceElementId: apiId(item.elementId), code: item.code, name: item.name ?? null, executionTypeId: apiId(item.executionTypeId), executionTypeName: item.executionTypeName, position: index + 1 })) };
 }
 function trainingBody(input: Pick<Training, 'date' | 'entries'>) {

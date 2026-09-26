@@ -22,16 +22,17 @@ const demoElements = [
   ['12100/','Potrójne z półśrubą na początku'],['12111o','Potrójne po pół śruby'],['12303<','Potrójne w mieszanej konfiguracji']
 ] as const;
 
-export async function seedDemoAndAdmin(db: Db): Promise<{ demoCreated:boolean; coachDemoCreated:boolean; coachLinkCreated:boolean; adminCreated:boolean }> {
+export async function seedDemoAndAdmin(db: Db): Promise<{ demoCreated:boolean; demoShowcaseCreated:boolean; coachDemoCreated:boolean; coachLinkCreated:boolean; adminCreated:boolean }> {
   let demoCreated=false;let coachDemoCreated=false;let adminCreated=false;
   let demo=db.prepare('SELECT id FROM users WHERE username=?').get(DEMO_CREDENTIALS.username) as {id:number}|undefined;
   if(!demo){const id=Number(db.prepare("INSERT INTO users(username,password_hash,role) VALUES(?,?,'user')").run(DEMO_CREDENTIALS.username,await bcrypt.hash(DEMO_CREDENTIALS.password,12)).lastInsertRowid);demo={id};demoCreated=true;seedExecutionTypes(db,id);seedDemoContent(db,id);}
+  const demoShowcaseCreated=ensureDemoShowcaseTraining(db,demo.id);
   let coachDemo=db.prepare('SELECT id FROM users WHERE username=?').get(COACH_DEMO_CREDENTIALS.username) as {id:number}|undefined;
   if(!coachDemo){const id=Number(db.prepare("INSERT INTO users(username,password_hash,athlete_enabled,coach_enabled,role) VALUES(?,?,1,1,'user')").run(COACH_DEMO_CREDENTIALS.username,await bcrypt.hash(COACH_DEMO_CREDENTIALS.password,12)).lastInsertRowid);coachDemo={id};coachDemoCreated=true;seedExecutionTypes(db,id);}
   const coachLinkCreated=Boolean(db.prepare('INSERT OR IGNORE INTO coach_links(athlete_id,coach_id) VALUES(?,?)').run(demo.id,coachDemo.id).changes);
   let admin=db.prepare('SELECT id FROM users WHERE username=?').get(ADMIN_CREDENTIALS.username) as {id:number}|undefined;
   if(!admin){const id=Number(db.prepare("INSERT INTO users(username,password_hash,role) VALUES(?,?,'admin')").run(ADMIN_CREDENTIALS.username,await bcrypt.hash(ADMIN_CREDENTIALS.password,12)).lastInsertRowid);admin={id};adminCreated=true;seedExecutionTypes(db,id);}
-  return {demoCreated,coachDemoCreated,coachLinkCreated,adminCreated};
+  return {demoCreated,demoShowcaseCreated,coachDemoCreated,coachLinkCreated,adminCreated};
 }
 
 function seedDemoContent(db:Db,userId:number):void {
@@ -46,8 +47,26 @@ function seedDemoContent(db:Db,userId:number):void {
   const type=db.prepare("SELECT id FROM execution_types WHERE user_id=? AND name='Siatka'").get(userId) as {id:number};
   const today=new Date();
   for(let day=35;day>=0;day-=7){const date=new Date(today);date.setUTCDate(date.getUTCDate()-day);const index=(day/7)%demoElements.length;const [code,name]=demoElements[index]!;saveTraining(db,userId,{date:date.toISOString().slice(0,10),entries:[{defaultExecutionTypeId:type.id,defaultExecutionTypeName:'Siatka',activities:[{kind:'element',sourceElementId:ids[index],code,name,repetitions:2+(day%5),executionTypeId:type.id,executionTypeName:'Siatka'}]}]});}
-  const routineElements=first.map((index,position)=>({sourceElementId:ids[index],code:demoElements[index]![0],name:demoElements[index]![1],position:position+1,executionTypeId:type.id,executionTypeName:'Siatka'}));
-  saveTraining(db,userId,{date:today.toISOString().slice(0,10),entries:[{defaultExecutionTypeId:type.id,defaultExecutionTypeName:'Siatka',activities:[{kind:'routine',sourceRoutineId:routine1,sourceRoutineName:'Układ 1',sourceTemplateVersion:1,rangeStart:1,rangeEnd:8,isFullRange:true,repetitions:3,executionTypeId:type.id,executionTypeName:'Siatka',elements:routineElements}]}]});
+}
+
+function ensureDemoShowcaseTraining(db:Db,userId:number):boolean {
+  const existing=db.prepare(`SELECT t.id FROM trainings t WHERE t.user_id=? AND (SELECT COUNT(*) FROM training_entries te WHERE te.training_id=t.id)>=5 LIMIT 1`).get(userId);
+  if(existing)return false;
+  const typeRows=db.prepare("SELECT id,name FROM execution_types WHERE user_id=? AND deleted_at IS NULL").all(userId) as {id:number;name:string}[];
+  const types=new Map(typeRows.map((type)=>[type.name,type]));const net=types.get('Siatka')!;const mat=types.get('Materac')!;const foam=types.get('Gąbki')!;
+  const elements=db.prepare('SELECT id,code,name FROM elements WHERE user_id=? AND deleted_at IS NULL').all(userId) as {id:number;code:string;name:string|null}[];
+  const byCode=new Map(elements.map((element)=>[element.code,element]));
+  const direct=(code:string,repetitions:number,type:{id:number;name:string})=>{const element=byCode.get(code)!;return{kind:'element' as const,sourceElementId:element.id,code:element.code,name:element.name,repetitions,executionTypeId:type.id,executionTypeName:type.name};};
+  const routine=(name:string,start:number,end:number,repetitions:number,landings:{id:number;name:string}[])=>{const source=db.prepare('SELECT id,template_version version FROM routines WHERE user_id=? AND name=? AND deleted_at IS NULL').get(userId,name) as {id:number;version:number};const slots=db.prepare(`SELECT ri.position,ri.element_id id,COALESCE(e.code,ri.code_snapshot) code,COALESCE(e.name,ri.name_snapshot) name FROM routine_items ri LEFT JOIN elements e ON e.id=ri.element_id WHERE ri.routine_id=? ORDER BY ri.position`).all(source.id) as {position:number;id:number;code:string;name:string|null}[];const selected=slots.slice(start-1,end);return{kind:'routine' as const,sourceRoutineId:source.id,sourceRoutineName:name,sourceTemplateVersion:source.version,rangeStart:start,rangeEnd:end,isFullRange:start===1&&end===slots.length,repetitions,executionTypeId:net.id,executionTypeName:net.name,elements:selected.map((slot,index)=>{const landing=landings[index]??net;return{sourceElementId:slot.id,code:slot.code,name:slot.name,position:slot.position,executionTypeId:landing.id,executionTypeName:landing.name};})};};
+  const date=new Date().toISOString().slice(0,10);
+  saveTraining(db,userId,{date,entries:[
+    {defaultExecutionTypeId:net.id,defaultExecutionTypeName:net.name,activities:[direct('40o',3,net),direct('41<',2,net)]},
+    {defaultExecutionTypeId:net.id,defaultExecutionTypeName:net.name,activities:[routine('Układ 1',1,8,1,[net,net,net,net,net,net,mat,mat])]},
+    {defaultExecutionTypeId:mat.id,defaultExecutionTypeName:mat.name,activities:[direct('800o',2,mat),direct('831o',1,mat)]},
+    {defaultExecutionTypeId:net.id,defaultExecutionTypeName:net.name,activities:[routine('Układ 2',1,5,2,[net,net,net,mat,mat])]},
+    {defaultExecutionTypeId:foam.id,defaultExecutionTypeName:foam.name,activities:[direct('12000/',1,foam),direct('12111o',2,foam)]},
+  ]});
+  return true;
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
@@ -55,6 +74,7 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   try {
     const result=await seedDemoAndAdmin(db);
     console.log(`${result.demoCreated?'Utworzono':'Pozostawiono istniejące'} konto demo. Dane logowania dla nowego konta: ${DEMO_CREDENTIALS.username} / ${DEMO_CREDENTIALS.password}`);
+    console.log(`${result.demoShowcaseCreated?'Dodano':'Pozostawiono istniejący'} wielowejściowy trening demonstracyjny.`);
     console.log(`${result.coachDemoCreated?'Utworzono':'Pozostawiono istniejące'} konto demo trenera. Dane logowania dla nowego konta: ${COACH_DEMO_CREDENTIALS.username} / ${COACH_DEMO_CREDENTIALS.password}`);
     console.log(`${result.coachLinkCreated?'Połączono':'Pozostawiono połączenie'} konto demo trenera z zawodnikiem demo.`);
     console.log(`${result.adminCreated?'Utworzono':'Pozostawiono istniejące'} konto admin. Dane logowania dla nowego konta: ${ADMIN_CREDENTIALS.username} / ${ADMIN_CREDENTIALS.password}`);

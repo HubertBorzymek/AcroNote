@@ -46,6 +46,17 @@ describe('historyczne zapisy treningów', () => {
     expect(trainingSummary(db,userId).byCode['41o']).toBe(4);
   });
 
+  it('nie podmienia wersji ani elementów migawki przy ponownym zapisie starego treningu',()=>{
+    const id=saveTraining(db,userId,{date:'2026-09-25',entries:[{defaultExecutionTypeName:'Siatka',activities:[fullActivity()]}]});
+    const original=getTraining(db,userId,id)!;
+    db.prepare('DELETE FROM routine_items WHERE routine_id=? AND position=3').run(routineId);
+    db.prepare('UPDATE routines SET template_version=2 WHERE id=?').run(routineId);
+    saveTraining(db,userId,{date:original.date,entries:original.entries as any},id);
+    const saved=getTraining(db,userId,id)!;
+    expect(saved.entries[0].activities[0].sourceTemplateVersion).toBe(1);
+    expect(saved.entries[0].activities[0].elements.map((item:any)=>item.code)).toEqual(['41o','40/','41o']);
+  });
+
   it('edycja starego treningu przelicza wyłącznie jego statystyki',()=>{
     const first=saveTraining(db,userId,{date:'2026-09-25',entries:[{defaultExecutionTypeName:'Na płasko',activities:[{kind:'element',code:'41o',repetitions:2,executionTypeName:'Na płasko'}]}]});
     saveTraining(db,userId,{date:'2026-09-26',entries:[{defaultExecutionTypeName:'Na płasko',activities:[{kind:'element',code:'41o',repetitions:4,executionTypeName:'Na płasko'}]}]});

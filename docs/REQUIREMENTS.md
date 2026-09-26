@@ -24,7 +24,7 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **ACC-04:** każde zapytanie do danych zawodnika jest autoryzowane po stronie serwera i ograniczone do właściwego użytkownika.
 - **ACC-05:** po zalogowaniu użytkownik może zmienić hasło.
 - **ACC-06:** konto może mieć profil zawodnika, trenera albo oba i przełączać się bez ponownego logowania.
-- **ACC-07:** nazwa użytkownika może być imieniem i nazwiskiem ze spacją, np. `Maria Kowalska`; znaki nowej linii i znaki sterujące są niedozwolone.
+- **ACC-07:** nazwa użytkownika może być imieniem i nazwiskiem ze spacją oraz polskimi znakami, np. `Łukasz Żółć`; typowe spacje z klawiatur mobilnych są normalizowane, a znaki nowej linii i znaki sterujące niedozwolone.
 
 ### Własne elementy
 
@@ -38,6 +38,7 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **EL-08:** aplikacja waliduje i interpretuje kod wyłącznie na potrzeby filtrów; nie tworzy globalnego katalogu elementów ani nie dopisuje nazwy automatycznie.
 - **EL-09:** kod kończy się `o`, `<` albo `/`; zawiera liczbę ćwiartek od 1 do 12 oraz dokładnie `max(1, floor(ćwiartki / 4))` cyfr opisujących półobroty śrub.
 - **EL-10:** filtry obejmują liczbę salt, sumę śrub, kierunek wyliczony z parzystości sumy półobrotów oraz pozycję końcową.
+- **EL-11:** te same filtry są dostępne na głównej liście oraz podczas wyboru istniejącego elementu do układu i wejścia treningowego.
 
 ### Układy
 
@@ -48,6 +49,7 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **ROU-05:** skład konkretnego wykonania można zmienić bez zmiany szablonu układu.
 - **ROU-06:** powtórzenia o różnym składzie są zapisywane jako osobne czynności.
 - **ROU-07:** zmiana lub usunięcie aktualnego szablonu nie narusza historii.
+- **ROU-08:** szablon można edytować bezpośrednio podczas dodawania układu do treningu; zmiana dotyczy tego szablonu i przyszłych użyć, a nie zapisanych wcześniej migawek.
 
 ### Treningi, wejścia i czynności
 
@@ -59,6 +61,8 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **TRN-06:** trening, wejście i czynność można poprawić po zapisaniu, także po długim czasie.
 - **TRN-07:** zapis jest potwierdzany dopiero po sukcesie API; błąd zachowuje dane formularza i umożliwia ponowienie.
 - **TRN-08:** formularz z niezapisanymi zmianami ostrzega przy nawigacji i, o ile pozwala przeglądarka, przy zamykaniu lub odświeżaniu karty.
+- **TRN-09:** dla wykonania nadal istniejącej, niezmienionej wersji układu można skorygować wykonany zakres. Gdy źródłowy szablon usunięto lub zmieniono, aplikacja chroni migawkę i podpowiada usunięcie czynności oraz dodanie elementów pojedynczo.
+- **TRN-10:** przy wielu wejściach edytor jednoznacznie pokazuje numer wejścia, liczbę czynności i liczbę wykonanych elementów, także w oknach wyboru i edycji.
 
 ### Miejsca lądowania
 

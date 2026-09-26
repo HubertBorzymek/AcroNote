@@ -79,12 +79,15 @@ To centralna decyzja architektoniczna. Identyfikator aktualnego elementu lub uk�
 Dla pojedynczego elementu migawka obejmuje co najmniej kod, opcjonalną nazwę oraz miejsce lądowania. Dla układu czynność przechowuje:
 
 - identyfikator i nazwę źródłowego układu z chwili zapisu;
+- wersję źródłowego szablonu, używaną wyłącznie do bezpiecznego rozpoznania, czy zakres wykonania nadal można skorygować z bieżącego układu;
 - początek i koniec wybranego zakresu oraz informację, czy zakres był pełny;
 - liczbę powtórzeń i domyślne miejsce lądowania czynności;
 - uporządkowaną listę elementów z kodem, nazwą, pozycją i indywidualnym miejscem lądowania;
 - informację pozwalającą rozpoznać wykonanie zmodyfikowane względem zapisanej wersji.
 
 Identyfikatory źródłowe mogą być puste po usunięciu encji i nie są wymagane do statystyk. Zmiana szablonu nie uruchamia aktualizacji dawnych `activities` ani `activity_elements`. Edycja starego wykonania zastępuje wyłącznie wskazaną migawkę, najlepiej w jednej transakcji.
+
+Frontend pozwala zmienić zakres pozycji wykonania tylko wtedy, gdy `source_template_version` odpowiada bieżącemu `template_version` układu. W przeciwnym razie pozostawia zapisane elementy bez zmian i proponuje świadome zastąpienie czynności elementami pojedynczymi. Klient przesyła oryginalną wersję z powrotem przy edycji treningu, dzięki czemu zwykły ponowny zapis nie przypisuje historycznej migawce nowszego szablonu.
 
 ## Miejsca lądowania jako wartości kopiowane
 
