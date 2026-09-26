@@ -43,7 +43,7 @@
 - Pełne filtry elementów są wspólne dla katalogu, wyboru do wejścia i wyboru podczas tworzenia lub edycji układu.
 - Szablon układu można edytować w trakcie dodawania go do treningu; zapis tworzy nową wersję tylko dla bieżących i przyszłych użyć.
 - Zakres wykonanego układu można skorygować, dopóki wersja szablonu jest zgodna. Po zmianie/usunięciu źródła aplikacja blokuje automatyczną przebudowę i wyjaśnia bezpieczną alternatywę.
-- Karty wejść mają wyraźny numer oraz liczbę czynności i elementów; okna edycji wskazują numer bieżącego wejścia.
+- Karty wejść mają wyraźny numer i sumaryczną liczbę wykonanych elementów zamiast technicznej liczby czynności; okna edycji wskazują numer bieżącego wejścia.
 
 ### Miejsca lądowania i statystyki
 

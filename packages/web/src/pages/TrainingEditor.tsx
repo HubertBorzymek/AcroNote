@@ -9,6 +9,14 @@ const fallbackExecutionTypes: ExecutionType[] = [
   { id: 'flat', name: 'Siatka' }, { id: 'mat', name: 'Materac' }, { id: 'foam', name: 'Gąbki' },
 ];
 
+function elementCountLabel(count: number) {
+  const lastTwoDigits = count % 100;
+  const lastDigit = count % 10;
+  if (count === 1) return '1 element';
+  if (lastDigit >= 2 && lastDigit <= 4 && !(lastTwoDigits >= 12 && lastTwoDigits <= 14)) return `${count} elementy`;
+  return `${count} elementów`;
+}
+
 export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { initial?: Training; onBack: () => void; onSaved: () => void; setGlobalDirty: (dirty: boolean) => void }) {
   const sources = useAsync(async () => {
     const [elements, routines, executionTypes] = await Promise.all([api.elements(false), api.routines(), api.executionTypes().catch(() => fallbackExecutionTypes)]);
@@ -76,7 +84,7 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
     <section className="date-panel"><label>Data treningu<input type="date" value={date} onChange={(e) => { setDate(e.target.value); markDirty(); }}/></label><div><strong>{entries.length}</strong><span>wejść</span></div><div><strong>{total}</strong><span>elementów</span></div></section>
     <div className="entries-list">
       {entries.map((entry, entryIndex) => { const entryElements = entry.activities.reduce((sum, activity) => sum + (activity.type === 'element' ? activity.repetitions : (activity.elements?.length ?? 0) * activity.repetitions), 0); return <section className={`entry-card ${editingActivity?.entryIndex === entryIndex ? 'is-editing' : ''}`} key={entry.id ?? entryIndex}>
-        <header><div className="entry-heading"><span className="entry-index">{entryIndex + 1}</span><div><span>Wejście {entryIndex + 1}</span><h2>{entry.activities.length ? `${entry.activities.length} ${entry.activities.length === 1 ? 'czynność' : 'czynności'}` : 'Puste wejście'}</h2></div></div><div className="entry-header-actions"><small>{entryElements} {entryElements === 1 ? 'element' : 'elementów'}</small><button className="danger-link" onClick={() => removeEntry(entryIndex)}>Usuń</button></div></header>
+        <header><div className="entry-heading"><span className="entry-index">{entryIndex + 1}</span><div><span>Wejście {entryIndex + 1}</span><h2>{elementCountLabel(entryElements)}</h2></div></div><div className="entry-header-actions"><button className="danger-link" onClick={() => removeEntry(entryIndex)}>Usuń</button></div></header>
         <label className="execution-select">Domyślne miejsce lądowania<select value={entry.defaultExecutionTypeId} onChange={(e) => { const type = sources.data!.executionTypes.find((x) => x.id === e.target.value)!; updateEntry(entryIndex, (current) => ({ ...current, defaultExecutionTypeId: type.id, defaultExecutionTypeName: type.name })); }}><option value="" disabled>Wybierz miejsce</option>{sources.data!.executionTypes.filter((x) => !x.hidden).map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select><small>Dotyczy nowych elementów. W układzie możesz wskazać inne lądowanie dla każdej pozycji.</small></label>
         <div className="activity-list">{entry.activities.map((activity, activityIndex) => <button className="activity" key={activity.id ?? activityIndex} onClick={() => setEditingActivity({ entryIndex, activityIndex })}>
           <span className={`activity-kind ${activity.type}`}>{activity.type === 'element' ? 'E' : 'U'}</span><div><strong>{activity.type === 'element' ? activity.elementCode : activity.routineName}</strong><small>{activity.type === 'routine' ? `${activity.isFullRoutine ? 'Cały układ' : `Elementy ${activity.rangeStart}–${activity.rangeEnd}`} · ${activity.elements?.map((x) => x.code).join(' · ')}` : activity.elementName || 'Pojedynczy element'}<br/>{activity.executionTypeName}</small></div><b>{activity.repetitions}×</b><span className="chevron">›</span>

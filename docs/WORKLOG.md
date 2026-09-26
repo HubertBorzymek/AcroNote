@@ -70,6 +70,7 @@ Ukończono naprawy elementów/układów, dodawanie elementu z wejścia, dialog z
 - czytelniejsze numerowanie i podsumowania wielu wejść;
 - trening demonstracyjny z pięcioma zróżnicowanymi wejściami;
 - normalizacja znaków Unicode w nazwach kont: polskie litery, NFC i typowe spacje z klawiatur mobilnych.
+- nagłówek wejścia pokazuje sumaryczną liczbę wykonanych elementów zamiast liczby technicznych czynności; wartość nie jest powtarzana po prawej stronie.
 
 Commity funkcjonalne:
 
@@ -108,6 +109,7 @@ Końcowe zmiany tej iteracji obejmują bezwzględny adres linku/QR, test jego ko
 - Karty układów na telefonie pokazują elementy w trzykolumnowej siatce bez poszerzania strony. Lista i edytor zostały sprawdzone przy 390×844, wraz z widoczną dolną nawigacją.
 - Edytor treningu z pięcioma wejściami, oba selektory elementów, edycję szablonu i korektę zakresu sprawdzono przy 390×844. Po zapisaniu nowej wersji szablonu dawna czynność pokazała blokadę przebudowy, zachowując pełną migawkę.
 - Rejestracja i logowanie `Łukasz Żółć` przeszły z polskimi znakami, spacją nierozdzielającą z telefonu i wejściem w postaci Unicode NFD; zapisano postać NFC ze zwykłą spacją.
+- Nagłówki pięciu wejść sprawdzono w przeglądarce: pokazują odpowiednio `5 elementów`, `8 elementów`, `3 elementy`, `10 elementów` i `3 elementy`, bez powielania wartości po prawej stronie.
 
 ## Konta startowe
 
