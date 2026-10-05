@@ -79,6 +79,14 @@ Commity funkcjonalne:
 
 Końcowe zmiany tej iteracji obejmują bezwzględny adres linku/QR, test jego kontraktu, pełną aktualizację dokumentacji oraz wyniki migracji i ręcznej kontroli UI.
 
+## Iteracja 2026-10-05 — długie treningi
+
+- Kolejność kart w edytorze jest odwrócona wyłącznie prezentacyjnie: ostatnie wejście znajduje się na górze, ale zapis i prawdziwe numery wejść zachowują kolejność domenową.
+- Przycisk „Dodaj wejście” znajduje się nad listą, a nowe wejście natychmiast pojawia się jako pierwsza karta.
+- Domyślny zakres to 5 ostatnich wejść. Sterowanie pozwala pokazywać starsze partiami po 5, wszystkie, zwijać po 5 albo wrócić do 5 ostatnich.
+- Nad listą widoczny jest zwięzły licznik, np. `5 z 20`, oraz informacja, że najnowsze są na górze.
+- Test przeglądarkowy wykonano na izolowanym treningu z 20 wejściami i 100 elementami przy 390×844 oraz 1280×900.
+
 ## Migracja danych i kopie
 
 - Nie modyfikowano `data/acronote.db` podczas testów.
@@ -91,9 +99,9 @@ Końcowe zmiany tej iteracji obejmują bezwzględny adres linku/QR, test jego ko
 - Pliki testowych baz są ignorowane przez Git.
 - Przed uzupełnieniem treningu demo wykonano spójną kopię `data/backups/acronote-before-multi-entry-demo-20260926.db`. Seeder dodał jeden trening; baza ma 4 konta / 9 treningów / 34 elementy, konto `demo` ma trening z 5 wejściami, a `integrity_check` zwraca `ok`.
 
-## Weryfikacja 2026-09-26
+## Weryfikacja 2026-10-05
 
-- `npm test`: 61/61 (API: 6 plików / 39, web: 4 pliki / 22).
+- `npm test`: 63/63 (API: 6 plików / 39, web: 5 plików / 24).
 - `npm run typecheck`: PASS.
 - `npm run build`: PASS.
 - `npm audit --audit-level=moderate`: 0 podatności.

@@ -53,6 +53,7 @@ Testy nie używają pliku `data/acronote.db`. Każdy zestaw integracyjny otrzymu
 | T34 | Korekta zakresu układu | Niezmieniony szablon pozwala skrócić wykonanie; nowsza/usunięta wersja blokuje przebudowę i zachowuje migawkę |
 | T35 | Ponowny zapis historycznego treningu | Wersja źródłowa i elementy migawki pozostają bez zmian po aktualizacji bieżącego szablonu |
 | T36 | Dane demonstracyjne wielu wejść | Seeder idempotentnie zapewnia trening demo z pięcioma różnymi wejściami, układami, fragmentem i różnymi lądowaniami |
+| T37 | Długi trening | Dla 20+ wejść lista zaczyna się od najnowszego, pokazuje domyślnie 5 i poprawnie rozwija się partiami lub w całości |
 
 ## Konta i uprawnienia
 
@@ -91,6 +92,7 @@ Na telefonowym rozmiarze widoku należy sprawdzić:
 18. pełne filtry w wyborze elementu do wejścia, układu i edytowanego szablonu;
 19. czytelne numery i liczniki przy co najmniej pięciu wejściach;
 20. zmianę zakresu wykonania układu oraz komunikat po zmianie wersji jego szablonu.
+21. trening z 20 wejściami i 100 elementami: kolejność 20→16, licznik `5 z 20`, rozwinięcie do 10 i 20 oraz powrót do pięciu ostatnich.
 
 ## Macierz przeglądarek
 

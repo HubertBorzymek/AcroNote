@@ -63,6 +63,7 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **TRN-08:** formularz z niezapisanymi zmianami ostrzega przy nawigacji i, o ile pozwala przeglądarka, przy zamykaniu lub odświeżaniu karty.
 - **TRN-09:** dla wykonania nadal istniejącej, niezmienionej wersji układu można skorygować wykonany zakres. Gdy źródłowy szablon usunięto lub zmieniono, aplikacja chroni migawkę i podpowiada usunięcie czynności oraz dodanie elementów pojedynczo.
 - **TRN-10:** przy wielu wejściach edytor jednoznacznie pokazuje numer wejścia i sumaryczną liczbę wykonanych elementów; okna wyboru i edycji wskazują numer bieżącego wejścia.
+- **TRN-11:** edytor pokazuje najnowsze wejścia na górze i umieszcza tam przycisk dodawania. Domyślnie widocznych jest pięć ostatnich wejść; starsze można odsłaniać po pięć, pokazać wszystkie, zwijać po pięć lub wrócić do samych pięciu ostatnich.
 
 ### Miejsca lądowania
 

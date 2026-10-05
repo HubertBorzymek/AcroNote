@@ -17,6 +17,10 @@ function elementCountLabel(count: number) {
   return `${count} elementów`;
 }
 
+export function newestEntryIndexes(total: number, visibleCount: number) {
+  return Array.from({ length: Math.min(total, visibleCount) }, (_, offset) => total - offset - 1);
+}
+
 export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { initial?: Training; onBack: () => void; onSaved: () => void; setGlobalDirty: (dirty: boolean) => void }) {
   const sources = useAsync(async () => {
     const [elements, routines, executionTypes] = await Promise.all([api.elements(false), api.routines(), api.executionTypes().catch(() => fallbackExecutionTypes)]);
@@ -31,6 +35,7 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
   const [picker, setPicker] = useState<{ entryIndex: number; type?: 'element' | 'routine' } | null>(null);
   const [editingActivity, setEditingActivity] = useState<{ entryIndex: number; activityIndex: number } | null>(null);
   const [showExitDialog, setShowExitDialog] = useState(false);
+  const [visibleEntryCount, setVisibleEntryCount] = useState(5);
   useUnsavedChanges(dirty);
 
   const markDirty = () => { setDirty(true); setGlobalDirty(true); };
@@ -38,7 +43,9 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
   function updateEntry(index: number, update: (entry: TrainingEntry) => TrainingEntry) { setEntries(entries.map((entry, i) => i === index ? update(entry) : entry)); markDirty(); }
   function addEntry() {
     const execution = sources.data?.executionTypes[0] ?? fallbackExecutionTypes[0];
-    setEntries([...entries, { defaultExecutionTypeId: execution.id, defaultExecutionTypeName: execution.name, activities: [] }]); markDirty();
+    setEntries([...entries, { defaultExecutionTypeId: execution.id, defaultExecutionTypeName: execution.name, activities: [] }]);
+    setVisibleEntryCount((current) => current > 5 ? current + 1 : 5);
+    markDirty();
   }
   function removeEntry(index: number) {
     if (entries[index].activities.length && !confirm('Usunąć wejście wraz ze wszystkimi czynnościami?')) return;
@@ -77,13 +84,17 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
   }
 
   const total = useMemo(() => entries.reduce((sum, entry) => sum + entry.activities.reduce((activitySum, activity) => activitySum + (activity.type === 'element' ? activity.repetitions : (activity.elements?.length ?? 0) * activity.repetitions), 0), 0), [entries]);
+  const visibleIndexes = newestEntryIndexes(entries.length, visibleEntryCount);
+  const hiddenEntryCount = Math.max(0, entries.length - visibleIndexes.length);
   if (sources.loading) return <Loading/>;
   if (sources.error) return <ErrorState message={sources.error} retry={sources.reload}/>;
   return <div className="page editor-page">
     <PageHeader title={savedId ? 'Edytuj trening' : 'Nowy trening'} eyebrow={dirty ? 'Niezapisane zmiany' : savedId ? 'Zmiany widoczne dla trenera' : 'Dziennik'} onBack={back} action={<button className="button primary compact" onClick={() => void save(false)} disabled={saving}>{saving ? 'Zapisuję…' : 'Zapisz'}</button>}/>
     <section className="date-panel"><label>Data treningu<input type="date" value={date} onChange={(e) => { setDate(e.target.value); markDirty(); }}/></label><div><strong>{entries.length}</strong><span>wejść</span></div><div><strong>{total}</strong><span>elementów</span></div></section>
+    <button className="add-entry" onClick={addEntry}><Icon name="plus"/><span><strong>Dodaj wejście</strong><small>Nowe wejście pojawi się na górze listy</small></span></button>
+    {!!entries.length && <div className="entry-list-summary"><div><strong>Ostatnie wejścia</strong><small>Najnowsze są na górze</small></div><span>{visibleIndexes.length} z {entries.length}</span></div>}
     <div className="entries-list">
-      {entries.map((entry, entryIndex) => { const entryElements = entry.activities.reduce((sum, activity) => sum + (activity.type === 'element' ? activity.repetitions : (activity.elements?.length ?? 0) * activity.repetitions), 0); return <section className={`entry-card ${editingActivity?.entryIndex === entryIndex ? 'is-editing' : ''}`} key={entry.id ?? entryIndex}>
+      {visibleIndexes.map((entryIndex) => { const entry = entries[entryIndex]; const entryElements = entry.activities.reduce((sum, activity) => sum + (activity.type === 'element' ? activity.repetitions : (activity.elements?.length ?? 0) * activity.repetitions), 0); return <section className={`entry-card ${editingActivity?.entryIndex === entryIndex ? 'is-editing' : ''}`} key={entry.id ?? entryIndex}>
         <header><div className="entry-heading"><span className="entry-index">{entryIndex + 1}</span><div><span>Wejście {entryIndex + 1}</span><h2>{elementCountLabel(entryElements)}</h2></div></div><div className="entry-header-actions"><button className="danger-link" onClick={() => removeEntry(entryIndex)}>Usuń</button></div></header>
         <label className="execution-select">Domyślne miejsce lądowania<select value={entry.defaultExecutionTypeId} onChange={(e) => { const type = sources.data!.executionTypes.find((x) => x.id === e.target.value)!; updateEntry(entryIndex, (current) => ({ ...current, defaultExecutionTypeId: type.id, defaultExecutionTypeName: type.name })); }}><option value="" disabled>Wybierz miejsce</option>{sources.data!.executionTypes.filter((x) => !x.hidden).map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select><small>Dotyczy nowych elementów. W układzie możesz wskazać inne lądowanie dla każdej pozycji.</small></label>
         <div className="activity-list">{entry.activities.map((activity, activityIndex) => <button className="activity" key={activity.id ?? activityIndex} onClick={() => setEditingActivity({ entryIndex, activityIndex })}>
@@ -93,7 +104,10 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
         <div className="add-activity"><button onClick={() => setPicker({ entryIndex, type: 'element' })}><span>✦</span> Element</button><button onClick={() => setPicker({ entryIndex, type: 'routine' })}><span>≋</span> Układ lub fragment</button></div>
       </section>; })}
     </div>
-    <button className="add-entry" onClick={addEntry}><Icon name="plus"/><span><strong>Dodaj wejście</strong><small>Kolejne wejście na trampolinę</small></span></button>
+    {entries.length > 5 && <div className="entry-list-controls">
+      {hiddenEntryCount > 0 && <><button onClick={() => setVisibleEntryCount((count) => Math.min(entries.length, count + 5))}>Pokaż starsze ({Math.min(5, hiddenEntryCount)})</button><button onClick={() => setVisibleEntryCount(entries.length)}>Pokaż wszystkie ({entries.length})</button></>}
+      {visibleIndexes.length > 5 && <><button onClick={() => setVisibleEntryCount((count) => Math.max(5, count - 5))}>Pokaż mniej</button><button onClick={() => setVisibleEntryCount(5)}>Tylko 5 ostatnich</button></>}
+    </div>}
     {savedId && <button className="delete-training" onClick={() => void removeTraining()}>Usuń trening</button>}
     <div className="sticky-save"><span><strong>{entries.length}</strong> wejść · <strong>{total}</strong> elementów</span><div><button className="button secondary" onClick={() => void save(false)} disabled={saving}>{saving ? 'Zapisywanie…' : 'Zapisz i kontynuuj'}</button><button className="button primary" onClick={() => void save(true)} disabled={saving}>{saving ? 'Zapisywanie…' : 'Zapisz i zamknij'}</button></div></div>
     {picker?.type === 'element' && <ElementPicker entryNumber={picker.entryIndex + 1} elements={sources.data!.elements} onCreated={(element) => sources.setData({ ...sources.data!, elements: [...sources.data!.elements, element] })} onPick={(element) => addElement(picker.entryIndex, element)} onClose={() => setPicker(null)}/>}

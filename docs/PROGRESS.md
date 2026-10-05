@@ -4,11 +4,11 @@
 
 ## Stan bieżący
 
-**Aktualizacja:** 2026-09-26
+**Aktualizacja:** 2026-10-05
 
 **Etap:** kompletna lokalna wersja profilu zawodnika, profilu trenera tylko do odczytu i panelu administratora
 
-**Weryfikacja:** 61 testów automatycznych, kontrola typów, build, audyt zależności, migracja kopii istniejącej bazy oraz testy przeglądarkowe desktop/mobile na odizolowanej bazie
+**Weryfikacja:** 63 testy automatyczne, kontrola typów, build, audyt zależności, migracja kopii istniejącej bazy oraz testy przeglądarkowe desktop/mobile na odizolowanej bazie
 
 ## Zrealizowany zakres
 
@@ -44,6 +44,7 @@
 - Szablon układu można edytować w trakcie dodawania go do treningu; zapis tworzy nową wersję tylko dla bieżących i przyszłych użyć.
 - Zakres wykonanego układu można skorygować, dopóki wersja szablonu jest zgodna. Po zmianie/usunięciu źródła aplikacja blokuje automatyczną przebudowę i wyjaśnia bezpieczną alternatywę.
 - Karty wejść mają wyraźny numer i sumaryczną liczbę wykonanych elementów zamiast technicznej liczby czynności; okna edycji wskazują numer bieżącego wejścia.
+- Najnowsze wejście i przycisk dodawania są na górze. Przy długim treningu domyślnie widać 5 ostatnich wejść, ze sterowaniem do dokładania starszych po 5, pokazania wszystkich, zwijania i powrotu do ostatnich 5.
 
 ### Miejsca lądowania i statystyki
 
@@ -87,7 +88,7 @@
 
 | Kontrola | Wynik | Szczegóły |
 |---|---|---|
-| `npm test` | **PASS** | API: 6 plików / 39 testów; web: 4 pliki / 22 testy; razem 61 |
+| `npm test` | **PASS** | API: 6 plików / 39 testów; web: 5 plików / 24 testy; razem 63 |
 | `npm run typecheck` | **PASS** | `shared`, `web`, `api` |
 | `npm run build` | **PASS** | produkcyjny build Vite i API |
 | `npm audit --audit-level=moderate` | **PASS** | 0 znanych podatności |
@@ -103,6 +104,7 @@
 | nazwa Unicode ze spacją | **PASS** | rejestracja/logowanie `Łukasz Żółć`, NFC, spacja nierozdzielająca z telefonu, administracja i odrzucenie Entera |
 | układy mobile | **PASS** | lista i edytor przy 390×844; pełna siatka elementów bez poziomego przepełnienia, widoczna dolna nawigacja |
 | trening mobile | **PASS** | pięć wejść przy 390×844, pełne filtry, edycja szablonu, korekta zakresu i blokada po zmianie wersji |
+| długi trening | **PASS** | 20 wejść / 100 elementów na izolowanej bazie; kolejność od najnowszego, domyślne 5, +5, wszystkie i zwinięcie sprawdzone przy 390×844 oraz 1280×900 |
 
 ## Pokrycie automatyczne
 
