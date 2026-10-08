@@ -9,7 +9,9 @@
     "start": "node --env-file-if-exists=../../.env dist/server.js",
     "test": "vitest run",
     "seed": "tsx src/seed.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "import-report": "tsx src/import-report.ts",
+    "admin": "tsx src/admin-cli.ts"
   },
   "dependencies": {
     "@acronote/shared": "*",

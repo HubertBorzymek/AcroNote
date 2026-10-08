@@ -13,7 +13,7 @@ export function Auth({ onAuthenticated }: { onAuthenticated: (user: User) => voi
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (mode === 'register' && password !== confirmPassword) return setError('Hasła nie są takie same.');
-    if (password.length < 8) return setError('Hasło musi mieć co najmniej 8 znaków.');
+    if (mode === 'register' && password.length < 10) return setError('Hasło musi mieć co najmniej 10 znaków.');
     setBusy(true); setError('');
     try { onAuthenticated(await (mode === 'login' ? api.login(username, password) : api.register(username, password))); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Nie udało się połączyć z serwerem.'); }
@@ -33,7 +33,7 @@ export function Auth({ onAuthenticated }: { onAuthenticated: (user: User) => voi
       <div className="auth-heading"><span className="kicker">Witaj w AcroNote</span><h1>{mode === 'login' ? 'Dobrze Cię widzieć' : 'Zacznij swój dziennik'}</h1><p>{mode === 'login' ? 'Zaloguj się, by wrócić do swoich treningów.' : 'Twoje elementy i treningi będą dostępne tylko dla Ciebie.'}</p></div>
       <form onSubmit={submit} className="form-stack">
         <label>Nazwa użytkownika<input autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required minLength={3} maxLength={80} placeholder="np. Maria Kowalska"/><small>Możesz wpisać imię i nazwisko ze spacją.</small></label>
-        <label>Hasło<input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Minimum 8 znaków"/></label>
+        <label>Hasło<input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={(e) => setPassword(e.target.value)} required placeholder={mode === 'register' ? 'Minimum 10 znaków' : 'Twoje hasło'}/></label>
         {mode === 'register' && <label>Powtórz hasło<input type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required/></label>}
         {error && <p className="form-error" role="alert">{error}</p>}
         <button className="button primary full" disabled={busy}>{busy ? 'Chwila…' : mode === 'login' ? 'Zaloguj się' : 'Utwórz konto'}</button>

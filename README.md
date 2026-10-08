@@ -55,7 +55,8 @@ Jeśli AcroNote już działa, `start.bat` tylko otworzy przeglądarkę. Aby zatr
 | 🔗 **Układy** | Szablony z dowolną liczbą elementów. Możesz zapisać cały układ albo fragment (np. 3–7). |
 | 📊 **Statystyki** | Suma elementów, rozkład lądowań (siatka / materac / gąbki), historia konkretnego elementu w tygodniach i miesiącach. |
 | 🧑‍🏫 **Profil trenera** | Połączenie przez kod, link lub QR, za świadomą zgodą. Trener tylko czyta dane zawodnika. |
-| 🛡️ **Administrator** | Zarządzanie kontami i danymi, bez dostępu do haseł i sesji. |
+| 🛡️ **Administrator** | Zarządzanie kontami, danymi i zgłoszeniami, bez dostępu do haseł i sesji. Na serwerze dostępny wyłącznie przez prywatny tunel. |
+| 🐞 **Zgłoś problem** | Z profilu albo z każdego ekranu błędu. Do opisu dołączane są informacje techniczne i opcjonalnie kopia danych konta, którą da się odtworzyć lokalnie. |
 | 🌙 **Tryb ciemny** | Domyślnie zgodny z systemem, zapamiętywany w przeglądarce. |
 
 **Najważniejsza zasada:** każdy zapisany trening przechowuje własną *migawkę* kodów, nazw i lądowań. Gdy później zmienisz element albo układ, dawne treningi i statystyki zostaną bez zmian.
@@ -95,17 +96,16 @@ docs/            wymagania, architektura, plan testów, stan prac
 | `npm run typecheck` | kontrola typów TypeScript |
 | `npm run seed` | konta demo i konto `admin` |
 | `npm run package:win` | samodzielna paczka Windows (`release/AcroNote-<wersja>-win-x64.zip`) |
+| `npm run import-report -- <plik.json>` | odtwarza dane ze zgłoszenia błędu w lokalnej bazie |
+| `npm run dev:prod-admin` | frontend deweloperski na danych z serwera (przez `fly proxy`, zob. [DEPLOY.md](docs/DEPLOY.md)) |
 
-### 📦 Wydawanie nowej wersji
+### 🌐 Wersja online i gałęzie
 
-Podnieś `version` w `package.json`, zrób commit i wypchnij tag:
+Rozwój odbywa się na gałęzi **`dev`**. Każdy push i PR przechodzi testy ([ci.yml](.github/workflows/ci.yml)). Po scaleniu PR do **`main`** nowa wersja trafia automatycznie na Fly.io ([deploy.yml](.github/workflows/deploy.yml)). Konfigurację, panel administratora przez tunel, kopie zapasowe i odtwarzanie zgłoszeń opisuje **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 
-```powershell
-git tag v0.3.0
-git push origin v0.3.0
-```
+### 📦 Paczka Windows (Releases)
 
-GitHub Actions ([release.yml](.github/workflows/release.yml)) uruchomi testy, zbuduje paczkę z wbudowanym Node.js i opublikuje ją w zakładce Releases.
+Podnieś `version` w `package.json` na `main` i wypchnij tag, np. `git tag v0.4.0` i `git push origin v0.4.0`. GitHub Actions ([release.yml](.github/workflows/release.yml)) uruchomi testy, zbuduje paczkę z wbudowanym Node.js i opublikuje ją w zakładce Releases.
 
 Przed commitem uruchom komplet kontroli z [AGENTS.md](AGENTS.md): `npm test`, `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate`.
 

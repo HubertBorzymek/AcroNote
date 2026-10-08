@@ -160,3 +160,26 @@ export interface ElementHistoryItem {
   count: number;
   landings?: LandingCount[];
 }
+
+export interface BugReportSummary {
+  id: number;
+  description: string;
+  status: 'new' | 'resolved';
+  createdAt: string;
+  resolvedAt?: string | null;
+}
+
+export interface AdminBugReportSummary extends BugReportSummary {
+  userId: number | null;
+  username: string;
+  page: string | null;
+  appVersion: string | null;
+  hasSnapshot: number | boolean;
+}
+
+export interface AdminBugReport extends Omit<AdminBugReportSummary, 'hasSnapshot'> {
+  expected: string | null;
+  userAgent: string | null;
+  diagnostics: Record<string, unknown> | null;
+  dataSnapshot: Record<string, unknown> | null;
+}

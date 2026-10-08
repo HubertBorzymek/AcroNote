@@ -161,3 +161,21 @@ Weryfikacja: `npm test` 69/69 (API 7 plików / 44, web 5 plików / 25), `npm run
 - Wbudowany w Windows `tar.exe` ulegał awarii przy tworzeniu ZIP; paczkę pakuje `System.IO.Compression.ZipFile`.
 
 Weryfikacja: `npm test` 70/70 (API 45, web 25), `npm run typecheck`, lokalna paczka 44 MB rozpakowana do pustego folderu ze spacją w ścieżce. `AcroNote.bat` uruchomił serwer na nowej bazie, logowanie `demo` i `trener_demo` działa, trener widzi zawodnika `demo`, `admin` nie istnieje.
+
+## Iteracja 2026-10-09 — wersja online (Fly.io), zgłoszenia błędów (v0.3.0)
+
+- Przepływ `dev → PR → main → automatyczne wdrożenie`: `ci.yml` (testy, typecheck, build, audit, budowa i test dymny obrazu Docker) dla PR i `dev`; `deploy.yml` wdraża `main` na Fly.io, a bez sekretu `FLY_API_TOKEN` pomija wdrożenie. Instrukcja: `docs/DEPLOY.md`.
+- `ACRONOTE_ENV=production`: brak kont demo, ciasteczko `Secure`, `TRUST_PROXY` z jawną funkcją zaufania (numeryczny `trustProxy` Fastify 5 był ignorowany), kopia bazy `VACUUM INTO` przed pierwszym startem nowej wersji i co dobę (14 ostatnich).
+- Panel administratora działa tylko na `ADMIN_PORT` w prywatnej sieci Fly (`fly proxy 3002`). Port publiczny nie rejestruje tras `/api/admin` i zwraca `isAdmin: false`. Konta admina: `admin-cli.js create-admin|reset-password|list-admins` z losowym hasłem. Debug frontendu na danych serwera: `npm run dev:prod-admin`.
+- Zgłoszenia błędów: tabela `bug_reports` (migracja v4), dialog z profilu i ekranów błędu, diagnostyka klienta (wersja, przeglądarka, ostatnie ekrany, zapytania i błędy, bez treści żądań, query stringów i tokenów zaproszeń) oraz opcjonalna migawka danych konta. Zakładka *Zgłoszenia* w panelu admina (podgląd, JSON, rozwiązanie, usunięcie) i `npm run import-report` odtwarzające konto lokalnie.
+- Dodano `ErrorBoundary`; wcześniej błąd renderowania zostawiał pustą stronę.
+
+Naprawione błędy:
+
+- Rejestracja przyjmowała w formularzu hasło 8–9 znaków, które serwer odrzucał niejasnym komunikatem; teraz obie strony wymagają 10 znaków i podają czytelny powód.
+- Wersja w profilu była na sztywno ustawiona na `0.1.0`.
+- Błąd sieci pokazywał angielskie „Failed to fetch”.
+- Błędy 500 nie były logowane przez własny `setErrorHandler`.
+- Zależności frontendu przeniesiono do `devDependencies`, więc obraz produkcyjny nie zawiera Vite ani Reacta w `node_modules`.
+
+Weryfikacja: `npm test` 81/81 (API 52, web 29), typecheck, build, audit 0. Ręcznie (Chromium, izolowana baza): wysłanie zgłoszenia z migawką, lista w profilu, podgląd w panelu admina, pobranie JSON i import do osobnej bazy (30 elementów / 2 układy / 7 treningów), dialog przy 375×812. Tryb produkcyjny lokalnie: `/api/admin` na porcie publicznym 404, na porcie admina 200, ciasteczko `Secure`, kopia bazy przed startem. Obraz Docker budowany i testowany w CI, bo lokalnie Dockera nie ma.

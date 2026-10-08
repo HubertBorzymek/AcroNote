@@ -1,0 +1,39 @@
+# Checks for every pull request and every push to dev.
+# Make the "checks" job a required status check for `main` (docs/DEPLOY.md), so a PR can be
+# merged only when tests, types, build, audit and the Docker image are all green.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [dev]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm audit --audit-level=moderate
+      - name: Build production Docker image
+        run: docker build --build-arg ACRONOTE_VERSION=ci-${{ github.sha }} -t acronote:ci .
+      - name: Smoke test the image
+        run: |
+          docker run -d --name acronote -p 3001:3001 -e ACRONOTE_ENV=production -e TRUST_PROXY=1 acronote:ci
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:3001/api/health && break; sleep 1; done
+          curl -fs http://127.0.0.1:3001/api/health | grep -q '"ok":true'
+          # The public port must not expose the admin API in production.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/api/admin/users)" = "404"
+          curl -fs http://127.0.0.1:3001/ | grep -q '<div id="root">'
+          docker logs acronote

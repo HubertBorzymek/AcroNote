@@ -7,9 +7,14 @@ import { parseElementCode } from '@acronote/shared';
 
 export type Db = Database.Database;
 
-export function openDatabase(path = process.env.DATABASE_PATH ?? './data/acronote.db'): Db {
+/** Resolves DATABASE_PATH the same way everywhere: relative paths are relative to the project root. */
+export function resolveDatabasePath(path = process.env.DATABASE_PATH ?? './data/acronote.db'): string {
   const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
-  const resolved = path === ':memory:' ? path : (isAbsolute(path) ? path : resolve(projectRoot, path));
+  return path === ':memory:' ? path : (isAbsolute(path) ? path : resolve(projectRoot, path));
+}
+
+export function openDatabase(path?: string): Db {
+  const resolved = resolveDatabasePath(path);
   if (resolved !== ':memory:') mkdirSync(dirname(resolved), { recursive: true });
   const db = new Database(resolved);
   db.pragma('journal_mode = WAL');
@@ -49,6 +54,8 @@ function migrate(db: Db): void {
     db.prepare('UPDATE invitations SET created_at=COALESCE(created_at, CURRENT_TIMESTAMP)').run();
     db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(3)').run();
   })();
+  // v4: bug_reports table (created by the schema above).
+  db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(4)').run();
 }
 
 export function seedExecutionTypes(db: Db, userId: number): void {

@@ -4,18 +4,20 @@ import rateLimit from '@fastify/rate-limit';
 import staticPlugin from '@fastify/static';
 import bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 import { openDatabase, seedExecutionTypes, type Db } from './db.js';
 import { getTraining, saveTraining, trainingSummary, type TrainingInput } from './training-service.js';
 import { validateElementCode } from '@acronote/shared';
+import { registerBugReportRoutes } from './bug-reports.js';
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 const bool = (value: unknown) => value ? 1 : 0;
 const text = (value: unknown, label: string, min = 1) => {
-  if (typeof value !== 'string' || value.trim().length < min) throw new Error(`${label} jest nieprawidłowe.`);
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} jest nieprawidłowe.`);
+  if (value.trim().length < min) throw new Error(`${label} musi mieć co najmniej ${min} znaków.`);
   return value.trim();
 };
 const usernameText = (value: unknown) => {
@@ -27,9 +29,34 @@ const usernameText = (value: unknown) => {
 
 declare module 'fastify' { interface FastifyRequest { userId: number; userRole: 'user' | 'admin' } }
 
-export async function buildApp(options: { db?: Db; logger?: boolean | { level: string } } = {}) {
-  const app = Fastify({ logger: options.logger ?? false });
+export type AppOptions = {
+  db?: Db;
+  logger?: boolean | { level: string };
+  /** Registers the /api/admin routes. The public production port runs without them. */
+  adminRoutes?: boolean;
+  /** Marks the session cookie Secure (required behind HTTPS). */
+  secureCookies?: boolean;
+  /** Number of reverse-proxy hops to trust for the client IP and protocol (Fly's edge = 1). */
+  trustProxy?: number;
+};
+
+function rootPackageVersion(): string {
+  try { return JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')).version ?? 'dev'; }
+  catch { return 'dev'; }
+}
+export const APP_VERSION = process.env.ACRONOTE_VERSION || rootPackageVersion();
+
+export async function buildApp(options: AppOptions = {}) {
+  const adminEnabled = options.adminRoutes ?? true;
+  const secureCookies = options.secureCookies ?? false;
+  // Trust only the nearest `hops` proxies, so a client cannot spoof its IP by prepending X-Forwarded-For.
+  // (A numeric trustProxy is silently ignored by Fastify 5, hence the explicit function.)
+  const hops = options.trustProxy ?? 0;
+  const app = Fastify({ logger: options.logger ?? false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
   const db = options.db ?? openDatabase();
+  const createSession = (_db: Db, userId: number, reply: any) => startSession(db, userId, reply, secureCookies);
+  // Without admin routes the client must not offer the admin panel either.
+  const publicUser = (user: any) => ({ ...toPublicUser(user), ...(adminEnabled ? {} : { isAdmin: false }) });
   app.decorate('db', db);
   await app.register(cookie);
   await app.register(rateLimit, {
@@ -43,9 +70,10 @@ export async function buildApp(options: { db?: Db; logger?: boolean | { level: s
   });
 
   app.addHook('onClose', async () => { if (!options.db) db.close(); });
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     const err = error as Error & { statusCode?: number };
     const status = err.statusCode ?? (err.message.includes('znaleziono') ? 404 : 400);
+    if (status >= 500) request.log.error(err);
     reply.status(status).send({ message: status >= 500 ? 'Wystąpił błąd serwera.' : err.message });
   });
 
@@ -65,7 +93,7 @@ export async function buildApp(options: { db?: Db; logger?: boolean | { level: s
   }
   const adminAuth = { preHandler: authenticateAdmin };
 
-  app.get('/api/health', async () => ({ ok: true }));
+  app.get('/api/health', async () => ({ ok: true, version: APP_VERSION }));
   app.post('/api/auth/register', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
     const body = request.body as any;
     const username = usernameText(body?.username);
@@ -168,6 +196,7 @@ export async function buildApp(options: { db?: Db; logger?: boolean | { level: s
   app.get('/api/stats/summary', auth, async (request,reply) => { const q=request.query as any;let elementId:number|undefined;if(q.elementId!==undefined){elementId=integerQuery(q.elementId,'Element');if(!db.prepare('SELECT 1 FROM elements WHERE id=? AND user_id=?').get(elementId,request.userId))return reply.status(404).send({message:'Nie znaleziono elementu.'});}return trainingSummary(db,request.userId,q.from,q.to,elementId); });
   app.get('/api/stats/elements/:id/history', auth, async (request,reply) => elementHistory(db,request.userId,Number((request.params as any).id),reply));
 
+  if (adminEnabled) {
   app.get('/api/admin/users', adminAuth, async request => {
     const q=request.query as any; const includeDeleted=q.includeDeleted==='true';
     return db.prepare(`SELECT u.id,u.username,u.role,u.athlete_enabled athleteEnabled,u.coach_enabled coachEnabled,u.created_at createdAt,u.deleted_at deletedAt,
@@ -211,6 +240,8 @@ export async function buildApp(options: { db?: Db; logger?: boolean | { level: s
   app.post('/api/admin/users/:userId/elements/:id/restore', adminAuth, async (request,reply) => {const p=request.params as any;const info=db.prepare('UPDATE elements SET deleted_at=NULL WHERE id=? AND user_id=? AND deleted_at IS NOT NULL').run(Number(p.id),Number(p.userId));if(!info.changes)return reply.status(404).send({message:'Nie znaleziono usuniętego elementu.'});return{ok:true};});
   app.delete('/api/admin/users/:userId/routines/:id', adminAuth, async (request,reply) => {const p=request.params as any;const info=db.prepare("UPDATE routines SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=? AND deleted_at IS NULL").run(Number(p.id),Number(p.userId));if(!info.changes)return reply.status(404).send({message:'Nie znaleziono aktywnego układu.'});return{ok:true};});
   app.post('/api/admin/users/:userId/routines/:id/restore', adminAuth, async (request,reply) => {const p=request.params as any;const info=db.prepare('UPDATE routines SET deleted_at=NULL WHERE id=? AND user_id=? AND deleted_at IS NOT NULL').run(Number(p.id),Number(p.userId));if(!info.changes)return reply.status(404).send({message:'Nie znaleziono usuniętego układu.'});return{ok:true};});
+  }
+  registerBugReportRoutes(app, db, { auth, adminAuth, adminEnabled, appVersion: APP_VERSION });
 
   app.get('/api/coach/invitations', auth, async request => db.prepare(`SELECT i.id,i.role,u.username creatorUsername,
     i.created_at createdAt,i.expires_at expiresAt,i.used_at acceptedAt,i.cancelled_at cancelledAt,
@@ -289,8 +320,8 @@ export async function buildApp(options: { db?: Db; logger?: boolean | { level: s
   return app;
 }
 
-function createSession(db:Db,userId:number,reply:any){const token=randomBytes(32).toString('base64url');db.prepare("DELETE FROM sessions WHERE expires_at<=datetime('now')").run();db.prepare("INSERT INTO sessions(user_id,token_hash,expires_at) VALUES(?,?,datetime('now','+30 days'))").run(userId,hashToken(token));reply.setCookie('acronote_session',token,{httpOnly:true,sameSite:'strict',secure:false,path:'/',maxAge:60*60*24*30});}
-function publicUser(user:any){return{id:user.id,username:user.username,athleteEnabled:!!user.athlete_enabled,coachEnabled:!!user.coach_enabled,role:user.role??'user',isAdmin:user.role==='admin'};}
+function startSession(db:Db,userId:number,reply:any,secure:boolean){const token=randomBytes(32).toString('base64url');db.prepare("DELETE FROM sessions WHERE expires_at<=datetime('now')").run();db.prepare("INSERT INTO sessions(user_id,token_hash,expires_at) VALUES(?,?,datetime('now','+30 days'))").run(userId,hashToken(token));reply.setCookie('acronote_session',token,{httpOnly:true,sameSite:'strict',secure,path:'/',maxAge:60*60*24*30});}
+function toPublicUser(user:any){return{id:user.id,username:user.username,athleteEnabled:!!user.athlete_enabled,coachEnabled:!!user.coach_enabled,role:user.role??'user',isAdmin:user.role==='admin'};}
 function integerQuery(value:unknown,label:string){const result=Number(value);if(!Number.isInteger(result)||result<0)throw new Error(`${label} jest nieprawidłowa.`);return result;}
 function elementUsage(db:Db,userId:number,id:number){const element=db.prepare('SELECT id FROM elements WHERE id=? AND user_id=? AND deleted_at IS NULL').get(id,userId);if(!element)throw new Error('Nie znaleziono elementu.');const routines=db.prepare(`SELECT DISTINCT r.id,r.name FROM routine_items ri JOIN routines r ON r.id=ri.routine_id WHERE ri.element_id=? AND r.user_id=? AND r.deleted_at IS NULL ORDER BY r.name`).all(id,userId);return{usedInRoutines:routines.length>0,routineCount:routines.length,routines};}
 function adminUser(db:Db,id:number){return db.prepare(`SELECT u.id,u.username,u.role,u.athlete_enabled athleteEnabled,u.coach_enabled coachEnabled,u.created_at createdAt,u.deleted_at deletedAt,

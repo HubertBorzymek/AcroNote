@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { openBugReport } from './BugReport';
 
 export function Icon({ name }: { name: 'home' | 'spark' | 'routine' | 'chart' | 'user' | 'admin' | 'plus' | 'search' | 'back' | 'more' }) {
   const paths: Record<string, ReactNode> = {
@@ -21,7 +22,7 @@ export function Loading() {
 }
 
 export function ErrorState({ message, retry }: { message: string; retry?: () => void }) {
-  return <div className="state error-state"><span className="state-mark">!</span><h2>Coś poszło nie tak</h2><p>{message}</p>{retry && <button className="button secondary" onClick={retry}>Spróbuj ponownie</button>}</div>;
+  return <div className="state error-state"><span className="state-mark">!</span><h2>Coś poszło nie tak</h2><p>{message}</p>{retry && <button className="button secondary" onClick={retry}>Spróbuj ponownie</button>}<button className="text-button" onClick={openBugReport}>Zgłoś problem</button></div>;
 }
 
 export function EmptyState({ icon, title, description, action }: { icon: string; title: string; description: string; action?: ReactNode }) {

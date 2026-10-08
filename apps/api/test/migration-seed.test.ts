@@ -6,7 +6,7 @@ describe('migracja i dane startowe',()=>{
   let db:Db|undefined;afterEach(()=>db?.close());
   it('używa nazwy Siatka dla katalogu, nie zmieniając historycznych migawek',()=>{
     db=openDatabase(':memory:');const userId=Number(db.prepare("INSERT INTO users(username,password_hash) VALUES('u','h')").run().lastInsertRowid);seedExecutionTypes(db,userId);
-    expect((db.prepare('SELECT MAX(version) version FROM migrations').get() as any).version).toBe(3);
+    expect((db.prepare('SELECT MAX(version) version FROM migrations').get() as any).version).toBe(4);
     expect((db.prepare('PRAGMA table_info(invitations)').all() as any[]).map(column=>column.name)).toEqual(expect.arrayContaining(['accepted_by_id','cancelled_at','created_at']));
     expect(db.prepare('SELECT name FROM execution_types WHERE user_id=? ORDER BY sort_order').all(userId)).toMatchObject([{name:'Siatka'},{name:'Materac'},{name:'Gąbki'}]);
     db.prepare("INSERT INTO trainings(user_id,training_date) VALUES(?,'2026-01-01')").run(userId);const trainingId=(db.prepare('SELECT id FROM trainings').get() as any).id;

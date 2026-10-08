@@ -122,7 +122,7 @@
 
 - Pomoc trenera w odzyskiwaniu konta, komentarze, cele treningowe i grupy klubowe.
 - PWA/offline i synchronizacja, import/eksport, generator kodów i punktacja.
-- Utwardzenie do publicznego Internetu: HTTPS, `Secure` cookie, polityka CORS/CSRF dla docelowej domeny, automatyczne kopie i monitoring.
+- Monitoring i alerty dla wersji online (HTTPS, `Secure` cookie, SameSite=Strict, kopie bazy i prywatny panel admina są już zrobione — zob. `docs/DEPLOY.md`).
 - Automatyczne E2E w CI dla wielu przeglądarek; krytyczne ścieżki wykonano ręcznie w Chromium desktop i 390×844.
 
 ## Ważne informacje operacyjne

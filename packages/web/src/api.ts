@@ -1,4 +1,5 @@
-import type { Activity, AdminUser, AdminUserData, CoachAthlete, CoachInvitation, CoachLink, ElementHistoryItem, ElementItem, ExecutionType, LandingCount, Routine, RoutineSlot, StatsSummary, Training, TrainingEntry, User } from './types';
+import { recordRequest, type Diagnostics } from './diagnostics';
+import type { Activity, AdminBugReport, AdminBugReportSummary, AdminUser, BugReportSummary, AdminUserData, CoachAthlete, CoachInvitation, CoachLink, ElementHistoryItem, ElementItem, ExecutionType, LandingCount, Routine, RoutineSlot, StatsSummary, Training, TrainingEntry, User } from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public details?: unknown) {
@@ -9,18 +10,24 @@ export class ApiError extends Error {
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body != null && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  const response = await fetch(`/api${path}`, {
-    ...init,
-    credentials: 'include',
-    headers,
-  });
+  const method = init.method ?? 'GET';
+  const started = performance.now();
+  let response: Response;
+  try {
+    response = await fetch(`/api${path}`, { ...init, credentials: 'include', headers });
+  } catch (reason) {
+    recordRequest(method, path, 'network-error', performance.now() - started, reason instanceof Error ? reason.message : undefined);
+    throw new ApiError('Brak połączenia z serwerem. Sprawdź internet i spróbuj ponownie.', 0);
+  }
   const payload = response.status === 204 ? undefined : await response.json().catch(() => undefined);
   if (!response.ok) {
     const message = typeof payload === 'object' && payload && 'message' in payload
       ? String(payload.message)
       : 'Nie udało się wykonać operacji.';
+    recordRequest(method, path, response.status, performance.now() - started, message);
     throw new ApiError(message, response.status, payload);
   }
+  recordRequest(method, path, response.status, performance.now() - started);
   return payload as T;
 }
 
@@ -137,4 +144,11 @@ export const api = {
   adminRestoreRoutine: (userId: string, routineId: string) => request<void>(`/admin/users/${userId}/routines/${routineId}/restore`, { method: 'POST' }),
   adminTraining: async (userId: string, trainingId: string) => mapTraining(await request<Record<string, unknown>>(`/admin/users/${userId}/trainings/${trainingId}`)),
   adminDeleteTraining: (userId: string, trainingId: string) => request<void>(`/admin/users/${userId}/trainings/${trainingId}`, { method: 'DELETE' }),
+
+  sendBugReport: (input: { description: string; expected?: string; page: string; includeSnapshot: boolean; diagnostics: Diagnostics }) => request<{ id: number; status: 'new' }>('/bug-reports', { method: 'POST', ...json(input) }),
+  myBugReports: () => request<BugReportSummary[]>('/bug-reports/mine'),
+  adminBugReports: (status?: 'new' | 'resolved') => request<AdminBugReportSummary[]>(`/admin/bug-reports${status ? `?status=${status}` : ''}`),
+  adminBugReport: (id: number) => request<AdminBugReport>(`/admin/bug-reports/${id}`),
+  adminSetBugReportStatus: (id: number, status: 'new' | 'resolved') => request<void>(`/admin/bug-reports/${id}`, { method: 'PUT', ...json({ status }) }),
+  adminDeleteBugReport: (id: number) => request<void>(`/admin/bug-reports/${id}`, { method: 'DELETE' }),
 };

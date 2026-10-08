@@ -1,7 +1,7 @@
 {
   "name": "acronote",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -17,7 +17,9 @@
     "test": "npm run test -w @acronote/api && npm run test -w @acronote/web",
     "seed": "npm run seed -w @acronote/api",
     "typecheck": "npm run typecheck -w @acronote/shared && npm run typecheck -w @acronote/web && npm run typecheck -w @acronote/api",
-    "package:win": "npm run build && node scripts/package-release.mjs"
+    "package:win": "npm run build && node scripts/package-release.mjs",
+    "import-report": "npm run import-report -w @acronote/api --",
+    "dev:prod-admin": "npm run dev -w @acronote/web -- --mode prod-admin"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

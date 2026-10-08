@@ -71,4 +71,12 @@ CREATE TABLE IF NOT EXISTS invitations (
   accepted_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL, cancelled_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS bug_reports (
+  id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  username_snapshot TEXT NOT NULL, description TEXT NOT NULL, expected TEXT, page TEXT,
+  app_version TEXT, user_agent TEXT, diagnostics TEXT, data_snapshot TEXT,
+  status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new','resolved')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, resolved_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_bug_reports_status ON bug_reports(status, created_at);
 `;

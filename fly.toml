@@ -1,0 +1,43 @@
+# Fly.io configuration. Setup steps: docs/DEPLOY.md
+# `app` must be globally unique on Fly — change it if "acronote" is taken, and keep it in sync with the
+# GitHub deploy workflow (it reads the name from this file).
+app = "acronote"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ACRONOTE_ENV = "production"
+  PORT = "3001"
+  HOST = "0.0.0.0"
+  DATABASE_PATH = "/data/acronote.db"
+  # Fly's edge proxy is the single trusted hop in front of the app (real client IP for rate limits).
+  TRUST_PROXY = "1"
+  # Admin panel: private network only (not in [http_service]); reach it with `fly proxy 3002`.
+  ADMIN_PORT = "3002"
+  ADMIN_HOST = "fly-local-6pn"
+  LOG_LEVEL = "info"
+
+[[mounts]]
+  source = "acronote_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3001
+  force_https = true
+  # Sleep when idle to keep the bill low; the first visit after a pause wakes it in ~1–2 s.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
