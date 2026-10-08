@@ -22,7 +22,7 @@ const demoElements = [
   ['12100/','Potrójne z półśrubą na początku'],['12111o','Potrójne po pół śruby'],['12303<','Potrójne w mieszanej konfiguracji']
 ] as const;
 
-export async function seedDemoAndAdmin(db: Db): Promise<{ demoCreated:boolean; demoShowcaseCreated:boolean; coachDemoCreated:boolean; coachLinkCreated:boolean; adminCreated:boolean }> {
+export async function seedDemoAndAdmin(db: Db, { includeAdmin = true }: { includeAdmin?: boolean } = {}): Promise<{ demoCreated:boolean; demoShowcaseCreated:boolean; coachDemoCreated:boolean; coachLinkCreated:boolean; adminCreated:boolean }> {
   let demoCreated=false;let coachDemoCreated=false;let adminCreated=false;
   let demo=db.prepare('SELECT id FROM users WHERE username=?').get(DEMO_CREDENTIALS.username) as {id:number}|undefined;
   if(!demo){const id=Number(db.prepare("INSERT INTO users(username,password_hash,role) VALUES(?,?,'user')").run(DEMO_CREDENTIALS.username,await bcrypt.hash(DEMO_CREDENTIALS.password,12)).lastInsertRowid);demo={id};demoCreated=true;seedExecutionTypes(db,id);seedDemoContent(db,id);}
@@ -31,8 +31,15 @@ export async function seedDemoAndAdmin(db: Db): Promise<{ demoCreated:boolean; d
   if(!coachDemo){const id=Number(db.prepare("INSERT INTO users(username,password_hash,athlete_enabled,coach_enabled,role) VALUES(?,?,1,1,'user')").run(COACH_DEMO_CREDENTIALS.username,await bcrypt.hash(COACH_DEMO_CREDENTIALS.password,12)).lastInsertRowid);coachDemo={id};coachDemoCreated=true;seedExecutionTypes(db,id);}
   const coachLinkCreated=Boolean(db.prepare('INSERT OR IGNORE INTO coach_links(athlete_id,coach_id) VALUES(?,?)').run(demo.id,coachDemo.id).changes);
   let admin=db.prepare('SELECT id FROM users WHERE username=?').get(ADMIN_CREDENTIALS.username) as {id:number}|undefined;
-  if(!admin){const id=Number(db.prepare("INSERT INTO users(username,password_hash,role) VALUES(?,?,'admin')").run(ADMIN_CREDENTIALS.username,await bcrypt.hash(ADMIN_CREDENTIALS.password,12)).lastInsertRowid);admin={id};adminCreated=true;seedExecutionTypes(db,id);}
+  if(!admin&&includeAdmin){const id=Number(db.prepare("INSERT INTO users(username,password_hash,role) VALUES(?,?,'admin')").run(ADMIN_CREDENTIALS.username,await bcrypt.hash(ADMIN_CREDENTIALS.password,12)).lastInsertRowid);admin={id};adminCreated=true;seedExecutionTypes(db,id);}
   return {demoCreated,demoShowcaseCreated,coachDemoCreated,coachLinkCreated,adminCreated};
+}
+
+/** Fills a brand-new database with the demo athlete and coach, so a fresh install has something to explore. */
+export async function seedDemoIfEmpty(db: Db): Promise<boolean> {
+  if(db.prepare('SELECT 1 FROM users LIMIT 1').get())return false;
+  await seedDemoAndAdmin(db,{includeAdmin:false});
+  return true;
 }
 
 function seedDemoContent(db:Db,userId:number):void {

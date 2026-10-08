@@ -1,8 +1,11 @@
 {
   "name": "acronote",
   "private": true,
-  "version": "0.1.0",
-  "workspaces": ["apps/*", "packages/*"],
+  "version": "0.2.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "build:shared": "npm run build -w @acronote/shared",
     "predev": "npm run build:shared",
@@ -13,10 +16,13 @@
     "start": "npm run start -w @acronote/api",
     "test": "npm run test -w @acronote/api && npm run test -w @acronote/web",
     "seed": "npm run seed -w @acronote/api",
-    "typecheck": "npm run typecheck -w @acronote/shared && npm run typecheck -w @acronote/web && npm run typecheck -w @acronote/api"
+    "typecheck": "npm run typecheck -w @acronote/shared && npm run typecheck -w @acronote/web && npm run typecheck -w @acronote/api",
+    "package:win": "npm run build && node scripts/package-release.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }

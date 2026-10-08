@@ -151,3 +151,13 @@ Naprawione błędy:
 - API przyjmowało nieistniejące daty treningu (np. `2026-02-30`).
 
 Weryfikacja: `npm test` 69/69 (API 7 plików / 44, web 5 plików / 25), `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate` (0 podatności), uruchomienie `start.bat` na przeniesionej bazie.
+
+## Iteracja 2026-10-08 — samodzielna paczka Windows (v0.2.0)
+
+- `npm run package:win` (`scripts/package-release.mjs`) buduje `release/AcroNote-<wersja>-win-x64.zip`: kod API i frontendu, produkcyjne zależności przypięte do `package-lock.json`, `node.exe` w tej samej wersji co Node budujący paczkę (suma SHA-256 sprawdzana z nodejs.org) oraz test dymny ładujący `better-sqlite3`.
+- W paczce `AcroNote.bat` używa wbudowanego Node.js, zapisuje dane w `%LOCALAPPDATA%\AcroNote` (aktualizacja nie usuwa danych; `DATABASE_PATH` w `.env` lub w środowisku ma pierwszeństwo) i ogranicza logi do ostrzeżeń.
+- Pusta baza dostaje przy starcie serwera konta `demo` i `trener_demo` (połączone); konto `admin` tworzy wyłącznie jawne `npm run seed`, bo jego hasło jest publiczne. Wyłączenie: `ACRONOTE_DEMO=0`.
+- `.github/workflows/release.yml`: po wypchnięciu tagu `v*` uruchamia testy i typecheck na `windows-latest`, buduje paczkę i publikuje GitHub Release przez `gh`.
+- Wbudowany w Windows `tar.exe` ulegał awarii przy tworzeniu ZIP; paczkę pakuje `System.IO.Compression.ZipFile`.
+
+Weryfikacja: `npm test` 70/70 (API 45, web 25), `npm run typecheck`, lokalna paczka 44 MB rozpakowana do pustego folderu ze spacją w ścieżce. `AcroNote.bat` uruchomił serwer na nowej bazie, logowanie `demo` i `trener_demo` działa, trener widzi zawodnika `demo`, `admin` nie istnieje.

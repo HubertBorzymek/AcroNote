@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase, seedExecutionTypes, type Db } from '../src/db.js';
-import { seedDemoAndAdmin } from '../src/seed.js';
+import { seedDemoAndAdmin, seedDemoIfEmpty } from '../src/seed.js';
 
 describe('migracja i dane startowe',()=>{
   let db:Db|undefined;afterEach(()=>db?.close());
@@ -23,5 +23,13 @@ describe('migracja i dane startowe',()=>{
     expect((db.prepare("SELECT role FROM users WHERE username='admin'").get() as any).role).toBe('admin');
     expect(db.prepare("SELECT c.coach_enabled coachEnabled,a.username athlete FROM coach_links cl JOIN users c ON c.id=cl.coach_id JOIN users a ON a.id=cl.athlete_id WHERE c.username='trener_demo'").get()).toMatchObject({coachEnabled:1,athlete:'demo'});
     expect((db.prepare("SELECT MAX(entries) entries FROM (SELECT COUNT(*) entries FROM trainings t JOIN training_entries te ON te.training_id=t.id JOIN users u ON u.id=t.user_id WHERE u.username='demo' GROUP BY t.id)").get() as any).entries).toBe(5);
+  },15000);
+  it('wypełnia tylko pustą bazę kontami demo zawodnika i trenera, bez admina',async()=>{
+    db=openDatabase(':memory:');
+    expect(await seedDemoIfEmpty(db)).toBe(true);
+    expect((db.prepare('SELECT username FROM users ORDER BY username').all() as any[]).map(row=>row.username)).toEqual(['demo','trener_demo']);
+    expect(await seedDemoIfEmpty(db)).toBe(false);
+    const other=openDatabase(':memory:');other.prepare("INSERT INTO users(username,password_hash) VALUES('existing','hash')").run();
+    expect(await seedDemoIfEmpty(other)).toBe(false);other.close();
   },15000);
 });

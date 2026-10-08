@@ -16,7 +16,17 @@ Trener widzi Twoje treningi tylko do odczytu, a wszystko działa lokalnie na Two
 
 ---
 
-## 🚀 Szybki start (jedno kliknięcie)
+## 📥 Pobierz i uruchom (bez instalowania czegokolwiek)
+
+1. Wejdź na **[Releases → najnowsza wersja](https://github.com/HubertBorzymek/AcroNote/releases/latest)** i pobierz `AcroNote-…-win-x64.zip`.
+2. Rozpakuj całe archiwum.
+3. Kliknij dwukrotnie **`AcroNote.bat`**, a przeglądarka otworzy się sama.
+
+Paczka zawiera własny Node.js, więc działa na czystym Windowsie 10/11 (64-bit). Przy pierwszym uruchomieniu powstają konta demo (`demo` i `trener_demo`, hasła są [niżej](#-konta-demonstracyjne)). Dane są zapisywane w `%LOCALAPPDATA%\AcroNote`, więc rozpakowanie nowej wersji ich nie usuwa.
+
+> Jeśli Windows pokaże „System Windows ochronił ten komputer”, kliknij *Więcej informacji → Uruchom mimo to*.
+
+## 🚀 Uruchomienie z kodu źródłowego
 
 1. Zainstaluj **[Node.js 22 lub nowszy](https://nodejs.org/)** (wystarczy wersja LTS).
 2. Pobierz projekt:
@@ -52,15 +62,16 @@ Jeśli AcroNote już działa, `start.bat` tylko otworzy przeglądarkę. Aby zatr
 
 ## 👤 Konta demonstracyjne
 
-Wypełnij bazę przykładowymi danymi poleceniem `npm run seed` (nie nadpisuje istniejących kont):
+Nowa, pusta baza dostaje automatycznie dwa konta demo. Ustaw `ACRONOTE_DEMO=0` w `.env`, jeśli ich nie chcesz:
 
 | Login | Hasło | Do czego |
 |---|---|---|
 | `demo` | `AcroNote-demo-2026` | zawodnik z 30 elementami, układami i historią |
 | `trener_demo` | `AcroNote-trener-2026` | trener połączony z `demo` (wybierz profil „Trener”) |
-| `admin` | `AcroNote-admin-2026` | panel administratora |
 
-> ⚠️ To jawne hasła do lokalnych testów. Zmień hasło `admin`, zanim udostępnisz aplikację komukolwiek.
+Konto **administratora** nie powstaje automatycznie, bo jego hasło byłoby publicznie znane. Jeśli go potrzebujesz, uruchom `npm run seed` w wersji z kodu źródłowego: utworzy `admin` / `AcroNote-admin-2026` i od razu zmień to hasło.
+
+> ⚠️ To jawne hasła do lokalnych testów. Nie przechowuj na kontach demo niczego prywatnego.
 
 ## 🛠️ Dla programistów
 
@@ -82,7 +93,19 @@ docs/            wymagania, architektura, plan testów, stan prac
 | `npm start` | uruchomienie buildu pod `http://localhost:3001` |
 | `npm test` | testy API i frontendu (Vitest) |
 | `npm run typecheck` | kontrola typów TypeScript |
-| `npm run seed` | dane demonstracyjne |
+| `npm run seed` | konta demo i konto `admin` |
+| `npm run package:win` | samodzielna paczka Windows (`release/AcroNote-<wersja>-win-x64.zip`) |
+
+### 📦 Wydawanie nowej wersji
+
+Podnieś `version` w `package.json`, zrób commit i wypchnij tag:
+
+```powershell
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+GitHub Actions ([release.yml](.github/workflows/release.yml)) uruchomi testy, zbuduje paczkę z wbudowanym Node.js i opublikuje ją w zakładce Releases.
 
 Przed commitem uruchom komplet kontroli z [AGENTS.md](AGENTS.md): `npm test`, `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate`.
 

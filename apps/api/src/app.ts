@@ -27,7 +27,7 @@ const usernameText = (value: unknown) => {
 
 declare module 'fastify' { interface FastifyRequest { userId: number; userRole: 'user' | 'admin' } }
 
-export async function buildApp(options: { db?: Db; logger?: boolean } = {}) {
+export async function buildApp(options: { db?: Db; logger?: boolean | { level: string } } = {}) {
   const app = Fastify({ logger: options.logger ?? false });
   const db = options.db ?? openDatabase();
   app.decorate('db', db);
