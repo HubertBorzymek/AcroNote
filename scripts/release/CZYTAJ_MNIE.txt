@@ -1,0 +1,35 @@
+AcroNote - dziennik treningów akrobatycznych
+=============================================
+
+URUCHOMIENIE
+  1. Rozpakuj całe archiwum ZIP do dowolnego folderu.
+  2. Kliknij dwukrotnie AcroNote.bat.
+  3. Przeglądarka otworzy się sama pod adresem http://localhost:3001
+
+  Nie trzeba niczego instalować - Node.js jest w folderze "node".
+  Aby zatrzymać aplikację, zamknij czarne okno konsoli.
+
+  Jeśli Windows pokaże "System Windows ochronił ten komputer",
+  kliknij "Więcej informacji" -> "Uruchom mimo to".
+
+KONTA DEMO (tworzone automatycznie przy pierwszym uruchomieniu)
+  zawodnik:  demo         / AcroNote-demo-2026
+  trener:    trener_demo  / AcroNote-trener-2026   (wybierz profil "Trener")
+
+  Własne konto załóż na ekranie logowania ("Utwórz konto").
+
+GDZIE SĄ MOJE DANE
+  %LOCALAPPDATA%\AcroNote\acronote.db
+  (wpisz %LOCALAPPDATA%\AcroNote w pasku adresu Eksploratora)
+
+  Kopia zapasowa: zatrzymaj aplikację i skopiuj wszystkie pliki acronote.db*.
+
+AKTUALIZACJA
+  Pobierz nowy ZIP, rozpakuj go w miejsce starego folderu i uruchom AcroNote.bat.
+  Dane zostają na miejscu, bo nie są przechowywane w folderze programu.
+
+USTAWIENIA (opcjonalnie)
+  Skopiuj .env.example jako .env i zmień wartości, np. PORT albo DATABASE_PATH.
+  Po zmianie portu otwórz w przeglądarce adres z nowym portem.
+
+Projekt: https://github.com/HubertBorzymek/AcroNote

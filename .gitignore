@@ -15,4 +15,4 @@ data/**/*.db-*
 .vscode/
 *.user
 *.suo
-release/
+/release/
