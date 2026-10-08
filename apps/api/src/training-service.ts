@@ -14,8 +14,14 @@ function requiredText(value: unknown, label: string): string {
   return value.trim();
 }
 
+function isCalendarDate(value: string): boolean {
+  const time = Date.parse(`${value}T00:00:00Z`);
+  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
+}
+
 export function saveTraining(db: Db, userId: number, input: TrainingInput, trainingId?: number): number {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) throw new Error('Nieprawidłowa data treningu.');
+  if (typeof input?.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(input.date) || !isCalendarDate(input.date)) throw new Error('Nieprawidłowa data treningu.');
+  if (!Array.isArray(input.entries) || input.entries.some(entry => !Array.isArray(entry?.activities))) throw new Error('Nieprawidłowa struktura treningu.');
   const transaction = db.transaction(() => {
     let id = trainingId;
     if (id) {

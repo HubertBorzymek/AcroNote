@@ -134,3 +134,20 @@ Hasła są jawne wyłącznie dlatego, że są to lokalne konta startowe. Hasło 
 - Tryb dostępu z telefonu używa zwykłego HTTP. Jest przeznaczony wyłącznie do krótkich testów w zaufanej, prywatnej sieci; nie należy wystawiać portu w Internecie ani używać publicznego Wi-Fi.
 - Nie ma automatycznego E2E w wielu silnikach przeglądarek; krytyczne ścieżki mają testy integracyjne i zostały dodatkowo wykonane ręcznie w Chromium.
 - Przed każdym kolejnym wydaniem trzeba powtórzyć komplet kontroli z `AGENTS.md`.
+
+## Iteracja 2026-10-08 — przeniesienie i uruchamianie jednym plikiem
+
+- Projekt przeniesiono do `C:\Users\leemi\Documents\Projects\Visual Studio\AcroNote` i podłączono zdalne repozytorium `https://github.com/HubertBorzymek/AcroNote.git`. Skopiowano najnowszą bazę (`acronote.db` z plikami WAL/SHM) ze starej lokalizacji.
+- `start.bat` sam sprawdza Node.js, instaluje zależności (`npm ci`) przy pierwszym uruchomieniu lub po zmianie `package-lock.json`, buduje aplikację, wykrywa działającą instancję i otwiera przeglądarkę dopiero, gdy serwer odpowiada.
+- `npm start` wczytuje opcjonalny plik `.env` (`--env-file-if-exists`).
+- `npm test`, `npm run typecheck` i `npm run dev` najpierw budują `@acronote/shared`, więc działają na świeżym klonie.
+- Zależności `packages/web` przypięto do zakresów zamiast `latest`; `npm audit fix` usunął 3 podatności narzędzi deweloperskich.
+
+Naprawione błędy:
+
+- Układu zawierającego usunięty element (opcja „zachowaj w układach”) nie dało się ponownie zapisać — klient wysyłał `elementId: "null"` bez kodu. Odłączone pozycje są teraz zapisywane jako migawka kodu i nazwy.
+- Ponowne dodanie kodu usuniętego elementu kończyło się błędem 409; teraz przywraca dawny rekord. Analogicznie dla miejsc lądowania, które wcześniej zwracały surowy komunikat SQLite.
+- Zmiana kodu elementu lub nazwy miejsca lądowania na zajętą zwracała surowy błąd SQLite; teraz zwraca czytelny 409.
+- API przyjmowało nieistniejące daty treningu (np. `2026-02-30`).
+
+Weryfikacja: `npm test` 69/69 (API 7 plików / 44, web 5 plików / 25), `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate` (0 podatności), uruchomienie `start.bat` na przeniesionej bazie.

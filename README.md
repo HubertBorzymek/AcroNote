@@ -1,141 +1,124 @@
-# AcroNote
+<div align="center">
 
-AcroNote to polskojęzyczny, responsywny dziennik treningów akrobatycznych na trampolinie. Aplikacja łączy frontend React/Vite, REST API Fastify i lokalną bazę SQLite w jednym monorepo npm.
+# 🤸 AcroNote
 
-> Dostępna jest kompletna, lokalna wersja dziennika zawodnika, profilu trenera tylko do odczytu oraz panelu administratora. Aktualny, zweryfikowany zakres opisuje [docs/PROGRESS.md](docs/PROGRESS.md).
+**Dziennik treningów akrobatycznych na trampolinie — prosty, szybki, po polsku.**
 
-## Wymagania
+Zapisuj wejścia, elementy i układy, sprawdzaj gdzie lądujesz i śledź postępy.
+Trener widzi Twoje treningi tylko do odczytu, a wszystko działa lokalnie na Twoim komputerze.
 
-- Windows 10/11;
-- Node.js 22 lub nowszy (zalecana aktualna wersja LTS);
-- npm dostarczany z Node.js;
-- nowoczesna przeglądarka.
+![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![Fastify](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-lokalnie-003B57?logo=sqlite&logoColor=white)
 
-SQLite działa jako biblioteka projektu — nie trzeba instalować osobnego serwera bazy danych. Node.js można pobrać z [nodejs.org](https://nodejs.org/).
+</div>
 
-## Instalacja
+---
 
-W PowerShell przejdź do katalogu projektu i zainstaluj lokalne zależności:
+## 🚀 Szybki start (jedno kliknięcie)
 
-```powershell
-cd "C:\Users\leemi\Documents\Visual Studio 2022\Projects\AcroNote"
-npm install
+1. Zainstaluj **[Node.js 22 lub nowszy](https://nodejs.org/)** (wystarczy wersja LTS).
+2. Pobierz projekt:
+   ```powershell
+   git clone https://github.com/HubertBorzymek/AcroNote.git
+   ```
+3. Kliknij dwukrotnie **`start.bat`**.
+
+To wszystko. Skrypt sam:
+
+- ✅ sprawdzi, czy masz Node.js,
+- 📦 zainstaluje zależności (przy pierwszym uruchomieniu i po aktualizacji),
+- 🔨 zbuduje aplikację,
+- 🌐 uruchomi serwer i otworzy przeglądarkę pod **http://localhost:3001**.
+
+Jeśli AcroNote już działa, `start.bat` tylko otworzy przeglądarkę. Aby zatrzymać aplikację, zamknij okno konsoli.
+
+> 💡 Pierwsze uruchomienie trwa chwilę (instalacja pakietów). Kolejne zajmują kilka sekund.
+
+## ✨ Co potrafi
+
+| | |
+|---|---|
+| 📝 **Treningi** | Wejścia z elementami i układami, liczba powtórzeń, miejsce lądowania dla każdego elementu. Długie treningi są zwijane — najnowsze wejścia na górze. |
+| 🧩 **Elementy** | Katalog w pełnej notacji (np. `800o`, `831<`, `42/`) z automatycznym rozpoznaniem ćwiartek, salt, śrub, kierunku i pozycji. Ulubione, ukryte, filtry. |
+| 🔗 **Układy** | Szablony z dowolną liczbą elementów. Możesz zapisać cały układ albo fragment (np. 3–7). |
+| 📊 **Statystyki** | Suma elementów, rozkład lądowań (siatka / materac / gąbki), historia konkretnego elementu w tygodniach i miesiącach. |
+| 🧑‍🏫 **Profil trenera** | Połączenie przez kod, link lub QR, za świadomą zgodą. Trener tylko czyta dane zawodnika. |
+| 🛡️ **Administrator** | Zarządzanie kontami i danymi, bez dostępu do haseł i sesji. |
+| 🌙 **Tryb ciemny** | Domyślnie zgodny z systemem, zapamiętywany w przeglądarce. |
+
+**Najważniejsza zasada:** każdy zapisany trening przechowuje własną *migawkę* kodów, nazw i lądowań. Gdy później zmienisz element albo układ, dawne treningi i statystyki zostaną bez zmian.
+
+## 👤 Konta demonstracyjne
+
+Wypełnij bazę przykładowymi danymi poleceniem `npm run seed` (nie nadpisuje istniejących kont):
+
+| Login | Hasło | Do czego |
+|---|---|---|
+| `demo` | `AcroNote-demo-2026` | zawodnik z 30 elementami, układami i historią |
+| `trener_demo` | `AcroNote-trener-2026` | trener połączony z `demo` (wybierz profil „Trener”) |
+| `admin` | `AcroNote-admin-2026` | panel administratora |
+
+> ⚠️ To jawne hasła do lokalnych testów. Zmień hasło `admin`, zanim udostępnisz aplikację komukolwiek.
+
+## 🛠️ Dla programistów
+
+Monorepo npm z trzema pakietami:
+
+```
+apps/api         REST API — Fastify + better-sqlite3
+packages/web     interfejs — React + Vite
+packages/shared  wspólny parser kodów elementów
+data/            lokalna baza SQLite (ignorowana przez Git)
+docs/            wymagania, architektura, plan testów, stan prac
 ```
 
-Nie jest wymagana instalacja globalnych pakietów npm.
+| Polecenie | Opis |
+|---|---|
+| `npm install` | instalacja zależności |
+| `npm run dev` | tryb deweloperski z hot-reload: frontend `http://localhost:5173`, API `http://127.0.0.1:3001` |
+| `npm run build` | build produkcyjny |
+| `npm start` | uruchomienie buildu pod `http://localhost:3001` |
+| `npm test` | testy API i frontendu (Vitest) |
+| `npm run typecheck` | kontrola typów TypeScript |
+| `npm run seed` | dane demonstracyjne |
 
-## Tryb deweloperski
+Przed commitem uruchom komplet kontroli z [AGENTS.md](AGENTS.md): `npm test`, `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate`.
 
-Jedno polecenie uruchamia frontend i backend:
+### ⚙️ Konfiguracja
 
-```powershell
-npm run dev
-```
-
-Frontend deweloperski jest zwykle dostępny pod adresem `http://localhost:5173`, a API pod `http://127.0.0.1:3001`. Dokładny adres pokazują logi terminala. Oba procesy zatrzymasz skrótem `Ctrl+C`.
-
-Migracje oraz utworzenie lokalnej bazy powinny wykonać się automatycznie przy starcie API.
-
-## Build i uruchomienie lokalnego buildu
-
-```powershell
-npm run build
-npm start
-```
-
-Po uruchomieniu buildu otwórz `http://localhost:3001`. Serwer domyślnie nasłuchuje na interfejsie lokalnym i nie wystawia aplikacji do Internetu.
-
-Alternatywnie po wcześniejszym `npm install` można dwukrotnie kliknąć `start.bat`. Skrypt uruchamia zbudowaną aplikację; jeżeli build jeszcze nie istnieje, najpierw wykonaj `npm run build`.
-
-## Testy i kontrola typów
-
-```powershell
-npm test
-npm run typecheck
-```
-
-`npm test` uruchamia testy backendu i frontendu. Obejmują one migawki historyczne, statystyki lądowań, izolację danych, profil trenera, zaproszenia i zgody, administrację, migrację istniejącej bazy, seeder, parser kodów i klienta HTTP. Szczegółowy zakres znajduje się w [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
-
-## Dane demonstracyjne
-
-Opcjonalny mechanizm danych demonstracyjnych uruchamia się jawnie:
-
-```powershell
-npm run seed
-```
-
-Seeder nie nadpisuje istniejących rekordów.
-
-Seeder tworzy brakujące konta, nie zmieniając istniejących użytkowników ani ich haseł:
-
-- `demo` / `AcroNote-demo-2026` — 30 zróżnicowanych elementów, dwa układy i historia treningów;
-- `trener_demo` / `AcroNote-trener-2026` — aktywny profil trenera połączony z zawodnikiem `demo`; po zalogowaniu wybierz profil „Trener” w przełączniku profili;
-- `admin` / `AcroNote-admin-2026` — panel zarządzania kontami i ich danymi, bez dostępu do haseł, skrótów haseł i tokenów sesji.
-
-Są to jawne dane startowe do lokalnych testów. Przed udostępnieniem aplikacji innym osobom zmień hasło administratora i nie traktuj konta demo jako prywatnego.
-
-## Konfiguracja
-
-Przykładowe wartości znajdują się w `.env.example`:
+Domyślne ustawienia wystarczą. Aby je zmienić, skopiuj `.env.example` do `.env` — `npm start` i `start.bat` wczytają go automatycznie:
 
 ```dotenv
 PORT=3001
 HOST=127.0.0.1
 DATABASE_PATH=./data/acronote.db
-SESSION_SECRET=replace-with-a-long-random-value-in-production
 ```
 
-Bieżący serwer odczytuje zmienne ze środowiska procesu; samo skopiowanie `.env.example` do `.env` nie ładuje ich automatycznie. Domyślne wartości wystarczają do lokalnego prototypu. Aby jawnie ustawić konfigurację w PowerShell przed startem, można użyć:
+`start.bat` otwiera przeglądarkę pod portem 3001 — jeśli zmienisz `PORT`, otwórz adres ręcznie.
 
-```powershell
-$env:PORT = '3001'
-$env:HOST = '127.0.0.1'
-$env:DATABASE_PATH = './data/acronote.db'
-npm start
-```
+### 📱 Test na telefonie w domowym Wi-Fi
 
-`SESSION_SECRET` jest zarezerwowany dla konfiguracji bezpieczeństwa, ale bieżąca implementacja generuje losowe tokeny sesji i zapisuje ich skróty w bazie. Pliki `.env` z sekretami nie powinny trafić do repozytorium.
+1. Sprawdź adres IPv4 komputera poleceniem `ipconfig`, np. `192.168.1.50`.
+2. W `.env` ustaw `HOST=192.168.1.50` i uruchom `start.bat`.
+3. Na telefonie w tym samym Wi-Fi otwórz `http://192.168.1.50:3001`.
 
-## Uruchomienie na telefonie w tej samej sieci Wi-Fi
+Gdy Windows zapyta o zaporę, zezwól Node.js **tylko w sieci prywatnej**. Połączenie używa zwykłego HTTP, więc nie korzystaj z tego trybu w publicznym Wi-Fi i nie przekierowuj portu na routerze.
 
-Do telefonu używaj produkcyjnego buildu (`npm start`), nie serwera deweloperskiego Vite. Najpierw sprawdź w `ipconfig` adres IPv4 komputera w domowej sieci, np. `192.168.1.50`, a następnie w PowerShell uruchom:
+## 💾 Baza danych i kopie
 
-```powershell
-npm run build
-$env:HOST = '192.168.1.50'
-$env:PORT = '3001'
-npm start
-```
+Dane są w `data/acronote.db` (razem z plikami `-wal` i `-shm`). Migracje wykonują się automatycznie przy starcie i zachowują istniejące rekordy. Aby zrobić kopię, **zatrzymaj aplikację** i skopiuj wszystkie trzy pliki `acronote.db*`, np. do `data/backups/`. Pliki baz nie trafiają do repozytorium.
 
-Na telefonie połączonym z tym samym Wi-Fi otwórz `http://192.168.1.50:3001` (podstawiając własny adres). Jeżeli Windows zapyta o zaporę, zezwól Node.js wyłącznie w sieci prywatnej. Nie wyłączaj całej zapory i nie przekierowuj portu 3001 na routerze. Po zakończeniu zatrzymaj serwer skrótem `Ctrl+C`.
+## 🩺 Gdy coś nie działa
 
-To rozwiązanie jest rozsądne do krótkich testów w zaufanej, domowej sieci WPA2/WPA3, ale nie jest wdrożeniem produkcyjnym. Połączenie używa zwykłego HTTP, więc hasło i ruch nie mają ochrony TLS przed innym urządzeniem zdolnym podsłuchiwać sieć. Nie używaj tego trybu w publicznym lub gościnnym Wi-Fi ani z prawdziwymi wrażliwymi danymi. Windows zaleca ograniczenie wyjątku zapory do zaufanego profilu prywatnego; dodanie wyjątku dla aplikacji jest bezpieczniejsze niż stałe otwarcie portu ([Microsoft Support](https://support.microsoft.com/en-us/windows/security/firewall/risks-of-allowing-apps-through-windows-firewall)).
+- **„Nie znaleziono Node.js”** — zainstaluj Node.js 22+ i uruchom `start.bat` ponownie.
+- **Port 3001 zajęty przez inny program** — ustaw inny `PORT` w `.env`.
+- **Dziwne błędy po przeniesieniu folderu** — usuń katalog `node_modules` i uruchom `start.bat` (zależności zainstalują się od nowa).
+- **Błąd bazy** — sprawdź uprawnienia zapisu do `data/`; nie usuwaj bazy bez kopii.
 
-## Baza danych i kopie zapasowe
+## 📚 Dokumentacja
 
-Domyślna baza znajduje się w `data/acronote.db`. Katalog `data` jest trwałą częścią projektu, ale pliki bazy — także w podkatalogu `data/backups` — są ignorowane przez Git. Migracja schematu uruchamia się automatycznie i zachowuje istniejące rekordy.
+[Wymagania](docs/REQUIREMENTS.md) · [Architektura](docs/ARCHITECTURE.md) · [Plan testów](docs/TEST_PLAN.md) · [Stan prac](docs/PROGRESS.md) · [Dziennik zmian](docs/WORKLOG.md)
 
-Przed ręcznym kopiowaniem bazy zatrzymaj aplikację. Przy wdrożeniu na serwerze katalog bazy musi znajdować się na trwałym dysku i podlegać regularnym kopiom zapasowym. Hosting wyłącznie plików statycznych nie wystarczy — aplikacja wymaga działającego procesu Node.js.
-
-## Najważniejsze założenie danych historycznych
-
-Wykonania układów są zapisywane jako niezależne migawki kodów, nazw, kolejności i miejsc lądowania. Dzięki temu późniejsza zmiana szablonu układu albo elementu nie powinna zmienić dawnych treningów i statystyk. Szczegóły zawiera [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## Rozwiązywanie problemów
-
-- **`npm` nie jest rozpoznawane:** zainstaluj Node.js 22+ i otwórz nowy terminal.
-- **Brak `node_modules`:** uruchom `npm install` w głównym katalogu.
-- **Brak buildu podczas `npm start`:** uruchom wcześniej `npm run build`.
-- **Port 3001 lub 5173 jest zajęty:** zatrzymaj poprzedni proces albo zmień port w lokalnej konfiguracji.
-- **Błąd bazy:** sprawdź uprawnienia zapisu do katalogu `data`; nie usuwaj istniejącej bazy bez kopii.
-
-## Dokumentacja
-
-- [Wymagania](docs/REQUIREMENTS.md)
-- [Architektura](docs/ARCHITECTURE.md)
-- [Plan testów](docs/TEST_PLAN.md)
-- [Stan prac](docs/PROGRESS.md)
-
-## Funkcje przyszłe
-
-PWA i offline, import/eksport, kluby i grupy, komentarze trenera, cele, pomoc trenera w odzyskiwaniu konta, generator kodów oraz punktacja pozostają poza bieżącym zakresem.
+**W planach:** PWA i tryb offline, import/eksport, kluby i grupy, komentarze trenera, cele treningowe.

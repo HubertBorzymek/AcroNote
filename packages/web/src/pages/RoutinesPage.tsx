@@ -21,7 +21,7 @@ export function RoutinesPage({ setDirty }: { setDirty: (dirty: boolean) => void 
   const markDirty = (value: boolean) => { setLocalDirty(value); setDirty(value); };
 
   const duplicateIds = useMemo(() => {
-    const counts = slots.reduce<Record<string, number>>((all, slot) => ({ ...all, [slot.elementId]: (all[slot.elementId] ?? 0) + 1 }), {});
+    const counts = slots.filter((slot) => slot.elementId).reduce<Record<string, number>>((all, slot) => ({ ...all, [slot.elementId]: (all[slot.elementId] ?? 0) + 1 }), {});
     return new Set(Object.entries(counts).filter(([, count]) => count > 1).map(([id]) => id));
   }, [slots]);
 
@@ -52,7 +52,7 @@ export function RoutinesPage({ setDirty }: { setDirty: (dirty: boolean) => void 
   async function save(event: FormEvent) {
     event.preventDefault(); setSaving(true);
     try {
-      const input = { name, slots: slots.map(({ elementId, position }) => ({ elementId, position })) };
+      const input = { name, slots: slots.map(({ elementId, code, name, position }) => ({ elementId, code, name, position })) };
       editing === 'new' ? await api.createRoutine(input) : editing && await api.updateRoutine(editing.id, input);
       await routines.reload(); setEditing(null); markDirty(false); setMessage('Układ został zapisany. Poprzednie treningi zachowują własne migawki.');
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Nie udało się zapisać układu.'); }

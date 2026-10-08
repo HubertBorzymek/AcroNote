@@ -26,7 +26,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
 
 const json = (body: unknown): RequestInit => ({ body: JSON.stringify(body) });
 const id = (value: unknown) => value == null ? undefined : String(value);
-const apiId = (value: string | undefined) => value && /^\d+$/.test(value) ? Number(value) : value ?? null;
+const apiId = (value: string | undefined) => value && /^\d+$/.test(value) ? Number(value) : value || null;
 const mapUser = (user: User & { id: unknown }): User => ({ ...user, id: String(user.id) });
 const mapIds = <T extends { id: unknown }>(items: T[]) => items.map((item) => ({ ...item, id: String(item.id) }));
 function landingCounts(value: unknown): LandingCount[] {
@@ -37,10 +37,10 @@ function landingCounts(value: unknown): LandingCount[] {
 
 type RawRoutine = Omit<Routine, 'id' | 'slots'> & { id: unknown; items?: Array<Record<string, unknown>>; slots?: Array<Record<string, unknown>> };
 function mapRoutine(raw: RawRoutine): Routine {
-  return { ...raw, id: String(raw.id), slots: (raw.items ?? raw.slots ?? []).map((item, index): RoutineSlot => ({ id: id(item.id), elementId: String(item.elementId ?? item.sourceElementId), position: Number(item.position ?? index + 1), code: item.code as string | undefined, name: item.name as string | null | undefined })) };
+  return { ...raw, id: String(raw.id), slots: (raw.items ?? raw.slots ?? []).map((item, index): RoutineSlot => ({ id: id(item.id), elementId: id(item.elementId ?? item.sourceElementId) ?? '', position: Number(item.position ?? index + 1), code: item.code as string | undefined, name: item.name as string | null | undefined })) };
 }
 function routineBody(input: Pick<Routine, 'name' | 'slots'>) {
-  return { name: input.name, items: input.slots.map((slot, index) => ({ elementId: apiId(slot.elementId), position: index + 1 })) };
+  return { name: input.name, items: input.slots.map((slot, index) => ({ elementId: apiId(slot.elementId), code: slot.code, name: slot.name ?? null, position: index + 1 })) };
 }
 function mapActivity(raw: Record<string, unknown>): Activity {
   const kind = (raw.kind ?? raw.type) as 'element' | 'routine';

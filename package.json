@@ -4,6 +4,10 @@
   "version": "0.1.0",
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
+    "build:shared": "npm run build -w @acronote/shared",
+    "predev": "npm run build:shared",
+    "pretest": "npm run build:shared",
+    "pretypecheck": "npm run build:shared",
     "dev": "concurrently -k -n api,web -c blue,green \"npm run dev -w @acronote/api\" \"npm run dev -w @acronote/web\"",
     "build": "npm run build -w @acronote/shared && npm run build -w @acronote/web && npm run build -w @acronote/api",
     "start": "npm run start -w @acronote/api",

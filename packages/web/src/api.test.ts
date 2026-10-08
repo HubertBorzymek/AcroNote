@@ -42,6 +42,17 @@ describe('request', () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain('/api/coach/invitations/preview?shortCode=ABC123');
   });
 
+  it('zapisuje układ z odłączonym elementem jako migawkę kodu', async () => {
+    const payload = { id: 3, name: 'U1', items: [{ position: 1, elementId: null, code: '40o', name: null }, { position: 2, elementId: 5, code: '41o', name: 'Salto' }] };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify([payload]), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const [routine] = await api.routines();
+    expect(routine.slots[0].elementId).toBe('');
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    await api.updateRoutine('3', routine);
+    const body = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(body.items).toEqual([{ elementId: null, code: '40o', name: null, position: 1 }, { elementId: 5, code: '41o', name: 'Salto', position: 2 }]);
+  });
+
   it('zachowuje wersję źródłowego układu przy edycji treningu', async () => {
     const payload = { id: 9, date: '2026-09-26', entries: [{ defaultExecutionTypeName: 'Siatka', activities: [{ kind: 'routine', repetitions: 1, sourceRoutineId: 3, sourceRoutineName: 'Układ 1', sourceTemplateVersion: 4, rangeStart: 1, rangeEnd: 1, isFullRange: false, executionTypeName: 'Siatka', elements: [{ code: '40o', executionTypeName: 'Siatka' }] }] }] };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } }));
