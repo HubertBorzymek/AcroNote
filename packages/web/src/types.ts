@@ -8,6 +8,10 @@ export interface User {
   athleteEnabled?: boolean;
   coachEnabled?: boolean;
   isAdmin?: boolean;
+  /** Logged in with a reset code: only setting a new password is allowed. */
+  mustChangePassword?: boolean;
+  /** Set when an administrator opened this account. */
+  impersonatedBy?: string | null;
 }
 
 export interface AdminUser {
@@ -20,6 +24,8 @@ export interface AdminUser {
   elementCount?: number;
   routineCount?: number;
   trainingCount?: number;
+  pendingResetRequests?: number;
+  resetCodeActive?: number | boolean | null;
 }
 
 export interface AdminUserData {
@@ -182,4 +188,22 @@ export interface AdminBugReport extends Omit<AdminBugReportSummary, 'hasSnapshot
   userAgent: string | null;
   diagnostics: Record<string, unknown> | null;
   dataSnapshot: Record<string, unknown> | null;
+}
+
+export interface PasswordResetRequest {
+  id: number;
+  userId: number;
+  username: string;
+  message: string | null;
+  status: 'pending' | 'done' | 'rejected';
+  createdAt: string;
+  handledAt: string | null;
+  resetCodeActive: number | null;
+}
+
+export interface ResetCode {
+  username: string;
+  code: string;
+  expiresAt: string;
+  validHours: number;
 }

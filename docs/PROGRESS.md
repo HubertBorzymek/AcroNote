@@ -120,7 +120,7 @@
 
 ## Świadomie odłożone
 
-- Pomoc trenera w odzyskiwaniu konta, komentarze, cele treningowe i grupy klubowe.
+- Komentarze, cele treningowe i grupy klubowe. (Odzyskiwanie konta działa przez administratora: prośba z ekranu logowania i jednorazowy kod.)
 - PWA/offline i synchronizacja, import/eksport, generator kodów i punktacja.
 - Monitoring i alerty dla wersji online (HTTPS, `Secure` cookie, SameSite=Strict, kopie bazy i prywatny panel admina są już zrobione — zob. `docs/DEPLOY.md`).
 - Automatyczne E2E w CI dla wielu przeglądarek; krytyczne ścieżki wykonano ręcznie w Chromium desktop i 390×844.

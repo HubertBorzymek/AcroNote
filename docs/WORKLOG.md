@@ -179,3 +179,14 @@ Naprawione błędy:
 - Zależności frontendu przeniesiono do `devDependencies`, więc obraz produkcyjny nie zawiera Vite ani Reacta w `node_modules`.
 
 Weryfikacja: `npm test` 81/81 (API 52, web 29), typecheck, build, audit 0. Ręcznie (Chromium, izolowana baza): wysłanie zgłoszenia z migawką, lista w profilu, podgląd w panelu admina, pobranie JSON i import do osobnej bazy (30 elementów / 2 układy / 7 treningów), dialog przy 375×812. Tryb produkcyjny lokalnie: `/api/admin` na porcie publicznym 404, na porcie admina 200, ciasteczko `Secure`, kopia bazy przed startem. Obraz Docker budowany i testowany w CI, bo lokalnie Dockera nie ma.
+
+## Iteracja 2026-10-15 — hasła, reset przez administratora, wejście na konto (v0.4.0)
+
+- Hasło: minimum 8 znaków, bez reguł składu, jednakowo w formularzach i w API. Czytelny komunikat zamiast „Hasło jest nieprawidłowe”.
+- Nazwy kont: migracja v5 dodaje `username_key` (NFC + małe litery) z unikalnym indeksem i triggerami. Dotąd SQLite `NOCASE` pozwalało założyć „Łukasz” obok „łukasz”. Logowanie nie rozróżnia wielkości liter, także polskich. Spacje w imieniu i nazwisku działają jak wcześniej.
+- Reset hasła bez znajomości haseł przez administratora (zgodnie z AGENTS.md): administrator generuje jednorazowy kod (72 h, przechowywany jako skrót). Logowanie kodem otwiera sesję, która może wyłącznie ustawić nowe hasło (`PUT /api/auth/password/new`; pozostałe trasy zwracają 403 `PASSWORD_CHANGE_REQUIRED`). Usunięto endpoint, w którym admin ustawiał hasło użytkownika; konto zakładane przez admina dostaje kod zamiast hasła.
+- „Zapomniałeś hasła?”: `POST /api/auth/password-reset-requests` z identyczną odpowiedzią niezależnie od istnienia konta, limitem 3 prośby na godzinę z IP i 1 na dobę na konto. Zakładka *Hasła* w panelu admina z licznikiem.
+- „Otwórz konto”: administrator (tylko na porcie admina) wchodzi na konto użytkownika w zwykłym interfejsie; sesja 2 h z `impersonator_id`, pasek z powrotem, sesja admina przywracana z ciasteczka `acronote_admin_return`.
+- UI: na liście treningów został jeden przycisk dodawania („Dodaj trening”), zamiast trzech przy pustej liście.
+
+Weryfikacja: `npm test` 90/90 (API 61, web 29), typecheck, build. Migracja v5 na kopii `data/acronote.db` (VACUUM INTO): 4 konta, 10 treningów, 35 elementów, `integrity_check` ok, indeks unikalności utworzony. Ręcznie w Chromium na izolowanej bazie: prośba o reset, licznik i flaga w panelu, wygenerowanie kodu, logowanie kodem (małe litery ze spacją, inna wielkość nazwy), ustawienie nowego hasła, wejście na konto z paskiem i powrót do panelu.

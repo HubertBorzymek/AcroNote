@@ -79,4 +79,10 @@ CREATE TABLE IF NOT EXISTS bug_reports (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, resolved_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_bug_reports_status ON bug_reports(status, created_at);
+CREATE TABLE IF NOT EXISTS password_reset_requests (
+  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  message TEXT, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','done','rejected')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, handled_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_password_reset_requests_user ON password_reset_requests(user_id, created_at);
 `;

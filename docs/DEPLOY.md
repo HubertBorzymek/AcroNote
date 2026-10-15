@@ -18,6 +18,8 @@ Na serwerze nie powstają konta demo ani domyślny admin. Administratora tworzys
 
 ## Jednorazowa konfiguracja
 
+Potrzebujesz: tego repozytorium na komputerze (z gałęzią `dev`), karty płatniczej do konta Fly.io i ok. 30 minut. Wszystkie polecenia wykonujesz w PowerShell, w folderze projektu.
+
 1. **Konto Fly.io:** załóż je na <https://fly.io>, podepnij kartę i **włącz 2FA**. Konto Fly jest „pierwszym zamkiem” do panelu admina.
 2. **flyctl** (PowerShell):
    ```powershell
@@ -73,6 +75,19 @@ Zostaw to okno otwarte i wejdź na <http://localhost:3002>. Zaloguj się na admi
 npm run dev:prod-admin
 ```
 Frontend z Twojego komputera (hot reload na `http://localhost:5173`) rozmawia wtedy z API serwera. **Każda zmiana jest prawdziwa.**
+
+## Konta i hasła
+
+Administrator nigdy nie widzi ani nie ustala haseł użytkowników. Zamiast tego wydaje **jednorazowy kod** (np. `R3VQ-V6XD`, ważny 72 h). Użytkownik wpisuje go na ekranie logowania zamiast hasła, a aplikacja od razu prosi o nowe hasło (wpisz i powtórz).
+
+- **„Zapomniałeś hasła?”** na ekranie logowania wysyła prośbę do administratora: nazwa konta i opcjonalnie sposób kontaktu. Z jednego adresu IP przyjmowane są najwyżej 3 prośby na godzinę, dla jednego konta najwyżej 1 na dobę. Odpowiedź jest zawsze taka sama, więc formularz nie zdradza, czy dane konto istnieje.
+- **Panel admina → Hasła:** lista próśb (z licznikiem na zakładce). *Wygeneruj kod* pokazuje kod jeden raz, a Ty przekazujesz go osobiście, SMS-em albo komunikatorem. Można też prośbę odrzucić.
+- **Panel admina → Konta:**
+  - *Kod resetu hasła* działa także bez prośby.
+  - *Otwórz konto* pozwala wejść na konto użytkownika i zobaczyć albo edytować wszystko tak jak on: treningi, elementy, układy, miejsca lądowania, profile. Na górze strony jest wtedy pasek z przyciskiem powrotu, a sesja wygasa po 2 h.
+  - *Nowe konto* tworzy konto i od razu pokazuje kod, którym użytkownik ustawi własne hasło.
+- Użytkownik zmienia hasło sam w *Profil → Bezpieczeństwo → Zmień hasło*.
+- Minimalna długość hasła to **8 znaków**, bez innych wymagań. Nazwy kont mogą zawierać spacje (imię i nazwisko). Dwóch kont różniących się tylko wielkością liter (także polskich, np. „Łukasz” i „łukasz”) nie da się założyć.
 
 ## Zgłoszenia błędów
 

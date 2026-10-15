@@ -17,6 +17,8 @@ export function openDatabase(path?: string): Db {
   const resolved = resolveDatabasePath(path);
   if (resolved !== ':memory:') mkdirSync(dirname(resolved), { recursive: true });
   const db = new Database(resolved);
+  // Used by the users_username_key triggers; must be registered on every connection that writes users.
+  db.function('acronote_username_key', { deterministic: true }, (value: unknown) => typeof value === 'string' ? usernameKey(value) : null);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(schema);
@@ -56,6 +58,30 @@ function migrate(db: Db): void {
   })();
   // v4: bug_reports table (created by the schema above).
   db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(4)').run();
+
+  // v5: Unicode-aware unique usernames ("Łukasz" = "łukasz"; SQLite NOCASE only folds ASCII),
+  // one-time password reset codes, impersonation and password-change-only sessions.
+  const v5Users = columns('users');
+  if (!v5Users.has('username_key')) db.exec('ALTER TABLE users ADD COLUMN username_key TEXT');
+  if (!v5Users.has('reset_code_hash')) db.exec('ALTER TABLE users ADD COLUMN reset_code_hash TEXT');
+  if (!v5Users.has('reset_code_expires_at')) db.exec('ALTER TABLE users ADD COLUMN reset_code_expires_at TEXT');
+  const v5Sessions = columns('sessions');
+  if (!v5Sessions.has('impersonator_id')) db.exec('ALTER TABLE sessions ADD COLUMN impersonator_id INTEGER REFERENCES users(id) ON DELETE CASCADE');
+  if (!v5Sessions.has('password_change_only')) db.exec('ALTER TABLE sessions ADD COLUMN password_change_only INTEGER NOT NULL DEFAULT 0');
+  db.exec(`CREATE TRIGGER IF NOT EXISTS users_username_key_insert AFTER INSERT ON users BEGIN
+      UPDATE users SET username_key=acronote_username_key(NEW.username) WHERE id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS users_username_key_update AFTER UPDATE OF username ON users BEGIN
+      UPDATE users SET username_key=acronote_username_key(NEW.username) WHERE id=NEW.id; END;`);
+  const fill = db.prepare('UPDATE users SET username_key=? WHERE id=?');
+  for (const row of db.prepare('SELECT id,username FROM users WHERE username_key IS NULL').all() as { id: number; username: string }[]) fill.run(usernameKey(row.username), row.id);
+  try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_key ON users(username_key)'); }
+  catch { console.warn('Uwaga: w bazie są konta różniące się tylko wielkością liter. Nowe duplikaty blokuje kontrola w API.'); }
+  db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(5)').run();
+}
+
+/** Case- and normalization-insensitive form of a username, used for uniqueness and login. */
+export function usernameKey(username: string): string {
+  return username.normalize('NFC').toLowerCase();
 }
 
 export function seedExecutionTypes(db: Db, userId: number): void {

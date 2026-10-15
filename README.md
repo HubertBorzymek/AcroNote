@@ -56,6 +56,7 @@ Jeśli AcroNote już działa, `start.bat` tylko otworzy przeglądarkę. Aby zatr
 | 📊 **Statystyki** | Suma elementów, rozkład lądowań (siatka / materac / gąbki), historia konkretnego elementu w tygodniach i miesiącach. |
 | 🧑‍🏫 **Profil trenera** | Połączenie przez kod, link lub QR, za świadomą zgodą. Trener tylko czyta dane zawodnika. |
 | 🛡️ **Administrator** | Zarządzanie kontami, danymi i zgłoszeniami, bez dostępu do haseł i sesji. Na serwerze dostępny wyłącznie przez prywatny tunel. |
+| 🔑 **Konta i hasła** | Konto na imię i nazwisko ze spacją. Hasło ma minimum 8 znaków i żadnych innych reguł. „Zapomniałeś hasła?” wysyła prośbę do administratora, który przekazuje jednorazowy kod. Hasła nikt poza użytkownikiem nie zna. |
 | 🐞 **Zgłoś problem** | Z profilu albo z każdego ekranu błędu. Do opisu dołączane są informacje techniczne i opcjonalnie kopia danych konta, którą da się odtworzyć lokalnie. |
 | 🌙 **Tryb ciemny** | Domyślnie zgodny z systemem, zapamiętywany w przeglądarce. |
 
