@@ -27,14 +27,17 @@ const usernameText = (value: unknown) => {
 
 declare module 'fastify' { interface FastifyRequest { userId: number; userRole: 'user' | 'admin' } }
 
-export async function buildApp(options: { db?: Db; logger?: boolean | { level: string } } = {}) {
-  const app = Fastify({ logger: options.logger ?? false });
+export async function buildApp(options: { db?: Db; logger?: boolean | { level: string }; behindProxy?: boolean } = {}) {
+  const behindProxy = options.behindProxy ?? false;
+  const app = Fastify({ logger: options.logger ?? false, trustProxy: behindProxy });
   const db = options.db ?? openDatabase();
   app.decorate('db', db);
   await app.register(cookie);
   await app.register(rateLimit, {
     max: 150,
     timeWindow: '1 minute',
+    // Fly sets Fly-Client-IP itself; the leftmost X-Forwarded-For entry is client-controlled and would allow bypassing the limits.
+    keyGenerator: request => (behindProxy && typeof request.headers['fly-client-ip'] === 'string' ? request.headers['fly-client-ip'] : request.ip),
     errorResponseBuilder: (_request, context) => ({
       statusCode: 429,
       error: 'Zbyt wiele prób',
@@ -289,7 +292,7 @@ export async function buildApp(options: { db?: Db; logger?: boolean | { level: s
   return app;
 }
 
-function createSession(db:Db,userId:number,reply:any){const token=randomBytes(32).toString('base64url');db.prepare("DELETE FROM sessions WHERE expires_at<=datetime('now')").run();db.prepare("INSERT INTO sessions(user_id,token_hash,expires_at) VALUES(?,?,datetime('now','+30 days'))").run(userId,hashToken(token));reply.setCookie('acronote_session',token,{httpOnly:true,sameSite:'strict',secure:false,path:'/',maxAge:60*60*24*30});}
+function createSession(db:Db,userId:number,reply:any){const token=randomBytes(32).toString('base64url');db.prepare("DELETE FROM sessions WHERE expires_at<=datetime('now')").run();db.prepare("INSERT INTO sessions(user_id,token_hash,expires_at) VALUES(?,?,datetime('now','+30 days'))").run(userId,hashToken(token));reply.setCookie('acronote_session',token,{httpOnly:true,sameSite:'strict',secure:reply.request.protocol==='https',path:'/',maxAge:60*60*24*30});}
 function publicUser(user:any){return{id:user.id,username:user.username,athleteEnabled:!!user.athlete_enabled,coachEnabled:!!user.coach_enabled,role:user.role??'user',isAdmin:user.role==='admin'};}
 function integerQuery(value:unknown,label:string){const result=Number(value);if(!Number.isInteger(result)||result<0)throw new Error(`${label} jest nieprawidłowa.`);return result;}
 function elementUsage(db:Db,userId:number,id:number){const element=db.prepare('SELECT id FROM elements WHERE id=? AND user_id=? AND deleted_at IS NULL').get(id,userId);if(!element)throw new Error('Nie znaleziono elementu.');const routines=db.prepare(`SELECT DISTINCT r.id,r.name FROM routine_items ri JOIN routines r ON r.id=ri.routine_id WHERE ri.element_id=? AND r.user_id=? AND r.deleted_at IS NULL ORDER BY r.name`).all(id,userId);return{usedInRoutines:routines.length>0,routineCount:routines.length,routines};}

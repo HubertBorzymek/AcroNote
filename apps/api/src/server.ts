@@ -6,8 +6,9 @@ const db = openDatabase();
 if (process.env.ACRONOTE_DEMO !== '0' && await seedDemoIfEmpty(db)) {
   console.log(`Nowa baza: utworzono konta demo ${DEMO_CREDENTIALS.username} / ${DEMO_CREDENTIALS.password} oraz ${COACH_DEMO_CREDENTIALS.username} / ${COACH_DEMO_CREDENTIALS.password}`);
 }
-const app = await buildApp({ db, logger: { level: process.env.LOG_LEVEL ?? 'info' } });
+const app = await buildApp({ db, logger: { level: process.env.LOG_LEVEL ?? 'info' }, behindProxy: process.env.ACRONOTE_BEHIND_PROXY === '1' });
 app.addHook('onClose', async () => { db.close(); });
+for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { void app.close().then(() => process.exit(0)); });
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? '127.0.0.1';
 await app.listen({ port, host });

@@ -122,7 +122,7 @@
 
 - Pomoc trenera w odzyskiwaniu konta, komentarze, cele treningowe i grupy klubowe.
 - PWA/offline i synchronizacja, import/eksport, generator kodów i punktacja.
-- Utwardzenie do publicznego Internetu: HTTPS, `Secure` cookie, polityka CORS/CSRF dla docelowej domeny, automatyczne kopie i monitoring.
+- Utwardzenie do publicznego Internetu: polityka CORS/CSRF dla docelowej domeny i monitoring. HTTPS i `Secure` cookie są przygotowane pod Fly.io (`fly.toml`, `ACRONOTE_BEHIND_PROXY=1`), ale nie zostały jeszcze sprawdzone na działającym wdrożeniu.
 - Automatyczne E2E w CI dla wielu przeglądarek; krytyczne ścieżki wykonano ręcznie w Chromium desktop i 390×844.
 
 ## Ważne informacje operacyjne

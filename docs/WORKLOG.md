@@ -161,3 +161,16 @@ Weryfikacja: `npm test` 69/69 (API 7 plików / 44, web 5 plików / 25), `npm run
 - Wbudowany w Windows `tar.exe` ulegał awarii przy tworzeniu ZIP; paczkę pakuje `System.IO.Compression.ZipFile`.
 
 Weryfikacja: `npm test` 70/70 (API 45, web 25), `npm run typecheck`, lokalna paczka 44 MB rozpakowana do pustego folderu ze spacją w ścieżce. `AcroNote.bat` uruchomił serwer na nowej bazie, logowanie `demo` i `trener_demo` działa, trener widzi zawodnika `demo`, `admin` nie istnieje.
+
+## Iteracja 2026-11-06 — przygotowanie wdrożenia na Fly.io
+
+- Dodano `Dockerfile`, `.dockerignore` i `fly.toml`: region `fra` (Fly nie ma regionu w Polsce), `shared-cpu-1x` 256 MB, wolumen `acronote_data` z bazą w `/data/acronote.db`, `auto_stop_machines = "stop"` i `min_machines_running = 0`. SQLite wymaga dokładnie jednej maszyny, dlatego wdrożenie idzie przez `fly deploy --ha=false`.
+- `ACRONOTE_BEHIND_PROXY=1` włącza `trustProxy`, dzięki czemu `request.protocol` to `https` (cookie `Secure`, link i QR zaproszenia). Domyślnie wyłączone, więc uruchomienie lokalne po HTTP działa jak dotąd.
+- Limity żądań za proxy liczone są po `Fly-Client-IP`. Bez tego wszyscy użytkownicy dzieliliby jeden limit logowań, a lewy wpis `X-Forwarded-For` pozwalałby go obejść.
+- Na produkcji `ACRONOTE_DEMO=0`. Administratora nadaje `apps/api/dist/make-admin.js <nazwa>` istniejącemu kontu, więc nie powstaje konto ze znanym hasłem.
+- Serwer zamyka się czysto po `SIGINT`/`SIGTERM`, co ma znaczenie przy automatycznym zatrzymywaniu maszyny.
+- `npm audit fix` (bez `--force`) podniósł m.in. `fastify` do 5.12.8, `@fastify/static` do 10.1.10 i `vite` do 8.3.6.
+
+Weryfikacja: `npm test` 74/74 (API 49, web 25), `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate` (0 podatności). Kroki z `Dockerfile` odtworzono ręcznie w pustym katalogu na Windowsie i uruchomiono wynik ze zmiennymi z `fly.toml` na tymczasowej bazie: frontend, głębokie linki SPA, brak kont demo, cookie `Secure`/`HttpOnly`/`Strict`, link `https`, `make-admin`, zachowanie sesji po restarcie. Zużycie pamięci 77 MB, start około 0,6 s.
+
+Niezweryfikowane (brak Dockera i konta Fly): faktyczny build obrazu na Linuksie, działanie na Fly, obsługa sygnałów na Linuksie oraz to, czy Fly nadpisuje wysłany przez klienta nagłówek `Fly-Client-IP`.
