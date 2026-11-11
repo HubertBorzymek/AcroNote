@@ -18,6 +18,8 @@ Po pracy zaktualizuj `docs/WORKLOG.md` i `docs/PROGRESS.md`. Nie deklaruj ukońc
 - Nie modyfikuj ani nie usuwaj `data/acronote.db` podczas testów. Używaj SQLite `:memory:` albo jawnie wskazanej bazy testowej.
 - Cały interfejs użytkownika jest po polsku; nazwy w kodzie są po angielsku.
 - Profil trenera jest wyłącznie do odczytu danych połączonego zawodnika. Nie dodawaj trenerowi operacji zapisu ani nie obchodź kontroli relacji po stronie API.
+- Ocena i komentarz treningu są prywatne: widzi je tylko zawodnik. Nie zwracaj ich trenerowi, administratorowi ani w migawce zgłoszenia.
+- Panel administratora wymaga weryfikacji dwuetapowej. Nie dodawaj administratorowi wejścia na cudze konto ani ustawiania haseł użytkowników.
 - Techniczne pola i tabela `execution_types` pozostają dla kompatybilności, ale w interfejsie i dokumentacji oznaczają **miejsca lądowania**.
 
 ## Kontrola przed commitem
@@ -30,3 +32,11 @@ npm audit --audit-level=moderate
 ```
 
 Zmiany UI dodatkowo sprawdź w przeglądarce na szerokim i telefonicznym widoku. Nie commituj baz SQLite, `node_modules`, `dist`, sekretów ani danych testowych.
+
+## Produkcja (Fly.io)
+
+- Aplikacja działa pod `https://acronote.fly.dev` (aplikacja Fly `acronote`, region `fra`). Baza z prawdziwymi danymi użytkowników leży na wolumenie `acronote_data` zamontowanym w `/data`.
+- Zawsze dokładnie jedna maszyna: każda kolejna miałaby własny plik SQLite. Nie zwiększaj liczby maszyn, nie usuwaj `[[mounts]]` i nie zmieniaj nazwy wolumenu ani `DATABASE_PATH`.
+- Migracje muszą zachować istniejące dane produkcyjne. Sprawdzaj je na kopii bazy, nigdy na produkcji.
+- Nie wdrażaj i nie zmieniaj konfiguracji Fly (deploy, skala, sekrety, wolumeny) bez wyraźnej prośby użytkownika.
+- Aktualny stan gałęzi i wdrożenia opisuje `docs/WORKLOG.md`.

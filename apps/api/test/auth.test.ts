@@ -16,7 +16,40 @@ describe('uwierzytelnianie i izolacja danych',()=>{
     expect(invalid.json().message).toBe('Nazwa użytkownika zawiera niedozwolone znaki.');
     await app.close();db.close();
   });
-  it('ogranicza serię rejestracji na pięć minut i zwraca polski komunikat',async()=>{
+  it('za proxy ustawia cookie Secure, a link zaproszenia dostaje https',async()=>{
+    const db=openDatabase(':memory:'); const app=await buildApp({db,trustProxy:1,secureCookies:true});
+    const headers={'x-forwarded-proto':'https',host:'acronote.example.pl'};
+    const registered=await app.inject({method:'POST',url:'/api/auth/register',headers,payload:{username:'za_proxy',password:'bardzo-bezpieczne-haslo'}});
+    const session=registered.cookies[0]!;
+    expect(session.secure).toBe(true);
+    expect(session.httpOnly).toBe(true);
+    expect(session.sameSite).toBe('Strict');
+    const invitation=await app.inject({method:'POST',url:'/api/coach/invitations',headers:{...headers,cookie:`acronote_session=${session.value}`},payload:{role:'athlete'}});
+    expect(invitation.json().url).toMatch(/^https:\/\/acronote\.example\.pl\/zaproszenie\//);
+    await app.close();db.close();
+  });
+  it('lokalnie po HTTP nie ufa nagłówkom proxy i nie ustawia cookie Secure',async()=>{
+    const db=openDatabase(':memory:'); const app=await buildApp({db});
+    const registered=await app.inject({method:'POST',url:'/api/auth/register',headers:{'x-forwarded-proto':'https'},payload:{username:'lokalny',password:'bardzo-bezpieczne-haslo'}});
+    expect(registered.cookies[0]!.secure).toBeUndefined();
+    await app.close();db.close();
+  });
+  it('za proxy liczy limit osobno dla klienta i nie daje go obejść przez X-Forwarded-For',async()=>{
+    const db=openDatabase(':memory:'); const app=await buildApp({db,trustProxy:1,secureCookies:true});
+    const login=(headers:Record<string,string>)=>app.inject({method:'POST',url:'/api/auth/login',headers,payload:{username:'nieznany',password:'zle-haslo'}});
+    for(let index=0;index<15;index++)expect((await login({'fly-client-ip':'203.0.113.1','x-forwarded-for':`198.51.100.${index}`})).statusCode).toBe(401);
+    expect((await login({'fly-client-ip':'203.0.113.1','x-forwarded-for':'198.51.100.99'})).statusCode).toBe(429);
+    expect((await login({'fly-client-ip':'203.0.113.2'})).statusCode).toBe(401);
+    await app.close();db.close();
+  });
+  it('bez proxy ignoruje nagłówek Fly-Client-IP przy limitach',async()=>{
+    const db=openDatabase(':memory:'); const app=await buildApp({db});
+    const login=(ip:string)=>app.inject({method:'POST',url:'/api/auth/login',headers:{'fly-client-ip':ip},payload:{username:'nieznany',password:'zle-haslo'}});
+    for(let index=0;index<15;index++)expect((await login(`203.0.113.${index}`)).statusCode).toBe(401);
+    expect((await login('203.0.113.99')).statusCode).toBe(429);
+    await app.close();db.close();
+  });
+  it('ogranicza serię rejestracji na pięć minut i zwraca polski komunikat',{timeout:20000},async()=>{
     const db=openDatabase(':memory:'); const app=await buildApp({db});
     for(let index=0;index<10;index++){
       const response=await app.inject({method:'POST',url:'/api/auth/register',payload:{username:`limit_${index}`,password:'bardzo-bezpieczne-haslo'}});

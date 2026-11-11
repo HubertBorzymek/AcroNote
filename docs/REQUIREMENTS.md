@@ -63,6 +63,9 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **TRN-08:** formularz z niezapisanymi zmianami ostrzega przy nawigacji i, o ile pozwala przeglądarka, przy zamykaniu lub odświeżaniu karty.
 - **TRN-09:** dla wykonania nadal istniejącej, niezmienionej wersji układu można skorygować wykonany zakres. Gdy źródłowy szablon usunięto lub zmieniono, aplikacja chroni migawkę i podpowiada usunięcie czynności oraz dodanie elementów pojedynczo.
 - **TRN-10:** przy wielu wejściach edytor jednoznacznie pokazuje numer wejścia i sumaryczną liczbę wykonanych elementów; okna wyboru i edycji wskazują numer bieżącego wejścia.
+- **TRN-12:** czas wykonania jest opcjonalny i dotyczy jednego wykonania (×1), z dokładnością do 1 ms (maks. 10 min). Można go wpisać dla pojedynczego elementu, całego układu albo fragmentu oraz dla każdego elementu w układzie. Pozycję ×N z czasem trzeba najpierw rozdzielić na N pozycji ×1. Czas jest częścią migawki treningu.
+- **TRN-13:** trening może mieć ocenę 1–10 i komentarz. Widzi je wyłącznie zawodnik: API nie zwraca ich trenerowi, administratorowi ani w migawce zgłoszenia, a zapis wykonany przez administratora ich nie zmienia.
+- **TRN-14:** wejście zwija się do jednej linii ze streszczeniem; domyślne miejsce lądowania wejścia jest małym wyborem w jego nagłówku.
 - **TRN-11:** edytor pokazuje najnowsze wejścia na górze i umieszcza tam przycisk dodawania. Domyślnie widocznych jest pięć ostatnich wejść; starsze można odsłaniać po pięć, pokazać wszystkie, zwijać po pięć lub wrócić do samych pięciu ostatnich.
 
 ### Miejsca lądowania
@@ -107,9 +110,11 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 ### Administracja
 
 - **ADM-01:** dostęp do panelu wynika z roli zweryfikowanej po stronie API.
-- **ADM-02:** administrator może tworzyć konta, zmieniać ich nazwę i rolę, ustawiać tymczasowe hasło, miękko usuwać i odzyskiwać konto.
+- **ADM-02:** administrator nie zakłada kont, nie ustawia haseł i nie wchodzi na cudze konto. Zmienia nazwę i rolę konta, miękko usuwa i odzyskuje konto, zatwierdza albo odrzuca prośby o reset hasła.
 - **ADM-03:** administrator może przeglądać elementy, układy i treningi konta oraz usuwać lub odzyskiwać elementy i układy; usunięcie treningu wymaga ostrzeżenia, ponieważ jest nieodwracalne.
 - **ADM-04:** administrator nigdy nie otrzymuje aktualnego hasła, skrótu hasła ani tokenu sesji; reset hasła unieważnia istniejące sesje użytkownika.
+- **ADM-06:** panel administratora jest w publicznej aplikacji i wymaga weryfikacji dwuetapowej (TOTP, 10 jednorazowych kodów zapasowych przechowywanych jako skróty). Sesja po haśle pozwala tylko wpisać kod; 5 błędnych kodów kończy logowanie; kod nie działa drugi raz.
+- **ADM-07:** reset hasła: użytkownik wysyła prośbę i dostaje numer; nowe hasło może ustawić tylko przeglądarka, która wysłała prośbę (ciasteczko `HttpOnly`), i tylko po zatwierdzeniu przez administratora. Jedna aktywna prośba na konto, prośba ważna 72 h, zgoda 24 h i jednorazowa; ustawienie hasła unieważnia wszystkie sesje.
 - **ADM-05:** aktywny administrator nie może odebrać roli ani usunąć samemu sobie z poziomu panelu.
 
 ## Wymagania techniczne i operacyjne

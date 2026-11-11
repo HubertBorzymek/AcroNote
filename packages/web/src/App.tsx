@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from './api';
 import type { User } from './types';
-import { Auth, SetNewPassword } from './components/Auth';
+import { Auth, TwoStepPrompt } from './components/Auth';
 import { ErrorState, Icon, Loading } from './components/ui';
 import { TrainingsPage } from './pages/TrainingsPage';
 import { ElementsPage } from './pages/ElementsPage';
 import { RoutinesPage } from './pages/RoutinesPage';
 import { StatsPage } from './pages/StatsPage';
 import { ProfilePage } from './pages/ProfilePage';
-import { AdminPage } from './pages/AdminPage';
+import { ADMIN_SUMMARY_EVENT, AdminPage } from './pages/AdminPage';
 import { CoachPage } from './pages/CoachPage';
 import { applyTheme, THEME_STORAGE_KEY, type Theme } from './theme';
 import { BugReportDialog, useBugReportDialog } from './components/BugReport';
@@ -33,6 +33,17 @@ export function App({ initialTheme = 'light' }: { initialTheme?: Theme }) {
   useEffect(() => { recordNavigation(location.pathname); }, [route]);
   async function loadUser() { setLoadError(''); try { setUser(await api.me()); } catch (reason) { if (reason instanceof ApiError && reason.status === 401) setUser(null); else setLoadError(reason instanceof Error ? reason.message : 'Nie udało się połączyć z serwerem.'); } }
   useEffect(() => { void loadUser(); }, []);
+  // Badge on the Admin tab: password requests waiting for approval and new bug reports.
+  const [adminBadge, setAdminBadge] = useState(0);
+  const adminReady = !!user?.isAdmin && !user.mfaRequired;
+  useEffect(() => {
+    if (!adminReady) { setAdminBadge(0); return; }
+    const load = () => { if (document.visibilityState === 'visible') void api.adminSummary().then((summary) => setAdminBadge(summary.pendingResets + summary.newBugReports), () => setAdminBadge(0)); };
+    load();
+    const timer = setInterval(load, 60_000);
+    addEventListener(ADMIN_SUMMARY_EVENT, load); addEventListener('focus', load);
+    return () => { clearInterval(timer); removeEventListener(ADMIN_SUMMARY_EVENT, load); removeEventListener('focus', load); };
+  }, [adminReady]);
   useEffect(() => { applyTheme(theme); localStorage.setItem(THEME_STORAGE_KEY, theme); }, [theme]);
   useEffect(() => {
     if (!user) return;
@@ -61,7 +72,7 @@ export function App({ initialTheme = 'light' }: { initialTheme?: Theme }) {
   if (user === undefined && !loadError) return <div className="app-loading"><div className="logo-mark">A</div><Loading/></div>;
   if (loadError) return <div className="centered-page"><ErrorState message={loadError} retry={loadUser}/>{report.open && <BugReportDialog onClose={report.close}/>}</div>;
   if (!user) return <Auth onAuthenticated={setUser}/>;
-  if (user.mustChangePassword) return <SetNewPassword user={user} onDone={setUser} onLogout={() => void logout()}/>;
+  if (user.mfaRequired) return <TwoStepPrompt user={user} onDone={setUser} onLogout={() => void logout()}/>;
   const coachEnabled = user.coachEnabled ?? user.coachProfile ?? false;
   const athleteEnabled = user.athleteEnabled ?? user.athleteProfile ?? true;
   const effectiveMode = (mode === 'coach' || !athleteEnabled) && coachEnabled ? 'coach' : 'athlete';
@@ -70,5 +81,6 @@ export function App({ initialTheme = 'light' }: { initialTheme?: Theme }) {
   const pages = { trainings: <TrainingsPage setDirty={setDirty}/>, elements: <ElementsPage setDirty={setDirty}/>, routines: <RoutinesPage setDirty={setDirty}/>, stats: <StatsPage/>, coach: <CoachPage invitation={invitationTarget === 'coach' ? invitation : ''}/>, profile, admin: user.isAdmin ? <AdminPage currentUser={user}/> : profile };
   const navigation: Array<[Route, string, Parameters<typeof Icon>[0]['name']]> = effectiveMode === 'coach' ? [['coach', 'Zawodnicy', 'user'], ['profile', 'Profil', 'admin']] : [['trainings', 'Treningi', 'home'], ['elements', 'Elementy', 'spark'], ['routines', 'Układy', 'routine'], ['stats', 'Statystyki', 'chart'], ['profile', 'Profil', 'user']];
   if (user.isAdmin) navigation.push(['admin', 'Admin', 'admin']);
-  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="logo-mark">A</div><div><strong>AcroNote</strong><span>Dziennik akrobatyczny</span></div></div>{coachEnabled && <div className="profile-switch"><button className={effectiveMode === 'athlete' ? 'active' : ''} onClick={() => switchMode('athlete')}>Zawodnik</button><button className={effectiveMode === 'coach' ? 'active' : ''} onClick={() => switchMode('coach')}>Trener</button></div>}<nav>{navigation.map(([key, label, icon]) => <button className={route === key ? 'active' : ''} key={key} onClick={() => navigate(key)}><Icon name={icon}/><span>{label}</span></button>)}</nav><div className="sidebar-user"><span>{user.username.slice(0, 1).toUpperCase()}</span><div><strong>{user.username}</strong><small>Profil {effectiveMode === 'coach' ? 'trenera' : 'zawodnika'}</small></div></div></aside><main className="content">{user.impersonatedBy && <div className="impersonation-banner" role="status"><span>Przeglądasz konto <strong>{user.username}</strong> jako administrator. Zmiany są prawdziwe.</span><button onClick={() => void api.endImpersonation().finally(() => { location.href = '/admin'; })}>Wróć do panelu admina</button></div>}{coachEnabled && <div className="mobile-profile-switch"><button className={effectiveMode === 'athlete' ? 'active' : ''} onClick={() => switchMode('athlete')}>Zawodnik</button><button className={effectiveMode === 'coach' ? 'active' : ''} onClick={() => switchMode('coach')}>Trener</button></div>}{pages[route]}</main><nav className="bottom-nav">{navigation.map(([key, label, icon]) => <button className={route === key ? 'active' : ''} key={key} onClick={() => navigate(key)}><Icon name={icon}/><span>{label}</span></button>)}</nav>{report.open && <BugReportDialog onClose={report.close}/>}</div>;
+  const navButton = ([key, label, icon]: (typeof navigation)[number]) => <button className={route === key ? 'active' : ''} key={key} onClick={() => navigate(key)}><Icon name={icon}/><span>{label}</span>{key === 'admin' && adminBadge > 0 && <b className="nav-badge" aria-label={`${adminBadge} do sprawdzenia`}>{adminBadge}</b>}</button>;
+  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="logo-mark">A</div><div><strong>AcroNote</strong><span>Dziennik akrobatyczny</span></div></div>{coachEnabled && <div className="profile-switch"><button className={effectiveMode === 'athlete' ? 'active' : ''} onClick={() => switchMode('athlete')}>Zawodnik</button><button className={effectiveMode === 'coach' ? 'active' : ''} onClick={() => switchMode('coach')}>Trener</button></div>}<nav>{navigation.map(navButton)}</nav><div className="sidebar-user"><span>{user.username.slice(0, 1).toUpperCase()}</span><div><strong>{user.username}</strong><small>Profil {effectiveMode === 'coach' ? 'trenera' : 'zawodnika'}</small></div></div></aside><main className="content">{coachEnabled && <div className="mobile-profile-switch"><button className={effectiveMode === 'athlete' ? 'active' : ''} onClick={() => switchMode('athlete')}>Zawodnik</button><button className={effectiveMode === 'coach' ? 'active' : ''} onClick={() => switchMode('coach')}>Trener</button></div>}{pages[route]}</main><nav className="bottom-nav">{navigation.map(navButton)}</nav>{report.open && <BugReportDialog onClose={report.close}/>}</div>;
 }

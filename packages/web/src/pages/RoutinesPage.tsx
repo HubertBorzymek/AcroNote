@@ -68,7 +68,7 @@ export function RoutinesPage({ setDirty }: { setDirty: (dirty: boolean) => void 
   if (routines.error || elements.error) return <ErrorState message={routines.error || elements.error} retry={() => void Promise.all([routines.reload(), elements.reload()])}/>;
   return <div className="page">
     <PageHeader title="Moje układy" eyebrow={`${routines.data?.length ?? 0} zapisanych`} action={<button className="button primary compact" onClick={() => open('new')}><Icon name="plus"/> Dodaj</button>}/>
-    {!routines.data?.length ? <EmptyState icon="≋" title="Stwórz pierwszy układ" description="Ułóż elementy w kolejności. Późniejsze zmiany nie wpłyną na historię treningów." action={<button className="button primary" onClick={() => open('new')}>Utwórz układ</button>}/>
+    {!routines.data?.length ? <EmptyState icon="routine" title="Stwórz pierwszy układ" description="Ułóż elementy w kolejności. Późniejsze zmiany nie wpłyną na historię treningów." action={<button className="button primary" onClick={() => open('new')}>Utwórz układ</button>}/>
       : <div className="routine-list">{routines.data.map((routine) => <article className="routine-card" key={routine.id}>
         <div className="routine-heading"><div><span>Układ</span><h2>{routine.name}</h2></div><button className="icon-button" aria-label="Edytuj układ" onClick={() => open(routine)}><Icon name="more"/></button></div>
         <div className="routine-preview">{routine.slots.map((slot, index) => <span key={slot.id ?? `${slot.elementId}-${index}`}><small>{index + 1}</small>{slot.code ?? elements.data?.find((x) => x.id === slot.elementId)?.code ?? '—'}</span>)}</div>

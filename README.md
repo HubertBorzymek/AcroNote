@@ -50,13 +50,13 @@ Jeśli AcroNote już działa, `start.bat` tylko otworzy przeglądarkę. Aby zatr
 
 | | |
 |---|---|
-| 📝 **Treningi** | Wejścia z elementami i układami, liczba powtórzeń, miejsce lądowania dla każdego elementu. Długie treningi są zwijane — najnowsze wejścia na górze. |
+| 📝 **Treningi** | Wejścia z elementami i układami, liczba powtórzeń, miejsce lądowania dla każdego elementu. Wejścia zwijają się do jednej linii, najnowsze są na górze. Opcjonalny czas wykonania (do tysięcznych sekundy) dla elementu, układu i fragmentu oraz prywatna ocena treningu 1–10 z komentarzem. |
 | 🧩 **Elementy** | Katalog w pełnej notacji (np. `800o`, `831<`, `42/`) z automatycznym rozpoznaniem ćwiartek, salt, śrub, kierunku i pozycji. Ulubione, ukryte, filtry. |
 | 🔗 **Układy** | Szablony z dowolną liczbą elementów. Możesz zapisać cały układ albo fragment (np. 3–7). |
-| 📊 **Statystyki** | Suma elementów, rozkład lądowań (siatka / materac / gąbki), historia konkretnego elementu w tygodniach i miesiącach. |
-| 🧑‍🏫 **Profil trenera** | Połączenie przez kod, link lub QR, za świadomą zgodą. Trener tylko czyta dane zawodnika. |
-| 🛡️ **Administrator** | Zarządzanie kontami, danymi i zgłoszeniami, bez dostępu do haseł i sesji. Na serwerze dostępny wyłącznie przez prywatny tunel. |
-| 🔑 **Konta i hasła** | Konto na imię i nazwisko ze spacją. Hasło ma minimum 8 znaków i żadnych innych reguł. „Zapomniałeś hasła?” wysyła prośbę do administratora, który przekazuje jednorazowy kod. Hasła nikt poza użytkownikiem nie zna. |
+| 📊 **Statystyki** | Suma elementów, rozkład lądowań (siatka / materac / gąbki), historia konkretnego elementu w tygodniach i miesiącach. Rekordy, średnie i postęp czasów wykonania. |
+| 🧑‍🏫 **Profil trenera** | Połączenie przez kod, link lub QR, za świadomą zgodą. Trener tylko czyta dane zawodnika; oceny i komentarzy do treningów nie widzi. |
+| 🛡️ **Administrator** | Zarządzanie kontami, danymi, prośbami o reset hasła i zgłoszeniami, bez dostępu do haseł i sesji. Działa w zwykłej aplikacji (także na telefonie) i wymaga weryfikacji dwuetapowej. |
+| 🔑 **Konta i hasła** | Konto na imię i nazwisko ze spacją. Hasło ma minimum 8 znaków i żadnych innych reguł. „Zapomniałeś hasła?” wysyła prośbę z numerem; po zatwierdzeniu przez administratora użytkownik ustawia nowe hasło na tym samym urządzeniu. Hasła nikt poza użytkownikiem nie zna. |
 | 🐞 **Zgłoś problem** | Z profilu albo z każdego ekranu błędu. Do opisu dołączane są informacje techniczne i opcjonalnie kopia danych konta, którą da się odtworzyć lokalnie. |
 | 🌙 **Tryb ciemny** | Domyślnie zgodny z systemem, zapamiętywany w przeglądarce. |
 
@@ -98,11 +98,12 @@ docs/            wymagania, architektura, plan testów, stan prac
 | `npm run seed` | konta demo i konto `admin` |
 | `npm run package:win` | samodzielna paczka Windows (`release/AcroNote-<wersja>-win-x64.zip`) |
 | `npm run import-report -- <plik.json>` | odtwarza dane ze zgłoszenia błędu w lokalnej bazie |
-| `npm run dev:prod-admin` | frontend deweloperski na danych z serwera (przez `fly proxy`, zob. [DEPLOY.md](docs/DEPLOY.md)) |
+| `scripts\pobierz-kopie.bat` | kopia produkcyjnej bazy do `Dokumenty\AcroNote-kopie` (zob. [DEPLOY.md](docs/DEPLOY.md)) |
+| `scripts\zaplanuj-kopie.bat` | cotygodniowa kopia produkcyjnej bazy w Harmonogramie zadań |
 
 ### 🌐 Wersja online i gałęzie
 
-Rozwój odbywa się na gałęzi **`dev`**. Każdy push i PR przechodzi testy ([ci.yml](.github/workflows/ci.yml)). Po scaleniu PR do **`main`** nowa wersja trafia automatycznie na Fly.io ([deploy.yml](.github/workflows/deploy.yml)). Konfigurację, panel administratora przez tunel, kopie zapasowe i odtwarzanie zgłoszeń opisuje **[docs/DEPLOY.md](docs/DEPLOY.md)**.
+Rozwój odbywa się na gałęziach roboczych (np. **`dev`**), nie na `main`. Każdy push i PR przechodzi testy ([ci.yml](.github/workflows/ci.yml)). Po scaleniu PR do **`main`** nowa wersja trafia automatycznie na Fly.io ([deploy.yml](.github/workflows/deploy.yml)). Stan przełączenia wdrażania, panel administratora z weryfikacją dwuetapową, reset haseł, kopie zapasowe i odtwarzanie zgłoszeń opisuje **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 
 ### 📦 Paczka Windows (Releases)
 

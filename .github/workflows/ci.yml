@@ -33,7 +33,7 @@ jobs:
           docker run -d --name acronote -p 3001:3001 -e ACRONOTE_ENV=production -e TRUST_PROXY=1 acronote:ci
           for i in $(seq 1 30); do curl -fs http://127.0.0.1:3001/api/health && break; sleep 1; done
           curl -fs http://127.0.0.1:3001/api/health | grep -q '"ok":true'
-          # The public port must not expose the admin API in production.
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/api/admin/users)" = "404"
+          # The admin API needs a session (and two-step login) in production.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/api/admin/users)" = "401"
           curl -fs http://127.0.0.1:3001/ | grep -q '<div id="root">'
           docker logs acronote

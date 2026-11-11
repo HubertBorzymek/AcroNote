@@ -1,13 +1,44 @@
 import type { Db } from './db.js';
 
-type SnapshotElement = { sourceElementId?: number | null; code: string; name?: string | null; executionTypeId?: number | null; executionTypeName?: string; position?: number };
+type SnapshotElement = { sourceElementId?: number | null; code: string; name?: string | null; executionTypeId?: number | null; executionTypeName?: string; position?: number; timeMs?: number | null };
 type Activity = {
   kind: 'element' | 'routine'; repetitions: number; executionTypeId?: number | null; executionTypeName?: string;
   sourceElementId?: number | null; code?: string; name?: string | null;
   sourceRoutineId?: number | null; sourceRoutineName?: string; sourceTemplateVersion?: number;
   rangeStart?: number; rangeEnd?: number; isFullRange?: boolean; elements?: SnapshotElement[];
+  /** Time of a single execution in milliseconds: the element, or the whole routine/fragment. */
+  timeMs?: number | null;
 };
-export type TrainingInput = { date: string; entries: { defaultExecutionTypeId?: number | null; defaultExecutionTypeName?: string; activities: Activity[] }[] };
+export type TrainingInput = {
+  date: string; entries: { defaultExecutionTypeId?: number | null; defaultExecutionTypeName?: string; activities: Activity[] }[];
+  /** Private to the athlete: never returned to coaches or administrators. Omitted = keep the stored value. */
+  rating?: number | null; comment?: string | null;
+};
+export type TrainingAccess = { includePrivate?: boolean };
+
+/** Longest accepted time of one execution (10 min); times are stored as whole milliseconds. */
+export const MAX_TIME_MS = 600_000;
+const ONE_EXECUTION_ONLY = 'Czas można wpisać tylko dla pojedynczego wykonania (×1). Rozdziel powtórzenia na osobne pozycje.';
+
+function timeValue(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > MAX_TIME_MS) throw new Error('Czas musi być dodatni, w tysięcznych sekundy, i nie dłuższy niż 10 minut.');
+  return value;
+}
+
+function ratingValue(value: unknown): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 10) throw new Error('Ocena treningu musi być liczbą od 1 do 10.');
+  return value;
+}
+
+function commentValue(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') throw new Error('Komentarz jest nieprawidłowy.');
+  const trimmed = value.trim();
+  if (trimmed.length > 2000) throw new Error('Komentarz może mieć najwyżej 2000 znaków.');
+  return trimmed || null;
+}
 
 function requiredText(value: unknown, label: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} jest wymagane.`);
@@ -19,30 +50,38 @@ function isCalendarDate(value: string): boolean {
   return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
 }
 
-export function saveTraining(db: Db, userId: number, input: TrainingInput, trainingId?: number): number {
+/** `includePrivate` (only the athlete) allows changing the rating and comment; otherwise they stay untouched. */
+export function saveTraining(db: Db, userId: number, input: TrainingInput, trainingId?: number, access: TrainingAccess = {}): number {
   if (typeof input?.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(input.date) || !isCalendarDate(input.date)) throw new Error('Nieprawidłowa data treningu.');
   if (!Array.isArray(input.entries) || input.entries.some(entry => !Array.isArray(entry?.activities))) throw new Error('Nieprawidłowa struktura treningu.');
+  const setPrivate = Boolean(access.includePrivate) && ('rating' in input || 'comment' in input);
+  const rating = setPrivate ? ratingValue(input.rating) : null;
+  const comment = setPrivate ? commentValue(input.comment) : null;
   const transaction = db.transaction(() => {
     let id = trainingId;
     if (id) {
       const owned = db.prepare('SELECT id FROM trainings WHERE id=? AND user_id=?').get(id, userId);
       if (!owned) throw new Error('Nie znaleziono treningu.');
       db.prepare("UPDATE trainings SET training_date=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(input.date, id);
+      if (setPrivate) db.prepare('UPDATE trainings SET rating=?,comment=? WHERE id=?').run(rating, comment, id);
       db.prepare('DELETE FROM training_entries WHERE training_id=?').run(id);
     } else {
-      id = Number(db.prepare('INSERT INTO trainings(user_id,training_date) VALUES(?,?)').run(userId, input.date).lastInsertRowid);
+      id = Number(db.prepare('INSERT INTO trainings(user_id,training_date,rating,comment) VALUES(?,?,?,?)').run(userId, input.date, rating, comment).lastInsertRowid);
     }
     const addEntry = db.prepare('INSERT INTO training_entries(training_id,position,default_execution_type_id,default_execution_type_name) VALUES(?,?,?,?)');
     const addActivity = db.prepare(`INSERT INTO activities(entry_id,position,kind,repetitions,execution_type_id,execution_type_name,
       source_element_id,code_snapshot,name_snapshot,source_routine_id,source_routine_name,source_template_version,
-      range_start,range_end,is_full_range,matched_original_template) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      range_start,range_end,is_full_range,matched_original_template,time_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const addElement = db.prepare(`INSERT INTO activity_elements(activity_id,position,source_element_id,code_snapshot,name_snapshot,
-      execution_type_id,execution_type_name) VALUES(?,?,?,?,?,?,?)`);
+      execution_type_id,execution_type_name,time_ms) VALUES(?,?,?,?,?,?,?,?)`);
     input.entries.forEach((entry, entryIndex) => {
       const defaultName = requiredText(entry.defaultExecutionTypeName ?? 'Siatka', 'Miejsce lądowania');
       const entryId = Number(addEntry.run(id, entryIndex, entry.defaultExecutionTypeId ?? null, defaultName).lastInsertRowid);
       entry.activities.forEach((activity, activityIndex) => {
         if (!Number.isInteger(activity.repetitions) || activity.repetitions < 1) throw new Error('Liczba powtórzeń musi być dodatnią liczbą całkowitą.');
+        const activityTime = timeValue(activity.timeMs);
+        const elementTimes = activity.kind === 'routine' ? (activity.elements ?? []).map(element => timeValue(element.timeMs)) : [];
+        if (activity.repetitions !== 1 && (activityTime !== null || elementTimes.some(time => time !== null))) throw new Error(ONE_EXECUTION_ONLY);
         const executionName = requiredText(activity.executionTypeName ?? defaultName, 'Miejsce lądowania');
         let matched = activity.kind === 'element';
         let templateVersion: number | null = null;
@@ -63,13 +102,13 @@ export function saveTraining(db: Db, userId: number, input: TrainingInput, train
           activity.kind === 'routine' ? requiredText(activity.sourceRoutineName, 'Nazwa układu') : null,
           templateVersion, activity.kind === 'routine' ? activity.rangeStart ?? 1 : null,
           activity.kind === 'routine' ? activity.rangeEnd ?? activity.elements!.length : null,
-          activity.kind === 'routine' && activity.isFullRange ? 1 : 0, matched ? 1 : 0);
+          activity.kind === 'routine' && activity.isFullRange ? 1 : 0, matched ? 1 : 0, activityTime);
         const activityId = Number(result.lastInsertRowid);
         if (activity.kind === 'routine') activity.elements!.forEach((element, elementIndex) => {
           addElement.run(activityId, element.position ?? elementIndex + 1, element.sourceElementId ?? null,
             requiredText(element.code, 'Kod elementu'), element.name ?? null,
             element.executionTypeId ?? activity.executionTypeId ?? entry.defaultExecutionTypeId ?? null,
-            requiredText(element.executionTypeName ?? executionName, 'Miejsce lądowania'));
+            requiredText(element.executionTypeName ?? executionName, 'Miejsce lądowania'), elementTimes[elementIndex] ?? null);
         });
       });
     });
@@ -86,17 +125,18 @@ function matchesCurrentSnapshot(db: Db, userId: number, activity: Activity): boo
   return items.length === activity.elements.length && items.every((item, index) => item.code === activity.elements![index]?.code && (item.name ?? null) === (activity.elements![index]?.name ?? null));
 }
 
-export function getTraining(db: Db, userId: number, id: number) {
-  const training = db.prepare('SELECT id,training_date date,created_at createdAt,updated_at updatedAt FROM trainings WHERE id=? AND user_id=?').get(id, userId) as any;
+/** Coaches, administrators and bug-report snapshots read without `includePrivate`, so they never see the rating or comment. */
+export function getTraining(db: Db, userId: number, id: number, access: TrainingAccess = {}) {
+  const training = db.prepare(`SELECT id,training_date date,created_at createdAt,updated_at updatedAt${access.includePrivate ? ',rating,comment' : ''} FROM trainings WHERE id=? AND user_id=?`).get(id, userId) as any;
   if (!training) return null;
   training.entries = db.prepare('SELECT id,position,default_execution_type_id defaultExecutionTypeId,default_execution_type_name defaultExecutionTypeName FROM training_entries WHERE training_id=? ORDER BY position').all(id) as any[];
   for (const entry of training.entries) {
     entry.activities = db.prepare(`SELECT id,position,kind,repetitions,execution_type_id executionTypeId,execution_type_name executionTypeName,
       source_element_id sourceElementId,code_snapshot code,name_snapshot name,source_routine_id sourceRoutineId,
       source_routine_name sourceRoutineName,source_template_version sourceTemplateVersion,range_start rangeStart,range_end rangeEnd,
-      is_full_range isFullRange,matched_original_template matchedOriginalTemplate FROM activities WHERE entry_id=? ORDER BY position`).all(entry.id) as any[];
+      is_full_range isFullRange,matched_original_template matchedOriginalTemplate,time_ms timeMs FROM activities WHERE entry_id=? ORDER BY position`).all(entry.id) as any[];
     for (const activity of entry.activities) if (activity.kind === 'routine') activity.elements = db.prepare(`SELECT position,source_element_id sourceElementId,
-      code_snapshot code,name_snapshot name,execution_type_id executionTypeId,execution_type_name executionTypeName
+      code_snapshot code,name_snapshot name,execution_type_id executionTypeId,execution_type_name executionTypeName,time_ms timeMs
       FROM activity_elements WHERE activity_id=? ORDER BY position`).all(activity.id);
   }
   return training;

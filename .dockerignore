@@ -1,12 +1,14 @@
 **/node_modules
 **/dist
+**/*.tsbuildinfo
+**/*.log
 data
 release
+docs
 .git
 .github
 .env
 .env.*
 !.env.example
-*.log
 .vs
 .vscode

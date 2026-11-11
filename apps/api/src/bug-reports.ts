@@ -33,7 +33,7 @@ export function buildUserSnapshot(db: Db, userId: number) {
 
 const optionalText = (value: unknown, max: number) => typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null;
 
-export function registerBugReportRoutes(app: FastifyInstance, db: Db, guards: { auth: Guard; adminAuth: Guard; adminEnabled: boolean; appVersion: string }) {
+export function registerBugReportRoutes(app: FastifyInstance, db: Db, guards: { auth: Guard; adminAuth: Guard; appVersion: string }) {
   const { auth, adminAuth } = guards;
 
   app.post('/api/bug-reports', { ...auth, config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } }, async (request, reply) => {
@@ -55,8 +55,6 @@ export function registerBugReportRoutes(app: FastifyInstance, db: Db, guards: { 
 
   app.get('/api/bug-reports/mine', auth, async request => db.prepare(`SELECT id,substr(description,1,200) description,status,created_at createdAt,resolved_at resolvedAt
     FROM bug_reports WHERE user_id=? ORDER BY id DESC LIMIT 50`).all(request.userId));
-
-  if (!guards.adminEnabled) return;
 
   app.get('/api/admin/bug-reports', adminAuth, async request => {
     const status = (request.query as any).status;

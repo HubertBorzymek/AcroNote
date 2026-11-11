@@ -4,11 +4,11 @@
 
 ## Stan bieżący
 
-**Aktualizacja:** 2026-10-05
+**Aktualizacja:** 2026-11-11
 
-**Etap:** kompletna lokalna wersja profilu zawodnika, profilu trenera tylko do odczytu i panelu administratora
+**Etap:** produkcja (`main`) działa na Fly.io; gałąź `dev` zawiera scalenie z `main` i nowe funkcje (iteracja 2026-11-11), jeszcze niewdrożone
 
-**Weryfikacja:** 63 testy automatyczne, kontrola typów, build, audyt zależności, migracja kopii istniejącej bazy oraz testy przeglądarkowe desktop/mobile na odizolowanej bazie
+**Weryfikacja `dev`:** 109 testów automatycznych (API 73, web 36), kontrola typów, build, audyt 0, migracja v1–v3 → v6 na bazie utworzonej kodem z `main`, testy przeglądarkowe desktop/mobile na odizolowanej bazie. Niezweryfikowane: migracja na kopii prawdziwej bazy produkcyjnej, skrypty kopii na produkcji, obraz Docker po zmianach (sprawdzi CI), działanie na prawdziwym iPhonie.
 
 ## Zrealizowany zakres
 
@@ -79,8 +79,8 @@
 
 - `demo` / `AcroNote-demo-2026`: 30 zróżnicowanych elementów, dwa układy (drugi zawiera duplikat) oraz trening startowy z pięcioma różnymi wejściami obok historii treningów.
 - `trener_demo` / `AcroNote-trener-2026`: profil zawodnika i trenera, połączony z kontem `demo`; seeder nie nadpisuje istniejącego hasła ani nie powiela relacji.
-- `admin` / `AcroNote-admin-2026`: osobny panel kont.
-- Administrator może tworzyć konto, zmieniać jego nazwę i rolę, ustawić hasło tymczasowe, miękko usunąć i odzyskać konto.
+- `admin` / `AcroNote-admin-2026` (tylko lokalnie): panel administratora; przy pierwszym wejściu wymaga ustawienia weryfikacji dwuetapowej.
+- Administrator zmienia nazwę i rolę konta, miękko usuwa i odzyskuje konto oraz zatwierdza prośby o reset hasła. Nie zakłada kont, nie ustawia haseł i nie wchodzi na cudze konto (od 2026-11-11).
 - Może przeglądać i usuwać/odzyskiwać elementy i układy użytkownika oraz przeglądać i usuwać treningi.
 - Reset hasła unieważnia sesje. API ani UI nie zwracają aktualnego hasła, skrótu hasła lub tokenów sesji.
 
@@ -118,11 +118,21 @@
 - pełny odczyt trenera, odmowa obcemu trenerowi i natychmiastowe odebranie dostępu.
 - wspólne filtry wyboru elementów, zachowanie wersji układu przy ponownym zapisie oraz wielowejściowe dane demo.
 
+## Iteracja 2026-11-11 (gałąź `dev`, niewdrożona)
+
+- Scalono `main` z `dev`. Panel administratora wrócił do publicznej aplikacji, ale wymaga weryfikacji dwuetapowej; usunięto prywatny port 3002, kody resetu, zakładanie kont i wejście administratora na konto.
+- Reset hasła: prośba z numerem, zatwierdzenie w panelu, nowe hasło tylko na urządzeniu z prośbą. Licznik próśb i zgłoszeń na zakładce *Admin*.
+- Limity żądań za proxy liczone po `Fly-Client-IP`.
+- Treningi: opcjonalny czas wykonania (element, układ, fragment, elementy układu) z rozdzielaniem ×N na ×1, statystyki czasu (rekord, średnia, ostatni, trend 30 dni, wykres, rozrzut) i komunikat o nowym rekordzie. Prywatna ocena 1–10 z komentarzem.
+- Edytor: zwijane wejścia ze streszczeniem, mały wybór lądowania w nagłówku. Ekran główny bez karty „Dzisiaj”, jeden przycisk „Nowy” (na telefonie przypięty nad dolnym menu).
+- Ozdobne znaki zastąpione ikonami SVG (na iPhonie strzałka rysowała się jako niebieskie emoji).
+- Migracja v6. Skrypty kopii produkcyjnej bazy na komputer: na żądanie i co tydzień.
+
 ## Świadomie odłożone
 
-- Komentarze, cele treningowe i grupy klubowe. (Odzyskiwanie konta działa przez administratora: prośba z ekranu logowania i jednorazowy kod.)
+- Cele treningowe i grupy klubowe. (Odzyskiwanie konta: prośba z numerem z ekranu logowania, zatwierdzana przez administratora.)
 - PWA/offline i synchronizacja, import/eksport, generator kodów i punktacja.
-- Monitoring i alerty dla wersji online (HTTPS, `Secure` cookie, SameSite=Strict, kopie bazy i prywatny panel admina są już zrobione — zob. `docs/DEPLOY.md`).
+- Monitoring i alerty dla wersji online (HTTPS, `Secure` cookie, SameSite=Strict, kopie bazy i panel admina z weryfikacją dwuetapową są już zrobione — zob. `docs/DEPLOY.md`).
 - Automatyczne E2E w CI dla wielu przeglądarek; krytyczne ścieżki wykonano ręcznie w Chromium desktop i 390×844.
 
 ## Ważne informacje operacyjne

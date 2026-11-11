@@ -12,7 +12,7 @@ function download(report: AdminBugReport) {
   link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function AdminBugReports() {
+export function AdminBugReports({ onChanged }: { onChanged?: () => void } = {}) {
   const [filter, setFilter] = useState<Filter>('new');
   const list = useAsync(() => api.adminBugReports(filter === 'all' ? undefined : filter), [filter]);
   const [selected, setSelected] = useState<AdminBugReport>();
@@ -20,7 +20,7 @@ export function AdminBugReports() {
 
   async function open(id: number) { try { setSelected(await api.adminBugReport(id)); } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Nie udało się pobrać zgłoszenia.'); } }
   async function act(action: () => Promise<void>, success: string, closeAfter = false) {
-    try { await action(); await list.reload(); if (closeAfter) setSelected(undefined); else if (selected) setSelected(await api.adminBugReport(selected.id)); setMessage(success); }
+    try { await action(); await list.reload(); onChanged?.(); if (closeAfter) setSelected(undefined); else if (selected) setSelected(await api.adminBugReport(selected.id)); setMessage(success); }
     catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Nie udało się wykonać operacji.'); }
   }
 
@@ -29,7 +29,7 @@ export function AdminBugReports() {
 
   return <>
     <div className="segmented three" role="group" aria-label="Filtr zgłoszeń">{([['new', 'Nowe'], ['resolved', 'Rozwiązane'], ['all', 'Wszystkie']] as const).map(([key, label]) => <button key={key} className={filter === key ? 'active' : ''} onClick={() => setFilter(key)}>{label}</button>)}</div>
-    {list.loading ? <Loading/> : list.error ? <ErrorState message={list.error} retry={list.reload}/> : !list.data?.length ? <EmptyState icon="✓" title="Brak zgłoszeń" description={filter === 'new' ? 'Nie ma nowych zgłoszeń do przejrzenia.' : 'Nic tu jeszcze nie ma.'}/>
+    {list.loading ? <Loading/> : list.error ? <ErrorState message={list.error} retry={list.reload}/> : !list.data?.length ? <EmptyState icon="check" title="Brak zgłoszeń" description={filter === 'new' ? 'Nie ma nowych zgłoszeń do przejrzenia.' : 'Nic tu jeszcze nie ma.'}/>
       : <div className="admin-users">{list.data.map((item) => <article key={item.id} className={item.status === 'resolved' ? 'deleted' : ''}><div className="avatar small">#{item.id}</div><div><h2>{item.username} · {item.createdAt.slice(0, 16)}</h2><p>{item.description}</p><p>{item.page ?? '—'} · wersja {item.appVersion ?? '?'}{item.hasSnapshot ? ' · z migawką danych' : ''}</p></div><div className="admin-actions"><button onClick={() => void open(item.id)}>Szczegóły</button></div></article>)}</div>}
     {selected && <div className="modal-backdrop above"><section className="sheet wide" role="dialog" aria-modal="true"><PageHeader title={`Zgłoszenie #${selected.id}`} eyebrow={`${selected.username} · ${selected.createdAt}`} onBack={() => setSelected(undefined)}/>
       <div className="form-stack">

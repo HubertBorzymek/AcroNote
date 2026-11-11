@@ -54,6 +54,11 @@ Testy nie używają pliku `data/acronote.db`. Każdy zestaw integracyjny otrzymu
 | T35 | Ponowny zapis historycznego treningu | Wersja źródłowa i elementy migawki pozostają bez zmian po aktualizacji bieżącego szablonu |
 | T36 | Dane demonstracyjne wielu wejść | Seeder idempotentnie zapewnia trening demo z pięcioma różnymi wejściami, układami, fragmentem i różnymi lądowaniami |
 | T37 | Długi trening | Dla 20+ wejść lista zaczyna się od najnowszego, pokazuje domyślnie 5 i poprawnie rozwija się partiami lub w całości |
+| T38 | Czas wykonania | Czas tylko dla ×1, walidacja zakresu, zapis w migawce, rekord, średnia, trend i seria (`times-rating.test.ts`, `time.test.ts`, `trainingEditor.test.ts`) |
+| T39 | Prywatna ocena | Ocena i komentarz nie trafiają do trenera, administratora ani zgłoszenia; zapis admina ich nie zmienia (`times-rating.test.ts`) |
+| T40 | Reset z zatwierdzeniem | Bez zgody nic nie działa; tylko urządzenie z prośbą ustawia hasło; zgoda jednorazowa i z terminem; jedna aktywna prośba na konto (`accounts.test.ts`) |
+| T41 | Weryfikacja dwuetapowa | Sesja po haśle ograniczona do kodu; panel wymaga ustawienia 2FA; limit błędnych kodów; kody zapasowe jednorazowe (`accounts.test.ts`) |
+| T42 | Symbole iOS | W `.tsx`/`.css` nie ma znaków, które iOS rysuje jako emoji (`symbols.test.ts`) |
 
 ## Konta i uprawnienia
 

@@ -9,8 +9,9 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 import { openDatabase, seedExecutionTypes, usernameKey, type Db } from './db.js';
-import { hashToken, issueResetCode, normalizeResetCode, PASSWORD_MIN_LENGTH, registerAccountRoutes, RESET_CODE_HOURS } from './accounts.js';
+import { clearTwoStep, hashToken, PASSWORD_MIN_LENGTH, registerAccountRoutes } from './accounts.js';
 import { getTraining, saveTraining, trainingSummary, type TrainingInput } from './training-service.js';
+import { newTimeRecords, timeStats } from './time-stats.js';
 import { validateElementCode } from '@acronote/shared';
 import { registerBugReportRoutes } from './bug-reports.js';
 
@@ -27,16 +28,15 @@ const usernameText = (value: unknown) => {
   return username;
 };
 
-declare module 'fastify' { interface FastifyRequest { userId: number; userRole: 'user' | 'admin'; session: { id: number; impersonatorId: number | null; passwordChangeOnly: boolean } } }
+declare module 'fastify' { interface FastifyRequest { userId: number; userRole: 'user' | 'admin'; session: { id: number; mfaPending: boolean } } }
 
-// A session opened with a reset code may only set the new password (and log out).
-const PASSWORD_CHANGE_ROUTES = new Set(['/api/auth/me', '/api/auth/logout', '/api/auth/password/new']);
+// A session waiting for the authenticator code may only finish the login (or log out).
+const MFA_PENDING_ROUTES = new Set(['/api/auth/me', '/api/auth/logout', '/api/auth/2fa/verify']);
+const MFA_PENDING_MINUTES = 10;
 
 export type AppOptions = {
   db?: Db;
   logger?: boolean | { level: string };
-  /** Registers the /api/admin routes. The public production port runs without them. */
-  adminRoutes?: boolean;
   /** Marks the session cookie Secure (required behind HTTPS). */
   secureCookies?: boolean;
   /** Number of reverse-proxy hops to trust for the client IP and protocol (Fly's edge = 1). */
@@ -50,22 +50,29 @@ function rootPackageVersion(): string {
 export const APP_VERSION = process.env.ACRONOTE_VERSION || rootPackageVersion();
 
 export async function buildApp(options: AppOptions = {}) {
-  const adminEnabled = options.adminRoutes ?? true;
   const secureCookies = options.secureCookies ?? false;
   // Trust only the nearest `hops` proxies, so a client cannot spoof its IP by prepending X-Forwarded-For.
   // (A numeric trustProxy is silently ignored by Fastify 5, hence the explicit function.)
   const hops = options.trustProxy ?? 0;
   const app = Fastify({ logger: options.logger ?? false, trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false });
+  const behindProxy = hops > 0;
   const db = options.db ?? openDatabase();
-  const session = (userId: number, reply: any, extra: { impersonatorId?: number; hours?: number; passwordChangeOnly?: boolean } = {}) => startSession(db, userId, reply, secureCookies, extra);
+  const session = (userId: number, reply: any, extra: { minutes?: number; mfaPending?: boolean } = {}) => startSession(db, userId, reply, secureCookies, extra);
   const createSession = (_db: Db, userId: number, reply: any) => session(userId, reply);
-  // Without admin routes the client must not offer the admin panel either.
-  const publicUser = (user: any) => ({ ...toPublicUser(user), ...(adminEnabled ? {} : { isAdmin: false }) });
+  const publicUser = toPublicUser;
+  // Accounts with an authenticator app (administrators) get a short session that only accepts the code.
+  const completeLogin = (user: { id: number; totp_secret?: string | null }, reply: any) => {
+    if (user.totp_secret) { session(user.id, reply, { minutes: MFA_PENDING_MINUTES, mfaPending: true }); return { mfaRequired: true }; }
+    session(user.id, reply); return { mfaRequired: false };
+  };
+  const passwordText = (value: unknown, label: string) => text(value, label, PASSWORD_MIN_LENGTH);
   app.decorate('db', db);
   await app.register(cookie);
   await app.register(rateLimit, {
     max: 150,
     timeWindow: '1 minute',
+    // Fly sets Fly-Client-IP itself; the leftmost X-Forwarded-For entry is client-controlled and would allow bypassing the limits.
+    keyGenerator: request => (behindProxy && typeof request.headers['fly-client-ip'] === 'string' ? request.headers['fly-client-ip'] : request.ip),
     errorResponseBuilder: (_request, context) => ({
       statusCode: 429,
       error: 'Zbyt wiele prób',
@@ -84,18 +91,21 @@ export async function buildApp(options: AppOptions = {}) {
   async function authenticate(request: FastifyRequest, reply: any) {
     const token = request.cookies.acronote_session;
     if (!token) return reply.status(401).send({ message: 'Zaloguj się, aby kontynuować.' });
-    const session = db.prepare(`SELECT s.id,s.user_id,u.role,s.impersonator_id,s.password_change_only FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>datetime('now') AND u.deleted_at IS NULL`).get(hashToken(token)) as { id:number; user_id:number; role:'user'|'admin'; impersonator_id:number|null; password_change_only:number } | undefined;
+    const session = db.prepare(`SELECT s.id,s.user_id,u.role,s.mfa_pending FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>datetime('now') AND u.deleted_at IS NULL`).get(hashToken(token)) as { id:number; user_id:number; role:'user'|'admin'; mfa_pending:number } | undefined;
     if (!session) return reply.status(401).send({ message: 'Sesja wygasła. Zaloguj się ponownie.' });
     request.userId = session.user_id;
     request.userRole = session.role;
-    request.session = { id: session.id, impersonatorId: session.impersonator_id, passwordChangeOnly: !!session.password_change_only };
-    if (session.password_change_only && !PASSWORD_CHANGE_ROUTES.has(request.routeOptions.url ?? '')) return reply.status(403).send({ message: 'Najpierw ustaw nowe hasło.', code: 'PASSWORD_CHANGE_REQUIRED' });
+    request.session = { id: session.id, mfaPending: !!session.mfa_pending };
+    if (session.mfa_pending && !MFA_PENDING_ROUTES.has(request.routeOptions.url ?? '')) return reply.status(403).send({ message: 'Wpisz kod z aplikacji uwierzytelniającej.', code: 'MFA_REQUIRED' });
   }
   const auth = { preHandler: authenticate };
   async function authenticateAdmin(request: FastifyRequest, reply: any) {
     await authenticate(request, reply);
     if (reply.sent) return;
     if (request.userRole !== 'admin') return reply.status(403).send({ message: 'Ta operacja wymaga konta administratora.' });
+    // The admin panel is reachable from the public site, so it opens only with two-step login set up.
+    const twoStep = db.prepare('SELECT totp_secret IS NOT NULL enabled FROM users WHERE id=?').get(request.userId) as { enabled: number };
+    if (!twoStep.enabled) return reply.status(403).send({ message: 'Aby otworzyć panel administratora, włącz weryfikację dwuetapową.', code: 'MFA_SETUP_REQUIRED' });
   }
   const adminAuth = { preHandler: authenticateAdmin };
 
@@ -103,7 +113,7 @@ export async function buildApp(options: AppOptions = {}) {
   app.post('/api/auth/register', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
     const body = request.body as any;
     const username = usernameText(body?.username);
-    const password = text(body?.password, 'Hasło', PASSWORD_MIN_LENGTH);
+    const password = passwordText(body?.password, 'Hasło');
     const passwordHash = await bcrypt.hash(password, 12);
     let userId: number;
     try { userId = Number(db.prepare('INSERT INTO users(username,password_hash) VALUES(?,?)').run(username, passwordHash).lastInsertRowid); }
@@ -116,45 +126,23 @@ export async function buildApp(options: AppOptions = {}) {
     const body = request.body as any;
     const username = usernameText(body?.username);
     const password = text(body?.password, 'Hasło');
-    const user = db.prepare(`SELECT id,username,password_hash,athlete_enabled,coach_enabled,role,reset_code_hash,reset_code_expires_at>datetime('now') reset_code_valid
+    const user = db.prepare(`SELECT id,username,password_hash,athlete_enabled,coach_enabled,role,totp_secret
       FROM users WHERE username_key=? AND deleted_at IS NULL`).get(usernameKey(username)) as any;
-    const denied = () => reply.status(401).send({ message: 'Nieprawidłowa nazwa użytkownika lub hasło.' });
-    if (!user) return denied();
-    if (await bcrypt.compare(password, user.password_hash)) { createSession(db, user.id, reply); return publicUser(user); }
-    // A one-time code from the administrator opens a session that can only set a new password.
-    if (user.reset_code_hash && hashToken(normalizeResetCode(password)) === user.reset_code_hash) {
-      if (!user.reset_code_valid) return reply.status(401).send({ message: 'Kod resetu hasła wygasł. Poproś administratora o nowy.' });
-      session(user.id, reply, { passwordChangeOnly: true, hours: 1 });
-      return { ...publicUser(user), mustChangePassword: true };
-    }
-    return denied();
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) return reply.status(401).send({ message: 'Nieprawidłowa nazwa użytkownika lub hasło.' });
+    return { ...publicUser(user), ...completeLogin(user, reply) };
   });
   app.post('/api/auth/logout', auth, async (request, reply) => {
     db.prepare('DELETE FROM sessions WHERE id=?').run(request.session.id);
-    reply.clearCookie('acronote_session', { path: '/' }); reply.clearCookie('acronote_admin_return', { path: '/' }); return { ok: true };
+    reply.clearCookie('acronote_session', { path: '/' }); return { ok: true };
   });
-  app.get('/api/auth/me', auth, async request => {
-    const impersonator = request.session.impersonatorId ? (db.prepare('SELECT username FROM users WHERE id=?').get(request.session.impersonatorId) as { username: string } | undefined)?.username ?? null : null;
-    return { ...publicUser(db.prepare('SELECT id,username,athlete_enabled,coach_enabled,role FROM users WHERE id=?').get(request.userId)), mustChangePassword: request.session.passwordChangeOnly, impersonatedBy: impersonator };
-  });
+  app.get('/api/auth/me', auth, async request => ({ ...publicUser(db.prepare('SELECT id,username,athlete_enabled,coach_enabled,role FROM users WHERE id=?').get(request.userId)), mfaRequired: request.session.mfaPending }));
   app.put('/api/auth/password', auth, async (request, reply) => {
-    const body = request.body as any; const current = text(body?.currentPassword, 'Obecne hasło'); const next = text(body?.newPassword, 'Nowe hasło', PASSWORD_MIN_LENGTH);
+    const body = request.body as any; const current = text(body?.currentPassword, 'Obecne hasło'); const next = passwordText(body?.newPassword, 'Nowe hasło');
     const user = db.prepare('SELECT password_hash FROM users WHERE id=?').get(request.userId) as any;
     if (!(await bcrypt.compare(current, user.password_hash))) return reply.status(403).send({ message: 'Obecne hasło jest nieprawidłowe.' });
-    db.prepare('UPDATE users SET password_hash=?,reset_code_hash=NULL,reset_code_expires_at=NULL WHERE id=?').run(await bcrypt.hash(next, 12), request.userId);
+    db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(await bcrypt.hash(next, 12), request.userId);
     db.prepare('DELETE FROM sessions WHERE user_id=? AND id<>?').run(request.userId, request.session.id);
     return { ok: true };
-  });
-  // Second step of a reset: the session opened with the code sets the new password.
-  app.put('/api/auth/password/new', auth, async (request, reply) => {
-    if (!request.session.passwordChangeOnly) return reply.status(400).send({ message: 'Aby zmienić hasło, użyj formularza w profilu.' });
-    const next = text((request.body as any)?.newPassword, 'Nowe hasło', PASSWORD_MIN_LENGTH);
-    db.transaction(() => {
-      db.prepare('UPDATE users SET password_hash=?,reset_code_hash=NULL,reset_code_expires_at=NULL WHERE id=?').run(bcrypt.hashSync(next, 12), request.userId);
-      db.prepare('DELETE FROM sessions WHERE user_id=?').run(request.userId);
-    })();
-    createSession(db, request.userId, reply);
-    return { ...publicUser(db.prepare('SELECT id,username,athlete_enabled,coach_enabled,role FROM users WHERE id=?').get(request.userId)), mustChangePassword: false };
   });
   app.put('/api/profile', auth, async request => {
     const body=request.body as any; db.prepare('UPDATE users SET athlete_enabled=?,coach_enabled=? WHERE id=?').run(bool(body.athleteEnabled),bool(body.coachEnabled),request.userId);
@@ -212,38 +200,32 @@ export async function buildApp(options: AppOptions = {}) {
   app.put('/api/routines/:id', auth, async request => { const id=saveRoutine(db,request.userId,request.body as any,Number((request.params as any).id)); return listRoutines(db,request.userId,id)[0]; });
   app.delete('/api/routines/:id', auth, async request => { const info=db.prepare("UPDATE routines SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?").run(Number((request.params as any).id),request.userId); if(!info.changes)throw new Error('Nie znaleziono układu.'); return {ok:true}; });
 
-  app.get('/api/trainings', auth, async request => { const q=request.query as any; const conditions=['t.user_id=?'];const values:any[]=[request.userId];if(q.from){conditions.push('t.training_date>=?');values.push(q.from)}if(q.to){conditions.push('t.training_date<=?');values.push(q.to)}return db.prepare(`SELECT t.id,t.training_date date,t.created_at createdAt,t.updated_at updatedAt,
+  app.get('/api/trainings', auth, async request => { const q=request.query as any; const conditions=['t.user_id=?'];const values:any[]=[request.userId];if(q.from){conditions.push('t.training_date>=?');values.push(q.from)}if(q.to){conditions.push('t.training_date<=?');values.push(q.to)}return db.prepare(`SELECT t.id,t.training_date date,t.created_at createdAt,t.updated_at updatedAt,t.rating,
     (SELECT COUNT(*) FROM training_entries te WHERE te.training_id=t.id) entriesCount,
     COALESCE((SELECT SUM(CASE WHEN a.kind='element' THEN a.repetitions ELSE a.repetitions*(SELECT COUNT(*) FROM activity_elements ae WHERE ae.activity_id=a.id) END) FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=t.id),0) totalElements
     FROM trainings t WHERE ${conditions.join(' AND ')} ORDER BY t.training_date DESC,t.id DESC`).all(...values); });
-  app.get('/api/trainings/:id', auth, async request => { const item=getTraining(db,request.userId,Number((request.params as any).id));if(!item)throw new Error('Nie znaleziono treningu.');return item; });
-  app.post('/api/trainings', auth, async (request,reply) => { const id=saveTraining(db,request.userId,request.body as TrainingInput);return reply.status(201).send(getTraining(db,request.userId,id)); });
-  app.put('/api/trainings/:id', auth, async request => { const id=saveTraining(db,request.userId,request.body as TrainingInput,Number((request.params as any).id));return getTraining(db,request.userId,id); });
+  // Only the athlete's own routes pass `includePrivate`, so the rating and comment never reach coaches or administrators.
+  const own = { includePrivate: true };
+  app.get('/api/trainings/:id', auth, async request => { const item=getTraining(db,request.userId,Number((request.params as any).id),own);if(!item)throw new Error('Nie znaleziono treningu.');return item; });
+  app.post('/api/trainings', auth, async (request,reply) => { const input=request.body as TrainingInput;const id=saveTraining(db,request.userId,input,undefined,own);return reply.status(201).send({...getTraining(db,request.userId,id,own),newRecords:newTimeRecords(db,request.userId,id)}); });
+  app.put('/api/trainings/:id', auth, async request => { const id=saveTraining(db,request.userId,request.body as TrainingInput,Number((request.params as any).id),own);return {...getTraining(db,request.userId,id,own),newRecords:newTimeRecords(db,request.userId,id)}; });
   app.delete('/api/trainings/:id', auth, async request => { const info=db.prepare('DELETE FROM trainings WHERE id=? AND user_id=?').run(Number((request.params as any).id),request.userId);if(!info.changes)throw new Error('Nie znaleziono treningu.');return {ok:true}; });
   app.get('/api/stats/summary', auth, async (request,reply) => { const q=request.query as any;let elementId:number|undefined;if(q.elementId!==undefined){elementId=integerQuery(q.elementId,'Element');if(!db.prepare('SELECT 1 FROM elements WHERE id=? AND user_id=?').get(elementId,request.userId))return reply.status(404).send({message:'Nie znaleziono elementu.'});}return trainingSummary(db,request.userId,q.from,q.to,elementId); });
+  app.get('/api/stats/times', auth, async request => { const q=request.query as any; return timeStats(db,request.userId,q.from,q.to); });
   app.get('/api/stats/elements/:id/history', auth, async (request,reply) => elementHistory(db,request.userId,Number((request.params as any).id),reply));
 
-  if (adminEnabled) {
   app.get('/api/admin/users', adminAuth, async request => {
     const q=request.query as any; const includeDeleted=q.includeDeleted==='true';
     return db.prepare(`SELECT u.id,u.username,u.role,u.athlete_enabled athleteEnabled,u.coach_enabled coachEnabled,u.created_at createdAt,u.deleted_at deletedAt,
       (SELECT COUNT(*) FROM elements e WHERE e.user_id=u.id AND e.deleted_at IS NULL) elementsCount,
       (SELECT COUNT(*) FROM routines r WHERE r.user_id=u.id AND r.deleted_at IS NULL) routinesCount,
       (SELECT COUNT(*) FROM trainings t WHERE t.user_id=u.id) trainingsCount,
-      (SELECT COUNT(*) FROM password_reset_requests p WHERE p.user_id=u.id AND p.status='pending') pendingResetRequests,u.reset_code_expires_at>datetime('now') resetCodeActive
+      (SELECT COUNT(*) FROM password_resets p WHERE p.user_id=u.id AND p.status='pending' AND p.expires_at>datetime('now')) pendingResetRequests,u.totp_secret IS NOT NULL twoStepEnabled
       FROM users u ${includeDeleted?'':'WHERE u.deleted_at IS NULL'} ORDER BY u.username`).all();
   });
   app.get('/api/admin/users/:userId', adminAuth, async (request,reply) => {
     const userId=Number((request.params as any).userId); const user=adminUser(db,userId);
     return user??reply.status(404).send({message:'Nie znaleziono konta.'});
-  });
-  // The admin never chooses the user's password: the new account gets a one-time code instead,
-  // and the user sets their own password on first login.
-  app.post('/api/admin/users', adminAuth, async (request,reply) => {
-    const b=request.body as any; const username=usernameText(b?.username);const role=b?.role==='admin'?'admin':'user';
-    const unusable=await bcrypt.hash(randomBytes(32).toString('base64url'),12);
-    let id:number;try{id=Number(db.prepare('INSERT INTO users(username,password_hash,athlete_enabled,coach_enabled,role) VALUES(?,?,?,?,?)').run(username,unusable,bool(b?.athleteEnabled??true),bool(b?.coachEnabled),role).lastInsertRowid);}catch{return reply.status(409).send({message:'Ta nazwa użytkownika jest już zajęta.'});}
-    seedExecutionTypes(db,id);return reply.status(201).send({...(adminUser(db,id) as object),resetCode:{username,...issueResetCode(db,id),validHours:RESET_CODE_HOURS}});
   });
   app.put('/api/admin/users/:userId', adminAuth, async (request,reply) => {
     const userId=Number((request.params as any).userId);const b=request.body as any;const current=db.prepare('SELECT * FROM users WHERE id=?').get(userId) as any;if(!current)return reply.status(404).send({message:'Nie znaleziono konta.'});
@@ -251,6 +233,7 @@ export async function buildApp(options: AppOptions = {}) {
     if(userId===request.userId&&role!=='admin')return reply.status(400).send({message:'Nie możesz odebrać sobie roli administratora.'});
     const username=b.username===undefined?current.username:usernameText(b.username);
     try{db.prepare('UPDATE users SET username=?,athlete_enabled=?,coach_enabled=?,role=? WHERE id=?').run(username,bool(b.athleteEnabled??current.athlete_enabled),bool(b.coachEnabled??current.coach_enabled),role,userId);}catch{return reply.status(409).send({message:'Ta nazwa użytkownika jest już zajęta.'});}
+    if(current.role==='admin'&&role!=='admin')clearTwoStep(db,userId);
     return adminUser(db,userId);
   });
   app.delete('/api/admin/users/:userId', adminAuth, async (request,reply) => {
@@ -269,9 +252,8 @@ export async function buildApp(options: AppOptions = {}) {
   app.post('/api/admin/users/:userId/elements/:id/restore', adminAuth, async (request,reply) => {const p=request.params as any;const info=db.prepare('UPDATE elements SET deleted_at=NULL WHERE id=? AND user_id=? AND deleted_at IS NOT NULL').run(Number(p.id),Number(p.userId));if(!info.changes)return reply.status(404).send({message:'Nie znaleziono usuniętego elementu.'});return{ok:true};});
   app.delete('/api/admin/users/:userId/routines/:id', adminAuth, async (request,reply) => {const p=request.params as any;const info=db.prepare("UPDATE routines SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=? AND deleted_at IS NULL").run(Number(p.id),Number(p.userId));if(!info.changes)return reply.status(404).send({message:'Nie znaleziono aktywnego układu.'});return{ok:true};});
   app.post('/api/admin/users/:userId/routines/:id/restore', adminAuth, async (request,reply) => {const p=request.params as any;const info=db.prepare('UPDATE routines SET deleted_at=NULL WHERE id=? AND user_id=? AND deleted_at IS NOT NULL').run(Number(p.id),Number(p.userId));if(!info.changes)return reply.status(404).send({message:'Nie znaleziono usuniętego układu.'});return{ok:true};});
-  }
-  registerBugReportRoutes(app, db, { auth, adminAuth, adminEnabled, appVersion: APP_VERSION });
-  registerAccountRoutes(app, db, { auth, adminAuth, adminEnabled, secureCookies, parseUsername: usernameText, startSession: session });
+  registerBugReportRoutes(app, db, { auth, adminAuth, appVersion: APP_VERSION });
+  registerAccountRoutes(app, db, { auth, adminAuth, secureCookies, parseUsername: usernameText, parsePassword: passwordText, startSession: session, completeLogin, publicUser });
 
   app.get('/api/coach/invitations', auth, async request => db.prepare(`SELECT i.id,i.role,u.username creatorUsername,
     i.created_at createdAt,i.expires_at expiresAt,i.used_at acceptedAt,i.cancelled_at cancelledAt,
@@ -343,6 +325,7 @@ export async function buildApp(options: AppOptions = {}) {
   app.get('/api/coach/athletes/:athleteId/trainings', auth, async (request,reply) => { const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply); const q=request.query as any;const conditions=['t.user_id=?'];const values:any[]=[athleteId];if(q.from){conditions.push('t.training_date>=?');values.push(q.from)}if(q.to){conditions.push('t.training_date<=?');values.push(q.to)}return listTrainings(db,conditions,values); });
   app.get('/api/coach/athletes/:athleteId/trainings/:id', auth, async (request,reply) => { const p=request.params as any;const athleteId=Number(p.athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return reply.status(403).send({message:'Brak dostępu do danych zawodnika.'});const item=getTraining(db,athleteId,Number(p.id));return item??reply.status(404).send({message:'Nie znaleziono treningu.'}); });
   app.get('/api/coach/athletes/:athleteId/stats', auth, async (request,reply) => { const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);const q=request.query as any;let elementId:number|undefined;if(q.elementId!==undefined){elementId=integerQuery(q.elementId,'Element');if(!db.prepare('SELECT 1 FROM elements WHERE id=? AND user_id=?').get(elementId,athleteId))return reply.status(404).send({message:'Nie znaleziono elementu.'});}return trainingSummary(db,athleteId,q.from,q.to,elementId); });
+  app.get('/api/coach/athletes/:athleteId/stats/times', auth, async (request,reply) => { const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);const q=request.query as any;return timeStats(db,athleteId,q.from,q.to); });
   app.get('/api/coach/athletes/:athleteId/elements/:elementId/history', auth, async (request,reply) => {const p=request.params as any;const athleteId=Number(p.athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);return coachElementHistory(db,athleteId,Number(p.elementId),reply);});
 
   const webRoot=resolve(fileURLToPath(new URL('../../../packages/web/dist',import.meta.url)));
@@ -350,11 +333,11 @@ export async function buildApp(options: AppOptions = {}) {
   return app;
 }
 
-function startSession(db:Db,userId:number,reply:any,secure:boolean,options:{impersonatorId?:number;hours?:number;passwordChangeOnly?:boolean}={}):string{
-  const token=randomBytes(32).toString('base64url');const hours=options.hours??24*30;
+function startSession(db:Db,userId:number,reply:any,secure:boolean,options:{minutes?:number;mfaPending?:boolean}={}):string{
+  const token=randomBytes(32).toString('base64url');const minutes=options.minutes??60*24*30;
   db.prepare("DELETE FROM sessions WHERE expires_at<=datetime('now')").run();
-  db.prepare("INSERT INTO sessions(user_id,token_hash,expires_at,impersonator_id,password_change_only) VALUES(?,?,datetime('now',?),?,?)").run(userId,hashToken(token),`+${hours} hours`,options.impersonatorId??null,options.passwordChangeOnly?1:0);
-  reply.setCookie('acronote_session',token,{httpOnly:true,sameSite:'strict',secure,path:'/',maxAge:60*60*hours});
+  db.prepare("INSERT INTO sessions(user_id,token_hash,expires_at,mfa_pending) VALUES(?,?,datetime('now',?),?)").run(userId,hashToken(token),`+${minutes} minutes`,options.mfaPending?1:0);
+  reply.setCookie('acronote_session',token,{httpOnly:true,sameSite:'strict',secure,path:'/',maxAge:60*minutes});
   return token;
 }
 function toPublicUser(user:any){return{id:user.id,username:user.username,athleteEnabled:!!user.athlete_enabled,coachEnabled:!!user.coach_enabled,role:user.role??'user',isAdmin:user.role==='admin'};}
@@ -362,7 +345,7 @@ function integerQuery(value:unknown,label:string){const result=Number(value);if(
 function elementUsage(db:Db,userId:number,id:number){const element=db.prepare('SELECT id FROM elements WHERE id=? AND user_id=? AND deleted_at IS NULL').get(id,userId);if(!element)throw new Error('Nie znaleziono elementu.');const routines=db.prepare(`SELECT DISTINCT r.id,r.name FROM routine_items ri JOIN routines r ON r.id=ri.routine_id WHERE ri.element_id=? AND r.user_id=? AND r.deleted_at IS NULL ORDER BY r.name`).all(id,userId);return{usedInRoutines:routines.length>0,routineCount:routines.length,routines};}
 function adminUser(db:Db,id:number){return db.prepare(`SELECT u.id,u.username,u.role,u.athlete_enabled athleteEnabled,u.coach_enabled coachEnabled,u.created_at createdAt,u.deleted_at deletedAt,
   (SELECT COUNT(*) FROM elements e WHERE e.user_id=u.id AND e.deleted_at IS NULL) elementsCount,(SELECT COUNT(*) FROM routines r WHERE r.user_id=u.id AND r.deleted_at IS NULL) routinesCount,(SELECT COUNT(*) FROM trainings t WHERE t.user_id=u.id) trainingsCount,
-      (SELECT COUNT(*) FROM password_reset_requests p WHERE p.user_id=u.id AND p.status='pending') pendingResetRequests,u.reset_code_expires_at>datetime('now') resetCodeActive FROM users u WHERE u.id=?`).get(id);}
+      (SELECT COUNT(*) FROM password_resets p WHERE p.user_id=u.id AND p.status='pending' AND p.expires_at>datetime('now')) pendingResetRequests,u.totp_secret IS NOT NULL twoStepEnabled FROM users u WHERE u.id=?`).get(id);}
 function listRoutines(db:Db,userId:number,id?:number){const rows=db.prepare(`SELECT id,name,template_version templateVersion,slot_count slotCount FROM routines WHERE user_id=? AND deleted_at IS NULL ${id?'AND id=?':''} ORDER BY name`).all(...(id?[userId,id]:[userId])) as any[];for(const row of rows)row.items=db.prepare(`SELECT ri.position,ri.element_id elementId,COALESCE(e.code,ri.code_snapshot) code,COALESCE(e.name,ri.name_snapshot) name FROM routine_items ri LEFT JOIN elements e ON e.id=ri.element_id AND e.deleted_at IS NULL WHERE routine_id=? ORDER BY position`).all(row.id);return rows;}
 function saveRoutine(db:Db,userId:number,b:any,id?:number){const name=text(b.name,'Nazwa układu');const slotCount=Math.max(1,Math.min(100,Number(b.slotCount??10)));const items=Array.isArray(b.items)?b.items:[];return db.transaction(()=>{if(id){const info=db.prepare('UPDATE routines SET name=?,slot_count=?,template_version=template_version+1 WHERE id=? AND user_id=? AND deleted_at IS NULL').run(name,slotCount,id,userId);if(!info.changes)throw new Error('Nie znaleziono układu.');db.prepare('DELETE FROM routine_items WHERE routine_id=?').run(id);}else id=Number(db.prepare('INSERT INTO routines(user_id,name,slot_count) VALUES(?,?,?)').run(userId,name,slotCount).lastInsertRowid);const insert=db.prepare('INSERT INTO routine_items(routine_id,position,element_id,code_snapshot,name_snapshot) VALUES(?,?,?,?,?)');items.forEach((item:any,index:number)=>{let code=item.code,nameValue=item.name??null;if(item.elementId){const element=db.prepare('SELECT code,name FROM elements WHERE id=? AND user_id=? AND deleted_at IS NULL').get(item.elementId,userId) as any;if(!element)throw new Error('Wybrany element nie istnieje.');code=element.code;nameValue=element.name;}insert.run(id,index+1,item.elementId??null,text(code,'Kod elementu'),nameValue);});return id!;})();}
 function hasEnabledProfile(db:Db,userId:number,profile:'athlete'|'coach'){const column=profile==='athlete'?'athlete_enabled':'coach_enabled';return Boolean(db.prepare(`SELECT 1 FROM users WHERE id=? AND deleted_at IS NULL AND ${column}=1`).get(userId));}

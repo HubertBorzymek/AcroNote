@@ -1,135 +1,97 @@
 # Wdrożenie na Fly.io
 
-AcroNote działa na Fly.io jako jedna mała maszyna (`shared-cpu-1x`, 256 MB) z wolumenem na bazę SQLite. HTTPS i adres `https://<nazwa>.fly.dev` zapewnia Fly. Maszyna usypia przy braku ruchu, a pierwsze wejście po przerwie budzi ją w 1–2 s. Szacunkowy koszt to kilka dolarów miesięcznie.
+AcroNote działa pod `https://acronote.fly.dev` jako jedna mała maszyna Fly (`shared-cpu-1x`, 256 MB, region `fra`) z wolumenem `acronote_data` na bazę SQLite (`/data/acronote.db`). HTTPS zapewnia Fly. Maszyna usypia przy braku ruchu, a pierwsze wejście po przerwie budzi ją w 1–2 s.
+
+**Zawsze dokładnie jedna maszyna.** Każda kolejna miałaby własny plik SQLite. Wdrożenie ręczne: `fly deploy --ha=false`.
+
+## Docelowy przepływ (do włączenia na końcu, zob. „Przełączenie wdrażania”)
 
 ```
-dev ──push──► CI (testy) ──PR──► main ──merge──► GitHub Actions ──► Fly.io (https://acronote.fly.dev)
+gałąź robocza ──push──► PR do main ──► CI: testy, typecheck, build, audit, obraz Docker
+                                        │ zielone
+                                        ▼
+                                  Merge do main ──► deploy.yml: testy ──► fly deploy --ha=false ──► https://acronote.fly.dev
 ```
 
-## Jak to jest zbudowane
+- `ci.yml` uruchamia się dla każdego PR i pushu na `dev`.
+- `deploy.yml` wdraża `main` po scaleniu. Bez sekretu `FLY_API_TOKEN` pomija wdrożenie (nic się nie psuje).
+- Na `main` nie pracuje się bezpośrednio; reguła gałęzi pozwala scalić tylko PR z zielonym `checks`.
 
-| | Publicznie (`https://…fly.dev`) | Prywatnie (`fly proxy`) |
-|---|---|---|
-| Port | 3001, za proxy Fly z HTTPS | 3002, tylko w prywatnej sieci Fly |
-| Aplikacja | zwykła, **bez** panelu i API administratora | pełna, z panelem administratora |
-| Kto ma dostęp | wszyscy | tylko osoba zalogowana na Twoje konto Fly **i** znająca hasło admina |
+**Stan na 2026-11-11:** produkcję nadal wdraża integracja Fly z GitHubem (aplikację utworzono z panelu Fly). Dopóki jej nie odłączysz, nie ustawiaj `FLY_API_TOKEN`, bo każdy merge wdrażałby się dwa razy.
 
-Na serwerze nie powstają konta demo ani domyślny admin. Administratora tworzysz poleceniem (krok 5), a hasło generuje się losowo.
+### Przełączenie wdrażania (jednorazowo, ok. 10 min)
 
-## Jednorazowa konfiguracja
-
-Potrzebujesz: tego repozytorium na komputerze (z gałęzią `dev`), karty płatniczej do konta Fly.io i ok. 30 minut. Wszystkie polecenia wykonujesz w PowerShell, w folderze projektu.
-
-1. **Konto Fly.io:** załóż je na <https://fly.io>, podepnij kartę i **włącz 2FA**. Konto Fly jest „pierwszym zamkiem” do panelu admina.
-2. **flyctl** (PowerShell):
+1. Panel Fly → aplikacja `acronote` → odłącz repozytorium GitHub (automatyczne wdrożenia z GitHuba).
+2. Klucz do wdrażania:
    ```powershell
-   iwr https://fly.io/install.ps1 -useb | iex
-   fly auth login
-   ```
-3. **Aplikacja i wolumen** (w folderze projektu):
-   ```powershell
-   fly apps create acronote
-   fly volumes create acronote_data --region fra --size 1
-   ```
-   Jeśli nazwa `acronote` jest zajęta, wybierz inną i wpisz ją w `app = "…"` w [fly.toml](../fly.toml).
-4. **Pierwsze wdrożenie:**
-   ```powershell
-   fly deploy --ha=false
-   ```
-   `--ha=false` jest ważne: SQLite wymaga jednej maszyny z jednym wolumenem.
-5. **Administrator.** Otwórz najpierw stronę, żeby obudzić maszynę, a potem:
-   ```powershell
-   fly ssh console -C "node apps/api/dist/admin-cli.js create-admin admin"
-   ```
-   Hasło pojawi się raz, zapisz je w menedżerze haseł. Reset hasła dowolnego konta działa tak samo: `reset-password "<nazwa>"`.
-6. **Automatyczne wdrożenia z GitHuba:**
-   ```powershell
-   fly tokens create deploy -x 999999h
+   fly tokens create deploy -a acronote -x 999999h
    ```
    Skopiuj cały wynik (razem z `FlyV1 `) do GitHuba: *Settings → Secrets and variables → Actions → New repository secret*, nazwa `FLY_API_TOKEN`.
-7. **Ochrona gałęzi `main`.** W GitHubie: *Settings → Rules → Rulesets → New branch ruleset*:
-   - Target: `main`, Enforcement: **Active**,
-   - ✅ *Restrict deletions*, ✅ *Block force pushes*,
-   - ✅ *Require a pull request before merging*, **Required approvals: 0**, bo własnego PR nie da się zatwierdzić,
-   - ✅ *Require status checks to pass* → dodaj **`checks`** (pojawi się na liście po pierwszym uruchomieniu CI).
+3. GitHub *Settings → Rules → Rulesets → New branch ruleset*: Target `main`, Enforcement **Active**, ✅ *Restrict deletions*, ✅ *Block force pushes*, ✅ *Require a pull request before merging* (**Required approvals: 0**, bo własnego PR nie da się zatwierdzić), ✅ *Require status checks to pass* → **`checks`**.
+4. Usuń gałąź `flyio-new-files` (utworzył ją kreator Fly; obowiązuje `fly.toml` z repozytorium).
 
-   W *Settings → General → Pull Requests* zostaw włączone **Allow merge commits**. PR z `dev` do `main` scalaj zwykłym „Create a merge commit”, a nie squashem, bo inaczej gałęzie się rozjadą.
+## Administrator
 
-## Codzienna praca
+Panel admina jest w zwykłej aplikacji (zakładka *Admin*), także na telefonie. Ponieważ jest dostępny z internetu, wymaga **weryfikacji dwuetapowej**:
 
-1. Pracujesz na `dev` (`git switch dev`), commitujesz i wypychasz. CI uruchomi testy.
-2. Gdy chcesz wydać zmiany, otwórz PR `dev → main`: <https://github.com/HubertBorzymek/AcroNote/compare/main...dev>.
-3. Gdy przejdą testy, build i obraz Docker, kliknij **Merge**. Po minucie–dwóch nowa wersja działa na stronie.
+- Przy pierwszym wejściu do panelu: potwierdź hasło, zeskanuj kod QR aplikacją uwierzytelniającą (Google/Microsoft Authenticator itp.), wpisz 6 cyfr i zapisz 10 kodów zapasowych.
+- Każde kolejne logowanie admina: hasło, a potem 6 cyfr z aplikacji (albo jeden kod zapasowy). 5 błędnych kodów kończy próbę logowania.
+- Zakładka *Admin* ma licznik: prośby o reset hasła i nowe zgłoszenia błędów.
+- Odebranie komuś roli admina wyłącza jego weryfikację dwuetapową.
 
-Przed każdym startem nowej wersji serwer robi kopię bazy, zanim wykona migracje.
+Administrator nie zakłada kont (robią to użytkownicy), nie wchodzi na cudze konta i nie widzi haseł, ocen ani komentarzy do treningów.
 
-## Panel administratora na danych z serwera
+Awaryjnie, na serwerze (`fly ssh console -C "node apps/api/dist/admin-cli.js <polecenie>"`):
 
+| Polecenie | Działanie |
+|---|---|
+| `list-admins` | lista administratorów i to, czy mają weryfikację dwuetapową |
+| `grant-admin "<nazwa>"` | rola admina dla istniejącego konta, hasło bez zmian |
+| `create-admin "<nazwa>"` | nowe konto admina z losowym hasłem (tylko dla nowej nazwy) |
+| `reset-admin-password "<nazwa>"` | nowe losowe hasło dla konta admina |
+| `disable-2fa "<nazwa>"` | wyłącza weryfikację po utracie telefonu i kodów; przy następnym wejściu do panelu ustawia się ją od nowa |
+
+## Reset hasła użytkownika
+
+1. Użytkownik klika *Zapomniałeś hasła?*, wpisuje nazwę konta (i opcjonalnie wiadomość) i dostaje **numer prośby**, np. 4821. Prośba jest przypisana do tej przeglądarki (ciasteczko `HttpOnly`).
+2. Daje Ci znać dowolną drogą i podaje numer.
+3. *Admin → Hasła*: porównujesz numer i klikasz **Zezwól na reset**.
+4. Użytkownik wraca do aplikacji na tym samym urządzeniu, ustawia nowe hasło (dwa razy) i jest zalogowany. Wszystkie jego stare sesje są wylogowane.
+
+Ograniczenia: jedna aktywna prośba na konto (nową można wysłać po odrzuceniu, anulowaniu albo wygaśnięciu), 5 prób na godzinę z jednego adresu. Prośba czeka 72 h, zgoda jest ważna 24 h i działa raz. Jeśli ktoś inny próbował wysłać prośbę o to samo konto, panel to pokazuje; wtedy przy niezgodnym numerze odrzuć prośbę.
+
+## Kopie zapasowe
+
+| Kiedy | Gdzie | Jak |
+|---|---|---|
+| Przy pierwszym starcie każdej nowej wersji (przed migracjami) i co dobę | serwer, `/data/backups`, 14 ostatnich | automatycznie (`ACRONOTE_ENV=production`) |
+| Codziennie | snapshot wolumenu Fly (kilka dni wstecz) | automatycznie, `fly volumes snapshots list <id>` |
+| Raz w tygodniu (niedziela 19:00 albo przy najbliższym włączeniu komputera) | `Dokumenty\AcroNote-kopie\acronote-tygodniowa.db`, nadpisywany | `scripts\zaplanuj-kopie.bat` uruchom raz |
+| Na żądanie, np. przed dużym wdrożeniem | `Dokumenty\AcroNote-kopie\acronote-<data>.db` | dwuklik `scripts\pobierz-kopie.bat` |
+
+Skrypty wymagają `flyctl` zalogowanego raz przez `fly auth login`. Wynik i błędy trafiają do `Dokumenty\AcroNote-kopie\kopie.log`. Kopie zawierają prawdziwe dane użytkowników (z hasłami w postaci skrótów): trzymaj je tylko u siebie, nigdy w repozytorium.
+
+Przywrócenie, tylko awaryjnie:
 ```powershell
-fly proxy 3002 acronote.internal
+fly ssh console -C "sh -c 'cp /data/backups/<plik>.db /data/restore.db && mv /data/restore.db /data/acronote.db && rm -f /data/acronote.db-wal /data/acronote.db-shm'"
+fly machine restart
 ```
-Zostaw to okno otwarte i wejdź na <http://localhost:3002>. Zaloguj się na admina i masz zakładki *Konta* i *Zgłoszenia* na prawdziwych danych. Jeśli połączenie nie działa, maszyna śpi: otwórz stronę publiczną albo użyj `fly machine start`.
 
-**Debugowanie frontendu na danych z serwera** (np. z VS albo terminala), przy działającym `fly proxy` jak wyżej:
-```powershell
-npm run dev:prod-admin
-```
-Frontend z Twojego komputera (hot reload na `http://localhost:5173`) rozmawia wtedy z API serwera. **Każda zmiana jest prawdziwa.**
-
-## Konta i hasła
-
-Administrator nigdy nie widzi ani nie ustala haseł użytkowników. Zamiast tego wydaje **jednorazowy kod** (np. `R3VQ-V6XD`, ważny 72 h). Użytkownik wpisuje go na ekranie logowania zamiast hasła, a aplikacja od razu prosi o nowe hasło (wpisz i powtórz).
-
-- **„Zapomniałeś hasła?”** na ekranie logowania wysyła prośbę do administratora: nazwa konta i opcjonalnie sposób kontaktu. Z jednego adresu IP przyjmowane są najwyżej 3 prośby na godzinę, dla jednego konta najwyżej 1 na dobę. Odpowiedź jest zawsze taka sama, więc formularz nie zdradza, czy dane konto istnieje.
-- **Panel admina → Hasła:** lista próśb (z licznikiem na zakładce). *Wygeneruj kod* pokazuje kod jeden raz, a Ty przekazujesz go osobiście, SMS-em albo komunikatorem. Można też prośbę odrzucić.
-- **Panel admina → Konta:**
-  - *Kod resetu hasła* działa także bez prośby.
-  - *Otwórz konto* pozwala wejść na konto użytkownika i zobaczyć albo edytować wszystko tak jak on: treningi, elementy, układy, miejsca lądowania, profile. Na górze strony jest wtedy pasek z przyciskiem powrotu, a sesja wygasa po 2 h.
-  - *Nowe konto* tworzy konto i od razu pokazuje kod, którym użytkownik ustawi własne hasło.
-- Użytkownik zmienia hasło sam w *Profil → Bezpieczeństwo → Zmień hasło*.
-- Minimalna długość hasła to **8 znaków**, bez innych wymagań. Nazwy kont mogą zawierać spacje (imię i nazwisko). Dwóch kont różniących się tylko wielkością liter (także polskich, np. „Łukasz” i „łukasz”) nie da się założyć.
+**Wycofanie wersji po migracji v5+:** stary obraz z `main` sprzed scalenia nie obsługuje triggerów `users_username_key` (rejestracja i zmiana nazwy przestałyby działać). Wycofanie oznacza przywrócenie kopii sprzed migracji razem ze starym obrazem, a nie samo cofnięcie wdrożenia.
 
 ## Zgłoszenia błędów
 
-Użytkownicy wysyłają je z *Profil → Pomoc → Zgłoś problem* albo z każdego ekranu błędu. Zgłoszenie zawiera opis, wersję, przeglądarkę, ostatnie ekrany, zapytania i błędy, a opcjonalnie (za zgodą) migawkę danych konta. Nie zawiera haseł, treści formularzy ani tokenów.
+Użytkownicy wysyłają je z *Profil → Pomoc → Zgłoś problem* albo z każdego ekranu błędu. Zgłoszenie zawiera opis, wersję, przeglądarkę, ostatnie ekrany, zapytania i błędy, a opcjonalnie (za zgodą) migawkę danych konta bez ocen i komentarzy. Nie zawiera haseł, treści formularzy ani tokenów.
 
-Odtwarzanie problemu u siebie:
-1. Panel admina → *Zgłoszenia* → *Szczegóły* → **Pobierz JSON**.
-2. Lokalnie, w folderze projektu:
-   ```powershell
-   npm run import-report -- C:\Users\leemi\Downloads\zgloszenie-12.json
-   ```
-3. Uruchom aplikację lokalnie i zaloguj się na wypisane konto `zgloszenie-12`. Masz te same elementy, układy i treningi co zgłaszający.
-
-## Kopie zapasowe i przywracanie
-
-- Serwer robi kopię `/data/backups/acronote-<data>-<wersja>.db` przy pierwszym starcie każdej nowej wersji (przed migracjami) oraz raz na dobę. Trzyma 14 ostatnich.
-- Fly dodatkowo robi codzienne snapshoty wolumenu: `fly volumes snapshots list <id-wolumenu>`.
-- Pobranie kopii na swój komputer:
-  ```powershell
-  fly ssh console -C "ls /data/backups"
-  fly ssh sftp get /data/backups/<plik>.db
-  ```
-- Przywrócenie, tylko awaryjnie:
-  ```powershell
-  fly ssh console -C "sh -c 'cp /data/backups/<plik>.db /data/restore.db && mv /data/restore.db /data/acronote.db && rm -f /data/acronote.db-wal /data/acronote.db-shm'"
-  fly machine restart
-  ```
-
-## Własna domena (opcjonalnie)
-
-```powershell
-fly certs add acronote.pl
-```
-U rejestratora domeny ustaw rekordy DNS, które poda `fly certs show acronote.pl`. Certyfikat HTTPS odnawia się sam.
+Odtwarzanie u siebie: *Admin → Zgłoszenia → Szczegóły → Pobierz JSON*, potem `npm run import-report -- C:\ścieżka\zgloszenie-12.json` i logowanie na wypisane konto.
 
 ## Zmienne środowiskowe
 
 | Zmienna | Opis | Na Fly |
 |---|---|---|
 | `ACRONOTE_ENV` | `production`: bez kont demo, ciasteczka `Secure`, kopie bazy | `production` |
-| `ADMIN_PORT`, `ADMIN_HOST` | osobny port panelu admina i adres, na którym nasłuchuje | `3002`, `fly-local-6pn` |
-| `TRUST_PROXY` | ile proxy przed aplikacją uznać za zaufane (prawdziwe IP do limitów logowania) | `1` |
-| `DATABASE_PATH` | plik bazy | `/data/acronote.db` |
+| `TRUST_PROXY` | liczba zaufanych proxy; za proxy limity żądań liczone są po `Fly-Client-IP` | `1` |
+| `PORT`, `HOST` | port i adres serwera (`internal_port` w `fly.toml`) | `3001`, `0.0.0.0` |
+| `DATABASE_PATH` | plik bazy, nie zmieniać | `/data/acronote.db` |
 | `BACKUP_DIR` | katalog kopii (domyślnie `backups` obok bazy) | — |
-| `ACRONOTE_VERSION` | wersja pokazywana w aplikacji i zgłoszeniach | ustawiana przy wdrożeniu |
+| `ACRONOTE_VERSION` | wersja w aplikacji i zgłoszeniach | ustawiana przy wdrożeniu |

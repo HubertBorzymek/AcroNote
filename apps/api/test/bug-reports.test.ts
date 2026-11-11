@@ -10,6 +10,7 @@ import { getTraining } from '../src/training-service.js';
 import { importSnapshot } from '../src/import-report.js';
 import { buildUserSnapshot } from '../src/bug-reports.js';
 import { seedDemoAndAdmin } from '../src/seed.js';
+import { insertAdmin, loginAdmin } from './helpers.js';
 
 async function login(app: Awaited<ReturnType<typeof buildApp>>, username: string, password: string) {
   const response = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password } });
@@ -21,9 +22,9 @@ describe('zgłoszenia błędów', () => {
   beforeEach(async () => {
     db = openDatabase(':memory:');
     const id = Number(db.prepare("INSERT INTO users(username,password_hash) VALUES('ola',?)").run(await bcrypt.hash('bezpieczne-haslo', 4)).lastInsertRowid); seedExecutionTypes(db, id);
-    db.prepare("INSERT INTO users(username,password_hash,role) VALUES('admin',?,'admin')").run(await bcrypt.hash('bezpieczne-admin', 4));
+    await insertAdmin(db, 'admin', 'bezpieczne-admin');
     app = await buildApp({ db });
-    user = (await login(app, 'ola', 'bezpieczne-haslo')).cookie; admin = (await login(app, 'admin', 'bezpieczne-admin')).cookie;
+    user = (await login(app, 'ola', 'bezpieczne-haslo')).cookie; admin = await loginAdmin(app, 'admin', 'bezpieczne-admin');
     await app.inject({ method: 'POST', url: '/api/elements', headers: { cookie: user }, payload: { code: '40o', name: 'Salto' } });
   });
   afterEach(async () => { await app.close(); db.close(); });
@@ -58,17 +59,19 @@ describe('tryb publiczny (produkcja)', () => {
   let db: Db; let app: Awaited<ReturnType<typeof buildApp>>;
   beforeEach(async () => {
     db = openDatabase(':memory:');
-    db.prepare("INSERT INTO users(username,password_hash,role) VALUES('admin',?,'admin')").run(await bcrypt.hash('bezpieczne-admin', 4));
-    app = await buildApp({ db, adminRoutes: false, secureCookies: true, trustProxy: 1 });
+    await insertAdmin(db, 'admin', 'bezpieczne-admin');
+    app = await buildApp({ db, secureCookies: true, trustProxy: 1 });
   });
   afterEach(async () => { await app.close(); db.close(); });
 
-  it('nie wystawia tras administratora i nie oznacza konta jako admina', async () => {
+  it('panel administratora wymaga kodu z aplikacji także za proxy', async () => {
     const { cookie, response } = await login(app, 'admin', 'bezpieczne-admin');
-    expect(response.json().isAdmin).toBe(false);
+    expect(response.json()).toMatchObject({ isAdmin: true, mfaRequired: true });
     expect(response.headers['set-cookie']).toMatch(/Secure/);
-    expect((await app.inject({ method: 'GET', url: '/api/admin/users', headers: { cookie } })).statusCode).toBe(404);
-    expect((await app.inject({ method: 'GET', url: '/api/admin/bug-reports', headers: { cookie } })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/api/admin/users', headers: { cookie } })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'GET', url: '/api/admin/bug-reports', headers: { cookie } })).statusCode).toBe(403);
+    const full = await loginAdmin(app, 'admin', 'bezpieczne-admin');
+    expect((await app.inject({ method: 'GET', url: '/api/admin/bug-reports', headers: { cookie: full } })).statusCode).toBe(200);
   });
 
   it('liczy limit logowań osobno dla każdego klienta za proxy', async () => {
