@@ -9,7 +9,8 @@ primary_region = "fra"
 
 [env]
   ACRONOTE_ENV = "production"
-  PORT = "3001"
+  # Must match the PORT secret set by the Fly launch wizard (secrets override [env]).
+  PORT = "8080"
   HOST = "0.0.0.0"
   DATABASE_PATH = "/data/acronote.db"
   # Behind Fly's edge proxy: HTTPS links and Secure cookies; rate limits count per client by Fly-Client-IP.
@@ -21,7 +22,7 @@ primary_region = "fra"
   destination = "/data"
 
 [http_service]
-  internal_port = 3001
+  internal_port = 8080
   force_https = true
   # Sleep when idle to keep the bill low; the first visit after a pause wakes it in ~1–2 s.
   auto_stop_machines = "stop"
