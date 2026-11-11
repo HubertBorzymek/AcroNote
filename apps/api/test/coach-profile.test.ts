@@ -25,7 +25,7 @@ describe('profil trenera i zgody na udostępnienie historii', () => {
         {sourceElementId:firstId,code:'41o',position:1,executionTypeName:'Siatka'},
         {sourceElementId:secondId,code:'800o',position:2,executionTypeName:'Materac'}
       ]}]}]}});
-    expect(training.statusCode).toBe(201);
+    expect(training.statusCode, training.body).toBe(201);
 
     expect((await app.inject({method:'GET',url:`/api/coach/athletes/${athleteId}/trainings`,headers:{cookie:coachCookie}})).statusCode).toBe(403);
     expect((await app.inject({method:'GET',url:`/api/coach/athletes/${athleteId}/elements`,headers:{cookie:strangerCookie}})).statusCode).toBe(403);

@@ -1,31 +1,39 @@
+# Fly.io configuration. Setup steps: docs/DEPLOY.md
+# `app` must be globally unique on Fly — change it if "acronote" is taken, and keep it in sync with the
+# GitHub deploy workflow (it reads the name from this file).
 app = "acronote"
 primary_region = "fra"
 
-[env]
-  HOST = "0.0.0.0"
-  PORT = "8080"
-  DATABASE_PATH = "/data/acronote.db"
-  ACRONOTE_BEHIND_PROXY = "1"
-  ACRONOTE_DEMO = "0"
+[build]
+  dockerfile = "Dockerfile"
 
-# SQLite lives on this volume, so the app must run on exactly one Machine.
+[env]
+  ACRONOTE_ENV = "production"
+  PORT = "3001"
+  HOST = "0.0.0.0"
+  DATABASE_PATH = "/data/acronote.db"
+  # Behind Fly's edge proxy: HTTPS links and Secure cookies; rate limits count per client by Fly-Client-IP.
+  TRUST_PROXY = "1"
+  LOG_LEVEL = "info"
+
 [[mounts]]
   source = "acronote_data"
   destination = "/data"
 
 [http_service]
-  internal_port = 8080
+  internal_port = 3001
   force_https = true
+  # Sleep when idle to keep the bill low; the first visit after a pause wakes it in ~1–2 s.
   auto_stop_machines = "stop"
   auto_start_machines = true
   min_machines_running = 0
 
   [[http_service.checks]]
-    method = "GET"
-    path = "/api/health"
     interval = "30s"
     timeout = "5s"
     grace_period = "10s"
+    method = "GET"
+    path = "/api/health"
 
 [[vm]]
   size = "shared-cpu-1x"

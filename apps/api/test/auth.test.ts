@@ -17,7 +17,7 @@ describe('uwierzytelnianie i izolacja danych',()=>{
     await app.close();db.close();
   });
   it('za proxy ustawia cookie Secure, a link zaproszenia dostaje https',async()=>{
-    const db=openDatabase(':memory:'); const app=await buildApp({db,behindProxy:true});
+    const db=openDatabase(':memory:'); const app=await buildApp({db,trustProxy:1,secureCookies:true});
     const headers={'x-forwarded-proto':'https',host:'acronote.example.pl'};
     const registered=await app.inject({method:'POST',url:'/api/auth/register',headers,payload:{username:'za_proxy',password:'bardzo-bezpieczne-haslo'}});
     const session=registered.cookies[0]!;
@@ -35,7 +35,7 @@ describe('uwierzytelnianie i izolacja danych',()=>{
     await app.close();db.close();
   });
   it('za proxy liczy limit osobno dla klienta i nie daje go obejść przez X-Forwarded-For',async()=>{
-    const db=openDatabase(':memory:'); const app=await buildApp({db,behindProxy:true});
+    const db=openDatabase(':memory:'); const app=await buildApp({db,trustProxy:1,secureCookies:true});
     const login=(headers:Record<string,string>)=>app.inject({method:'POST',url:'/api/auth/login',headers,payload:{username:'nieznany',password:'zle-haslo'}});
     for(let index=0;index<15;index++)expect((await login({'fly-client-ip':'203.0.113.1','x-forwarded-for':`198.51.100.${index}`})).statusCode).toBe(401);
     expect((await login({'fly-client-ip':'203.0.113.1','x-forwarded-for':'198.51.100.99'})).statusCode).toBe(429);
@@ -49,7 +49,7 @@ describe('uwierzytelnianie i izolacja danych',()=>{
     expect((await login('203.0.113.99')).statusCode).toBe(429);
     await app.close();db.close();
   });
-  it('ogranicza serię rejestracji na pięć minut i zwraca polski komunikat',async()=>{
+  it('ogranicza serię rejestracji na pięć minut i zwraca polski komunikat',{timeout:20000},async()=>{
     const db=openDatabase(':memory:'); const app=await buildApp({db});
     for(let index=0;index<10;index++){
       const response=await app.inject({method:'POST',url:'/api/auth/register',payload:{username:`limit_${index}`,password:'bardzo-bezpieczne-haslo'}});

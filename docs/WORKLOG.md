@@ -162,6 +162,35 @@ Weryfikacja: `npm test` 69/69 (API 7 plików / 44, web 5 plików / 25), `npm run
 
 Weryfikacja: `npm test` 70/70 (API 45, web 25), `npm run typecheck`, lokalna paczka 44 MB rozpakowana do pustego folderu ze spacją w ścieżce. `AcroNote.bat` uruchomił serwer na nowej bazie, logowanie `demo` i `trener_demo` działa, trener widzi zawodnika `demo`, `admin` nie istnieje.
 
+## Iteracja 2026-10-09 — wersja online (Fly.io), zgłoszenia błędów (v0.3.0)
+
+- Przepływ `dev → PR → main → automatyczne wdrożenie`: `ci.yml` (testy, typecheck, build, audit, budowa i test dymny obrazu Docker) dla PR i `dev`; `deploy.yml` wdraża `main` na Fly.io, a bez sekretu `FLY_API_TOKEN` pomija wdrożenie. Instrukcja: `docs/DEPLOY.md`.
+- `ACRONOTE_ENV=production`: brak kont demo, ciasteczko `Secure`, `TRUST_PROXY` z jawną funkcją zaufania (numeryczny `trustProxy` Fastify 5 był ignorowany), kopia bazy `VACUUM INTO` przed pierwszym startem nowej wersji i co dobę (14 ostatnich).
+- Panel administratora działa tylko na `ADMIN_PORT` w prywatnej sieci Fly (`fly proxy 3002`). Port publiczny nie rejestruje tras `/api/admin` i zwraca `isAdmin: false`. Konta admina: `admin-cli.js create-admin|reset-password|list-admins` z losowym hasłem. Debug frontendu na danych serwera: `npm run dev:prod-admin`.
+- Zgłoszenia błędów: tabela `bug_reports` (migracja v4), dialog z profilu i ekranów błędu, diagnostyka klienta (wersja, przeglądarka, ostatnie ekrany, zapytania i błędy, bez treści żądań, query stringów i tokenów zaproszeń) oraz opcjonalna migawka danych konta. Zakładka *Zgłoszenia* w panelu admina (podgląd, JSON, rozwiązanie, usunięcie) i `npm run import-report` odtwarzające konto lokalnie.
+- Dodano `ErrorBoundary`; wcześniej błąd renderowania zostawiał pustą stronę.
+
+Naprawione błędy:
+
+- Rejestracja przyjmowała w formularzu hasło 8–9 znaków, które serwer odrzucał niejasnym komunikatem; teraz obie strony wymagają 10 znaków i podają czytelny powód.
+- Wersja w profilu była na sztywno ustawiona na `0.1.0`.
+- Błąd sieci pokazywał angielskie „Failed to fetch”.
+- Błędy 500 nie były logowane przez własny `setErrorHandler`.
+- Zależności frontendu przeniesiono do `devDependencies`, więc obraz produkcyjny nie zawiera Vite ani Reacta w `node_modules`.
+
+Weryfikacja: `npm test` 81/81 (API 52, web 29), typecheck, build, audit 0. Ręcznie (Chromium, izolowana baza): wysłanie zgłoszenia z migawką, lista w profilu, podgląd w panelu admina, pobranie JSON i import do osobnej bazy (30 elementów / 2 układy / 7 treningów), dialog przy 375×812. Tryb produkcyjny lokalnie: `/api/admin` na porcie publicznym 404, na porcie admina 200, ciasteczko `Secure`, kopia bazy przed startem. Obraz Docker budowany i testowany w CI, bo lokalnie Dockera nie ma.
+
+## Iteracja 2026-10-15 — hasła, reset przez administratora, wejście na konto (v0.4.0)
+
+- Hasło: minimum 8 znaków, bez reguł składu, jednakowo w formularzach i w API. Czytelny komunikat zamiast „Hasło jest nieprawidłowe”.
+- Nazwy kont: migracja v5 dodaje `username_key` (NFC + małe litery) z unikalnym indeksem i triggerami. Dotąd SQLite `NOCASE` pozwalało założyć „Łukasz” obok „łukasz”. Logowanie nie rozróżnia wielkości liter, także polskich. Spacje w imieniu i nazwisku działają jak wcześniej.
+- Reset hasła bez znajomości haseł przez administratora (zgodnie z AGENTS.md): administrator generuje jednorazowy kod (72 h, przechowywany jako skrót). Logowanie kodem otwiera sesję, która może wyłącznie ustawić nowe hasło (`PUT /api/auth/password/new`; pozostałe trasy zwracają 403 `PASSWORD_CHANGE_REQUIRED`). Usunięto endpoint, w którym admin ustawiał hasło użytkownika; konto zakładane przez admina dostaje kod zamiast hasła.
+- „Zapomniałeś hasła?”: `POST /api/auth/password-reset-requests` z identyczną odpowiedzią niezależnie od istnienia konta, limitem 3 prośby na godzinę z IP i 1 na dobę na konto. Zakładka *Hasła* w panelu admina z licznikiem.
+- „Otwórz konto”: administrator (tylko na porcie admina) wchodzi na konto użytkownika w zwykłym interfejsie; sesja 2 h z `impersonator_id`, pasek z powrotem, sesja admina przywracana z ciasteczka `acronote_admin_return`.
+- UI: na liście treningów został jeden przycisk dodawania („Dodaj trening”), zamiast trzech przy pustej liście.
+
+Weryfikacja: `npm test` 90/90 (API 61, web 29), typecheck, build. Migracja v5 na kopii `data/acronote.db` (VACUUM INTO): 4 konta, 10 treningów, 35 elementów, `integrity_check` ok, indeks unikalności utworzony. Ręcznie w Chromium na izolowanej bazie: prośba o reset, licznik i flaga w panelu, wygenerowanie kodu, logowanie kodem (małe litery ze spacją, inna wielkość nazwy), ustawienie nowego hasła, wejście na konto z paskiem i powrót do panelu.
+
 ## Iteracja 2026-11-06 — przygotowanie wdrożenia na Fly.io
 
 - Dodano `Dockerfile`, `.dockerignore` i `fly.toml`: region `fra` (Fly nie ma regionu w Polsce), `shared-cpu-1x` 256 MB, wolumen `acronote_data` z bazą w `/data/acronote.db`, `auto_stop_machines = "stop"` i `min_machines_running = 0`. SQLite wymaga dokładnie jednej maszyny, dlatego wdrożenie idzie przez `fly deploy --ha=false`.
@@ -174,3 +203,50 @@ Weryfikacja: `npm test` 70/70 (API 45, web 25), `npm run typecheck`, lokalna pac
 Weryfikacja: `npm test` 74/74 (API 49, web 25), `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate` (0 podatności). Kroki z `Dockerfile` odtworzono ręcznie w pustym katalogu na Windowsie i uruchomiono wynik ze zmiennymi z `fly.toml` na tymczasowej bazie: frontend, głębokie linki SPA, brak kont demo, cookie `Secure`/`HttpOnly`/`Strict`, link `https`, `make-admin`, zachowanie sesji po restarcie. Zużycie pamięci 77 MB, start około 0,6 s.
 
 Niezweryfikowane (brak Dockera i konta Fly): faktyczny build obrazu na Linuksie, działanie na Fly, obsługa sygnałów na Linuksie oraz to, czy Fly nadpisuje wysłany przez klienta nagłówek `Fly-Client-IP`.
+
+Wynik wdrożenia 2026-11-06: apka działa pod `https://acronote.fly.dev` (uruchomiona z panelu Fly z GitHuba, nie przez `fly deploy`). Kreator utworzył sam wolumen `acronote_data` 1 GB w `fra` i jedną maszynę. Logowanie `demo` zwraca błąd, a konto i wpisany trening przetrwały zatrzymanie i wznowienie maszyny. Build obrazu i działanie na Fly są więc potwierdzone; nadpisywanie `Fly-Client-IP` nadal nie zostało sprawdzone. Nie skalować do 2 maszyn: każda miałaby własny plik SQLite.
+
+## Stan gałęzi 2026-11-11 — przed scaleniem
+
+- Produkcja działa z `main` (772b3e7, wdrożenie opisane wyżej).
+- Gałąź `dev` (06fc813, iteracje 2026-10-09 i 2026-10-15, v0.3.0–v0.4.0) **nie jest scalona z `main`**. Odchodzi od v0.2.0 i zawiera własne, pełniejsze wdrożenie na Fly: panel admina tylko na prywatnym porcie (`fly proxy 3002`), `admin-cli.js`, kopie bazy, workflowy CI i automatycznego wdrożenia, `PORT=3001`. Ma też nowe funkcje: zgłoszenia błędów, kody resetu hasła, prośby „Zapomniałeś hasła?”, wejście admina na konto, migracje v4–v5.
+- Scalenie `dev` z `main` daje konflikty w: `.dockerignore`, `Dockerfile`, `fly.toml`, `apps/api/src/app.ts`, `apps/api/src/server.ts`, `docs/PROGRESS.md`, `docs/WORKLOG.md`, `package-lock.json`.
+- Decyzje przy scalaniu:
+  - Który model admina zostaje. Na `main` admin działa w publicznej aplikacji, a na produkcji ma go już konto `Hubert Borzymek`. Na `dev` publiczny port nie ma tras admina.
+  - Kto wdraża: integracja Fly z GitHubem (aplikację utworzono z panelu Fly) czy `deploy.yml` z `dev`, ale nie oba naraz.
+  - Limit żądań: `dev` ufa jednemu przeskokowi proxy. Według dokumentacji Fly ostatni wpis `X-Forwarded-For` to adres aplikacji, więc wszyscy klienci prawdopodobnie dzieliliby jeden limit. `main` liczy go po `Fly-Client-IP` i ma na to testy.
+  - Wolumen, ścieżka bazy i region są takie same na obu gałęziach. Migracje v4–v5 trzeba sprawdzić na kopii bazy produkcyjnej.
+- Gałąź `flyio-new-files` (utworzona przez Fly) zmienia tylko formatowanie `fly.toml`. Należy ją scalić albo usunąć dopiero po wyborze ostatecznego `fly.toml`.
+
+### Rozstrzygnięcie (2026-11-11, z użytkownikiem)
+
+- Scalamy `main` do `dev` (na `dev`, produkcja nietknięta). Scalenie jest w toku (`git merge --no-commit`), commit robi użytkownik.
+- Model admina: **publiczny panel w zwykłej aplikacji**, bo właściciel pomaga ludziom z telefonu. W zamian wymagana weryfikacja dwuetapowa (TOTP). Prywatny port 3002 i `fly proxy` usunięte.
+- Wejście administratora na cudze konto, kody resetu przekazywane SMS-em i zakładanie kont przez admina usunięte na prośbę użytkownika.
+- Wdrażanie: docelowo `deploy.yml` (testy przed wdrożeniem, PR do `main`). Przełączenie (odłączenie integracji Fly, `FLY_API_TOKEN`, reguła gałęzi) robimy **na końcu**, po wszystkich zmianach.
+- Limit żądań: wersja z `main` (`Fly-Client-IP`).
+- Kopie: na serwerze przy każdym wdrożeniu (z `dev`), na komputer właściciela co tydzień (jeden nadpisywany plik) i na żądanie.
+
+## Iteracja 2026-11-11 — scalenie, admin z 2FA, reset z zatwierdzeniem, czas, ocena
+
+Konta i administracja:
+- `buildApp` nie ma już `adminRoutes`; `server.ts` nie uruchamia drugiego serwera. Limit żądań za proxy po `Fly-Client-IP` (włączany przez `TRUST_PROXY>0`), testy z `main` przeniesione.
+- Weryfikacja dwuetapowa (`totp.ts`, RFC 6238 bez zewnętrznej biblioteki): po haśle sesja `mfa_pending` (10 min) pozwala tylko na `/api/auth/me`, `/logout`, `/2fa/verify`; 5 błędnych kodów usuwa sesję; `totp_last_step` blokuje ponowne użycie kodu. `authenticateAdmin` zwraca 403 `MFA_SETUP_REQUIRED`, dopóki admin nie ustawi 2FA (potwierdzenie hasłem, QR, kod, 10 kodów zapasowych jako SHA-256). Odebranie roli admina czyści 2FA.
+- Reset hasła (`password_resets`): prośba z 4-cyfrowym numerem i tokenem w ciasteczku `acronote_reset` (`HttpOnly`, ścieżka `/api/auth/password-reset`); admin zatwierdza; tylko to urządzenie ustawia hasło; jedna aktywna prośba na konto (`repeat_count` pokazuje kolejne próby), 72 h na zatwierdzenie, 24 h na użycie, unieważnienie wszystkich sesji. Reset konta z 2FA nadal wymaga kodu. Odpowiedź dla nieistniejącego konta jest jawna (404), bo rejestracja i tak zdradza zajęte nazwy.
+- `admin-cli`: `list-admins`, `grant-admin`, `create-admin` (tylko nowa nazwa), `reset-admin-password` (tylko admin), `disable-2fa`. `make-admin.ts` z `main` zastąpiony przez `grant-admin`.
+- Migracja v5 uproszczona do `username_key` (kolumny kodów resetu i impersonacji nigdy nie trafiły na produkcję). Migracja v6 (w transakcji): `activities.time_ms`, `activity_elements.time_ms`, `trainings.rating/comment`, `users.totp_*`, `sessions.mfa_pending/mfa_attempts`; nowe tabele `password_resets`, `admin_recovery_codes`.
+
+Treningi i statystyki:
+- Czas w ms tylko przy `repetitions=1` (API zwraca 400 dla ×N). UI: „Dodaj czas” → przy ×N pytanie o rozdzielenie na N pozycji ×1; „Kolejne wykonanie na czas” przechodzi do następnej pustej pozycji albo dodaje nową. Czas całego układu/fragmentu i osobno czasy elementów układu.
+- `time-stats.ts` liczy z migawek: rekord (dłuższy = lepszy), średnia, ostatni, trend (średnia z 30 dni minus wcześniejsza), seria na trening (najlepszy/najsłabszy/średnia). Klucz: kod elementu albo nazwa układu + zakres. Czasy elementów w układach liczą się do statystyk elementu. `newRecords` w odpowiedzi zapisu porównuje tylko z wcześniejszymi treningami.
+- Ocena 1–10 i komentarz: `getTraining`/`saveTraining` z `includePrivate` tylko na trasach zawodnika; trener, admin i migawka zgłoszenia ich nie dostają; zapis bez pól zachowuje wartości.
+- Edytor: zwijane wejścia (klucz `clientKey` po stronie klienta, przy otwarciu rozwinięte tylko najnowsze, nowe wejście zwija poprzednie), lądowanie jako mały `select` w nagłówku, „Usuń wejście” na dole karty. Lista treningów: bez karty „Dzisiaj”, jeden przycisk „Nowy” (na telefonie przypięty w prawym dolnym rogu), ocena „8/10” na karcie.
+- Zgłoszony błąd z iPhone'a: niebieska strzałka na środku ekranu to `content:'↗'` w `.hero-card:after`. iOS rysuje znaki z wariantem emoji jako kolorowy kafelek i ignoruje kolor oraz przezroczystość. Wszystkie ozdobne znaki (↗, ☀ i pokrewne) zamieniono na ikony SVG; `symbols.test.ts` blokuje znaki z właściwością Unicode `Emoji` w `.tsx` i `.css`.
+
+Kopie: `backup-cli.js` (VACUUM INTO + `integrity_check`), `scripts/backup-prod.ps1` (budzi maszynę, kopia przez `fly ssh`, pobranie `sftp get`, podmiana pliku dopiero po pełnym pobraniu, `kopie.log`), `pobierz-kopie.bat`, `zaplanuj-kopie.bat` (zadanie Windows w niedzielę 19:00, `StartWhenAvailable`).
+
+Weryfikacja: `npm test` 109/109 (API 73, web 36), `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate` (0). Migracja: baza utworzona kodem z `main` (worktree 772b3e7, `seed`) otwarta nowym kodem — wersje 1–6, `integrity_check` ok, liczby wierszy, migawki treningów i konta bez zmian, ponowne otwarcie bez zmian, logowanie demo i admina działa. Przeglądarka (Chromium, 375×812 i desktop, baza w katalogu tymczasowym): lista bez karty i z jednym „Nowy”, zwijanie wejść, rozdzielenie 40o ×3, czasy 1,234 i 1,3 s, ocena 8/10, statystyki czasu, konfiguracja 2FA z kodami zapasowymi, prośba o reset z innego klienta (curl), zatwierdzenie w panelu, ustawienie hasła z urządzenia z prośbą. Znalezione i naprawione przy tym: okno pozycji nie przełączało się na pole czasu po rozdzieleniu; panel przeskakiwał na „Konta” po zatwierdzeniu ostatniej prośby.
+
+Niezweryfikowane: migracja na kopii prawdziwej bazy produkcyjnej (zrobić przed wdrożeniem: `scripts\pobierz-kopie.bat`, potem `check` na kopii), `backup-prod.ps1` i zadanie tygodniowe na prawdziwym Fly, build obrazu Docker po zmianach (sprawdzi CI), wygląd na prawdziwym iPhonie, to, czy Fly nadpisuje `Fly-Client-IP` wysłany przez klienta.
+
+Do zrobienia na końcu (z użytkownikiem): przełączenie wdrażania według `docs/DEPLOY.md`, usunięcie gałęzi `flyio-new-files`, pierwsze wdrożenie z `dev` przez PR do `main`, ustawienie 2FA na koncie `Hubert Borzymek` przy pierwszym wejściu do panelu.

@@ -2,16 +2,17 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import bcrypt from 'bcryptjs';
 import { buildApp } from '../src/app.js';
 import { openDatabase, seedExecutionTypes, type Db } from '../src/db.js';
+import { insertAdmin, loginAdmin } from './helpers.js';
 
 describe('elementy i administracja', () => {
   let db:Db;let app:Awaited<ReturnType<typeof buildApp>>;let userCookie:string;let adminCookie:string;let userId:number;
   beforeEach(async()=>{
     db=openDatabase(':memory:');
     userId=Number(db.prepare("INSERT INTO users(username,password_hash) VALUES('user',?)").run(await bcrypt.hash('bezpieczne-haslo',4)).lastInsertRowid);seedExecutionTypes(db,userId);
-    db.prepare("INSERT INTO users(username,password_hash,role) VALUES('admin',?,'admin')").run(await bcrypt.hash('bezpieczne-admin',4));
+    await insertAdmin(db,'admin','bezpieczne-admin');
     app=await buildApp({db});
     const user=await app.inject({method:'POST',url:'/api/auth/login',payload:{username:'user',password:'bezpieczne-haslo'}});userCookie=user.cookies[0]!.value;
-    const admin=await app.inject({method:'POST',url:'/api/auth/login',payload:{username:'admin',password:'bezpieczne-admin'}});adminCookie=admin.cookies[0]!.value;
+    adminCookie=(await loginAdmin(app,'admin','bezpieczne-admin')).split('=')[1]!;
   });
   afterEach(async()=>{await app.close();db.close();});
   const auth=(cookie:string)=>({cookie:`acronote_session=${cookie}`});
@@ -35,10 +36,9 @@ describe('elementy i administracja', () => {
     const response=await app.inject({method:'GET',url:'/api/admin/users?includeDeleted=true',headers:auth(adminCookie)});expect(response.statusCode).toBe(200);expect(response.body).not.toContain('password_hash');expect(response.body).not.toContain('token_hash');
   });
 
-  it('pozwala administratorowi tworzyć i zmieniać nazwy kont zawierające spację',async()=>{
-    const created=await app.inject({method:'POST',url:'/api/admin/users',headers:auth(adminCookie),payload:{username:'Anna Nowak',password:'bezpieczne-haslo'}});
-    expect(created.statusCode).toBe(201);expect(created.json().username).toBe('Anna Nowak');
-    const updated=await app.inject({method:'PUT',url:`/api/admin/users/${created.json().id}`,headers:auth(adminCookie),payload:{username:'Anna Kowalska'}});
+  it('nie pozwala administratorowi zakładać kont, ale pozwala zmienić nazwę ze spacją',async()=>{
+    expect((await app.inject({method:'POST',url:'/api/admin/users',headers:auth(adminCookie),payload:{username:'Anna Nowak',password:'bezpieczne-haslo'}})).statusCode).toBe(404);
+    const updated=await app.inject({method:'PUT',url:`/api/admin/users/${userId}`,headers:auth(adminCookie),payload:{username:'Anna Kowalska'}});
     expect(updated.statusCode).toBe(200);expect(updated.json().username).toBe('Anna Kowalska');
   });
 

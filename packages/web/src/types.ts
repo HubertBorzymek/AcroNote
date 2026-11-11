@@ -8,6 +8,8 @@ export interface User {
   athleteEnabled?: boolean;
   coachEnabled?: boolean;
   isAdmin?: boolean;
+  /** Password accepted; the session waits for the authenticator code (administrators). */
+  mfaRequired?: boolean;
 }
 
 export interface AdminUser {
@@ -20,6 +22,8 @@ export interface AdminUser {
   elementCount?: number;
   routineCount?: number;
   trainingCount?: number;
+  pendingResetRequests?: number;
+  twoStepEnabled?: boolean;
 }
 
 export interface AdminUserData {
@@ -65,6 +69,8 @@ export interface ActivityElement {
   name?: string | null;
   executionTypeId?: ID;
   executionTypeName: string;
+  /** Time of this element in milliseconds (only for a single execution). */
+  timeMs?: number | null;
 }
 
 export interface Activity {
@@ -84,6 +90,8 @@ export interface Activity {
   rangeEnd?: number;
   isFullRoutine?: boolean;
   elements?: ActivityElement[];
+  /** Time of a single execution in milliseconds: the element, or the whole routine/fragment. */
+  timeMs?: number | null;
 }
 
 export interface TrainingEntry {
@@ -91,6 +99,8 @@ export interface TrainingEntry {
   defaultExecutionTypeId?: ID;
   defaultExecutionTypeName: string;
   activities: Activity[];
+  /** Client-only key for list rendering and the collapsed state; never sent to the API. */
+  clientKey?: string;
 }
 
 export interface Training {
@@ -99,7 +109,23 @@ export interface Training {
   entries: TrainingEntry[];
   createdAt?: string;
   summary?: TrainingSummary;
+  /** Private to the athlete (1-10); coaches and administrators never receive it. */
+  rating?: number | null;
+  comment?: string | null;
+  /** Returned after saving: times that beat the athlete's earlier best. */
+  newRecords?: TimeRecord[];
 }
+
+export interface TimeRecord { key: string; kind: 'element' | 'routine'; label: string; timeMs: number; previousMs: number }
+
+export interface TimeStatsItem {
+  key: string; kind: 'element' | 'routine'; label: string; count: number;
+  bestMs: number; bestDate: string; avgMs: number; lastMs: number; lastDate: string;
+  recentAvgMs: number | null; earlierAvgMs: number | null; trendMs: number | null;
+  series: Array<{ trainingId: number; date: string; count: number; bestMs: number; worstMs: number; avgMs: number }>;
+}
+
+export interface TimeStats { recentDays: number; items: TimeStatsItem[] }
 
 export interface TrainingSummary {
   entries: number;
@@ -160,3 +186,50 @@ export interface ElementHistoryItem {
   count: number;
   landings?: LandingCount[];
 }
+
+export interface BugReportSummary {
+  id: number;
+  description: string;
+  status: 'new' | 'resolved';
+  createdAt: string;
+  resolvedAt?: string | null;
+}
+
+export interface AdminBugReportSummary extends BugReportSummary {
+  userId: number | null;
+  username: string;
+  page: string | null;
+  appVersion: string | null;
+  hasSnapshot: number | boolean;
+}
+
+export interface AdminBugReport extends Omit<AdminBugReportSummary, 'hasSnapshot'> {
+  expected: string | null;
+  userAgent: string | null;
+  diagnostics: Record<string, unknown> | null;
+  dataSnapshot: Record<string, unknown> | null;
+}
+
+export interface PasswordResetRequest {
+  id: number;
+  userId: number;
+  username: string;
+  requestNumber: string;
+  message: string | null;
+  status: 'pending' | 'approved' | 'done' | 'rejected' | 'cancelled' | 'expired';
+  createdAt: string;
+  handledAt: string | null;
+  approvalExpiresAt: string | null;
+  repeatCount: number;
+}
+
+/** State of this device's own "forgot password" request. */
+export interface OwnPasswordReset {
+  status: 'none' | PasswordResetRequest['status'];
+  requestNumber?: string;
+  username?: string;
+}
+
+export interface AdminSummary { pendingResets: number; newBugReports: number }
+
+export interface TwoStepSetup { secret: string; uri: string; qrDataUrl: string }

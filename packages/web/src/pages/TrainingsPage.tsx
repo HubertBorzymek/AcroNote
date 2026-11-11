@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { api } from '../api';
-import { today, useAsync } from '../hooks';
+import { useAsync } from '../hooks';
 import type { Training } from '../types';
 import { EmptyState, ErrorState, Icon, Loading, PageHeader, Toast } from '../components/ui';
 import { TrainingEditor } from './TrainingEditor';
@@ -21,17 +21,17 @@ export function TrainingsPage({ setDirty }: { setDirty: (dirty: boolean) => void
     (all[training.date] ??= []).push(training); return all;
   }, {})).sort(([a], [b]) => b.localeCompare(a)), [result.data]);
 
-  if (editing) return <TrainingEditor initial={editing === 'new' ? undefined : editing} onBack={() => { setEditing(null); void result.reload(); }} onSaved={async () => { await result.reload(); setEditing(null); setMessage('Trening został zapisany.'); }} setGlobalDirty={setDirty}/>;
+  if (editing) return <TrainingEditor initial={editing === 'new' ? undefined : editing} onBack={() => { setEditing(null); void result.reload(); }} onSaved={async (savedMessage) => { await result.reload(); setEditing(null); setMessage(savedMessage ?? 'Trening został zapisany.'); }} setGlobalDirty={setDirty}/>;
   if (result.loading) return <Loading/>;
   if (result.error) return <ErrorState message={result.error} retry={result.reload}/>;
-  return <div className="page">
-    <PageHeader title="Treningi" eyebrow="Twój dziennik" action={<button className="button primary compact" onClick={() => setEditing('new')}><Icon name="plus"/> Nowy</button>}/>
-    <section className="hero-card"><div><span>Dzisiaj</span><h2>{new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())}</h2><p>{result.data?.filter((item) => item.date === today()).length ? 'Masz już zapisany trening. Możesz dodać kolejny.' : 'Gotowy na dzisiejszy trening?'}</p></div><button className="button light" onClick={() => setEditing('new')}><Icon name="plus"/> Dodaj trening</button></section>
-    {!grouped.length ? <EmptyState icon="↗" title="Zacznij prowadzić dziennik" description="Dodaj trening, a każde wejście i wykonany element trafią do Twojej historii." action={<button className="button primary" onClick={() => setEditing('new')}>Dodaj pierwszy trening</button>}/>
+  // One way to add a training: the "Nowy" button (top right; pinned above the bottom bar on phones).
+  return <div className="page trainings-page">
+    <PageHeader title="Treningi" eyebrow="Twój dziennik" action={<button className="button primary compact new-training" onClick={() => setEditing('new')}><Icon name="plus"/> Nowy</button>}/>
+    {!grouped.length ? <EmptyState icon="journal" title="Zacznij prowadzić dziennik" description="Dotknij „Nowy”, a każde wejście i wykonany element trafią do Twojej historii."/>
       : <section className="timeline"><h2>Historia treningów</h2>{grouped.map(([date, trainings]) => <div className="day-group" key={date}>
         <div className="day-heading"><time>{new Intl.DateTimeFormat('pl-PL', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${date}T12:00:00`))}</time><span>{trainings.length} {trainings.length === 1 ? 'trening' : 'treningi'}</span></div>
-        {trainings.map((training, index) => { const summary = training.summary ?? summarize(training); return <button className="training-card" key={training.id} onClick={() => { void api.training(training.id).then(setEditing).catch((reason) => setMessage(reason instanceof Error ? reason.message : 'Nie udało się pobrać treningu.')); }}><span className="training-index">{index + 1}</span><div><strong>Trening {index + 1}</strong><small>{summary.entries} wejść · {summary.elements} wykonań elementów</small></div><span className="chevron">›</span></button>; })}
+        {trainings.map((training, index) => { const summary = training.summary ?? summarize(training); return <button className="training-card" key={training.id} onClick={() => { void api.training(training.id).then(setEditing).catch((reason) => setMessage(reason instanceof Error ? reason.message : 'Nie udało się pobrać treningu.')); }}><span className="training-index">{index + 1}</span><div><strong>Trening {index + 1}</strong><small>{summary.entries} wejść · {summary.elements} wykonań elementów</small></div>{training.rating != null && <span className="rating-badge" aria-label={`Ocena ${training.rating} na 10`}>{training.rating}/10</span>}<span className="chevron">›</span></button>; })}
       </div>)}</section>}
-    {message && <Toast message={message} onClose={() => setMessage('')}/>} 
+    {message && <Toast message={message} onClose={() => setMessage('')}/>}
   </div>;
 }

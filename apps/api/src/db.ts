@@ -7,11 +7,18 @@ import { parseElementCode } from '@acronote/shared';
 
 export type Db = Database.Database;
 
-export function openDatabase(path = process.env.DATABASE_PATH ?? './data/acronote.db'): Db {
+/** Resolves DATABASE_PATH the same way everywhere: relative paths are relative to the project root. */
+export function resolveDatabasePath(path = process.env.DATABASE_PATH ?? './data/acronote.db'): string {
   const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
-  const resolved = path === ':memory:' ? path : (isAbsolute(path) ? path : resolve(projectRoot, path));
+  return path === ':memory:' ? path : (isAbsolute(path) ? path : resolve(projectRoot, path));
+}
+
+export function openDatabase(path?: string): Db {
+  const resolved = resolveDatabasePath(path);
   if (resolved !== ':memory:') mkdirSync(dirname(resolved), { recursive: true });
   const db = new Database(resolved);
+  // Used by the users_username_key triggers; must be registered on every connection that writes users.
+  db.function('acronote_username_key', { deterministic: true }, (value: unknown) => typeof value === 'string' ? usernameKey(value) : null);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(schema);
@@ -49,6 +56,42 @@ function migrate(db: Db): void {
     db.prepare('UPDATE invitations SET created_at=COALESCE(created_at, CURRENT_TIMESTAMP)').run();
     db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(3)').run();
   })();
+  // v4: bug_reports table (created by the schema above).
+  db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(4)').run();
+
+  // v5: Unicode-aware unique usernames ("Łukasz" = "łukasz"; SQLite NOCASE only folds ASCII).
+  if (!columns('users').has('username_key')) db.exec('ALTER TABLE users ADD COLUMN username_key TEXT');
+  db.exec(`CREATE TRIGGER IF NOT EXISTS users_username_key_insert AFTER INSERT ON users BEGIN
+      UPDATE users SET username_key=acronote_username_key(NEW.username) WHERE id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS users_username_key_update AFTER UPDATE OF username ON users BEGIN
+      UPDATE users SET username_key=acronote_username_key(NEW.username) WHERE id=NEW.id; END;`);
+  const fill = db.prepare('UPDATE users SET username_key=? WHERE id=?');
+  for (const row of db.prepare('SELECT id,username FROM users WHERE username_key IS NULL').all() as { id: number; username: string }[]) fill.run(usernameKey(row.username), row.id);
+  try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_key ON users(username_key)'); }
+  catch { console.warn('Uwaga: w bazie są konta różniące się tylko wielkością liter. Nowe duplikaty blokuje kontrola w API.'); }
+  db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(5)').run();
+
+  // v6: optional times (ms) in training snapshots, a private training rating, two-step login for
+  // administrators and sessions that wait for the second step. All columns are nullable or defaulted,
+  // so existing rows keep their meaning.
+  db.transaction(() => {
+    const add = (table: string, column: string, definition: string) => { if (!columns(table).has(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`); };
+    add('activities', 'time_ms', 'INTEGER');
+    add('activity_elements', 'time_ms', 'INTEGER');
+    add('trainings', 'rating', 'INTEGER');
+    add('trainings', 'comment', 'TEXT');
+    add('users', 'totp_secret', 'TEXT');
+    add('users', 'totp_pending_secret', 'TEXT');
+    add('users', 'totp_last_step', 'INTEGER');
+    add('sessions', 'mfa_pending', 'INTEGER NOT NULL DEFAULT 0');
+    add('sessions', 'mfa_attempts', 'INTEGER NOT NULL DEFAULT 0');
+    db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(6)').run();
+  })();
+}
+
+/** Case- and normalization-insensitive form of a username, used for uniqueness and login. */
+export function usernameKey(username: string): string {
+  return username.normalize('NFC').toLowerCase();
 }
 
 export function seedExecutionTypes(db: Db, userId: number): void {

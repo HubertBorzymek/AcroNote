@@ -71,4 +71,28 @@ CREATE TABLE IF NOT EXISTS invitations (
   accepted_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL, cancelled_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS bug_reports (
+  id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  username_snapshot TEXT NOT NULL, description TEXT NOT NULL, expected TEXT, page TEXT,
+  app_version TEXT, user_agent TEXT, diagnostics TEXT, data_snapshot TEXT,
+  status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new','resolved')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, resolved_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_bug_reports_status ON bug_reports(status, created_at);
+-- "Forgot password?" requests. Only the device holding the request token can set the new password,
+-- and only after an administrator approved the request (status 'approved' until approval_expires_at).
+CREATE TABLE IF NOT EXISTS password_resets (
+  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  request_number TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, message TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','done','rejected','cancelled')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TEXT NOT NULL,
+  handled_at TEXT, approval_expires_at TEXT, repeat_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_password_resets_status ON password_resets(status, created_at);
+CREATE TABLE IF NOT EXISTS admin_recovery_codes (
+  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL, used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_admin_recovery_codes_user ON admin_recovery_codes(user_id);
 `;

@@ -50,12 +50,14 @@ Jeśli AcroNote już działa, `start.bat` tylko otworzy przeglądarkę. Aby zatr
 
 | | |
 |---|---|
-| 📝 **Treningi** | Wejścia z elementami i układami, liczba powtórzeń, miejsce lądowania dla każdego elementu. Długie treningi są zwijane — najnowsze wejścia na górze. |
+| 📝 **Treningi** | Wejścia z elementami i układami, liczba powtórzeń, miejsce lądowania dla każdego elementu. Wejścia zwijają się do jednej linii, najnowsze są na górze. Opcjonalny czas wykonania (do tysięcznych sekundy) dla elementu, układu i fragmentu oraz prywatna ocena treningu 1–10 z komentarzem. |
 | 🧩 **Elementy** | Katalog w pełnej notacji (np. `800o`, `831<`, `42/`) z automatycznym rozpoznaniem ćwiartek, salt, śrub, kierunku i pozycji. Ulubione, ukryte, filtry. |
 | 🔗 **Układy** | Szablony z dowolną liczbą elementów. Możesz zapisać cały układ albo fragment (np. 3–7). |
-| 📊 **Statystyki** | Suma elementów, rozkład lądowań (siatka / materac / gąbki), historia konkretnego elementu w tygodniach i miesiącach. |
-| 🧑‍🏫 **Profil trenera** | Połączenie przez kod, link lub QR, za świadomą zgodą. Trener tylko czyta dane zawodnika. |
-| 🛡️ **Administrator** | Zarządzanie kontami i danymi, bez dostępu do haseł i sesji. |
+| 📊 **Statystyki** | Suma elementów, rozkład lądowań (siatka / materac / gąbki), historia konkretnego elementu w tygodniach i miesiącach. Rekordy, średnie i postęp czasów wykonania. |
+| 🧑‍🏫 **Profil trenera** | Połączenie przez kod, link lub QR, za świadomą zgodą. Trener tylko czyta dane zawodnika; oceny i komentarzy do treningów nie widzi. |
+| 🛡️ **Administrator** | Zarządzanie kontami, danymi, prośbami o reset hasła i zgłoszeniami, bez dostępu do haseł i sesji. Działa w zwykłej aplikacji (także na telefonie) i wymaga weryfikacji dwuetapowej. |
+| 🔑 **Konta i hasła** | Konto na imię i nazwisko ze spacją. Hasło ma minimum 8 znaków i żadnych innych reguł. „Zapomniałeś hasła?” wysyła prośbę z numerem; po zatwierdzeniu przez administratora użytkownik ustawia nowe hasło na tym samym urządzeniu. Hasła nikt poza użytkownikiem nie zna. |
+| 🐞 **Zgłoś problem** | Z profilu albo z każdego ekranu błędu. Do opisu dołączane są informacje techniczne i opcjonalnie kopia danych konta, którą da się odtworzyć lokalnie. |
 | 🌙 **Tryb ciemny** | Domyślnie zgodny z systemem, zapamiętywany w przeglądarce. |
 
 **Najważniejsza zasada:** każdy zapisany trening przechowuje własną *migawkę* kodów, nazw i lądowań. Gdy później zmienisz element albo układ, dawne treningi i statystyki zostaną bez zmian.
@@ -95,17 +97,17 @@ docs/            wymagania, architektura, plan testów, stan prac
 | `npm run typecheck` | kontrola typów TypeScript |
 | `npm run seed` | konta demo i konto `admin` |
 | `npm run package:win` | samodzielna paczka Windows (`release/AcroNote-<wersja>-win-x64.zip`) |
+| `npm run import-report -- <plik.json>` | odtwarza dane ze zgłoszenia błędu w lokalnej bazie |
+| `scripts\pobierz-kopie.bat` | kopia produkcyjnej bazy do `Dokumenty\AcroNote-kopie` (zob. [DEPLOY.md](docs/DEPLOY.md)) |
+| `scripts\zaplanuj-kopie.bat` | cotygodniowa kopia produkcyjnej bazy w Harmonogramie zadań |
 
-### 📦 Wydawanie nowej wersji
+### 🌐 Wersja online i gałęzie
 
-Podnieś `version` w `package.json`, zrób commit i wypchnij tag:
+Rozwój odbywa się na gałęziach roboczych (np. **`dev`**), nie na `main`. Każdy push i PR przechodzi testy ([ci.yml](.github/workflows/ci.yml)). Po scaleniu PR do **`main`** nowa wersja trafia automatycznie na Fly.io ([deploy.yml](.github/workflows/deploy.yml)). Stan przełączenia wdrażania, panel administratora z weryfikacją dwuetapową, reset haseł, kopie zapasowe i odtwarzanie zgłoszeń opisuje **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 
-```powershell
-git tag v0.3.0
-git push origin v0.3.0
-```
+### 📦 Paczka Windows (Releases)
 
-GitHub Actions ([release.yml](.github/workflows/release.yml)) uruchomi testy, zbuduje paczkę z wbudowanym Node.js i opublikuje ją w zakładce Releases.
+Podnieś `version` w `package.json` na `main` i wypchnij tag, np. `git tag v0.4.0` i `git push origin v0.4.0`. GitHub Actions ([release.yml](.github/workflows/release.yml)) uruchomi testy, zbuduje paczkę z wbudowanym Node.js i opublikuje ją w zakładce Releases.
 
 Przed commitem uruchom komplet kontroli z [AGENTS.md](AGENTS.md): `npm test`, `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate`.
 
