@@ -83,8 +83,9 @@ export const api = {
   updateProfiles: async (athleteEnabled: boolean, coachEnabled: boolean) => mapUser(await request<User & { id: unknown }>('/profile', { method: 'PUT', ...json({ athleteEnabled, coachEnabled }) })),
 
   elements: async (includeHidden = false) => (await request<Array<Omit<ElementItem, 'id'> & { id: unknown }>>(`/elements${includeHidden ? '?hidden=all' : ''}`)).map((item) => ({ ...item, id: String(item.id) })),
-  createElement: async (input: Omit<ElementItem, 'id'>) => { const item = await request<Omit<ElementItem, 'id'> & { id: unknown }>('/elements', { method: 'POST', ...json(input) }); return { ...item, id: String(item.id) }; },
-  updateElement: (elementId: string, input: Omit<ElementItem, 'id'>) => request<void>(`/elements/${elementId}`, { method: 'PUT', ...json(input) }),
+  // allowNonStandardCode: the user confirmed a code outside the notation (e.g. 4o).
+  createElement: async (input: Omit<ElementItem, 'id'>, allowNonStandardCode = false) => { const item = await request<Omit<ElementItem, 'id'> & { id: unknown }>('/elements', { method: 'POST', ...json({ ...input, allowNonStandardCode }) }); return { ...item, id: String(item.id) }; },
+  updateElement: (elementId: string, input: Omit<ElementItem, 'id'>, allowNonStandardCode = false) => request<void>(`/elements/${elementId}`, { method: 'PUT', ...json({ ...input, allowNonStandardCode }) }),
   elementUsage: (elementId: string) => request<{ routineCount: number }>(`/elements/${elementId}/usage`),
   deleteElement: (id: string, removeFromRoutines = false) => request<void>(`/elements/${id}?routineHandling=${removeFromRoutines ? 'remove' : 'keep'}`, { method: 'DELETE' }),
 

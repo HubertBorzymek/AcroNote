@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { standardElementName } from '../elementCode';
 import { api } from '../api';
 import { useAsync } from '../hooks';
 import type { CoachAthlete, ElementItem, Training } from '../types';
@@ -29,7 +30,7 @@ function AthleteElements({ athleteId }: { athleteId: string }) {
   const history = useAsync(() => selected ? api.coachElementHistory(athleteId, selected.id) : Promise.resolve([]), [athleteId, selected?.id]);
   if (elements.loading) return <Loading/>;
   if (elements.error) return <ErrorState message={elements.error} retry={elements.reload}/>;
-  return <div className="coach-elements"><div className="element-grid">{elements.data?.map((item) => <button className={`element-card readonly ${selected?.id === item.id ? 'selected' : ''}`} key={item.id} onClick={() => setSelected(item)}><strong>{item.code}</strong><span>{item.name || 'Bez nazwy'}</span></button>)}</div>{selected && <section className="history-panel"><h2>Historia: {selected.code}</h2>{history.loading ? <Loading/> : history.error ? <ErrorState message={history.error} retry={history.reload}/> : history.data?.length ? history.data.map((item) => <div key={`${item.trainingId}-${item.date}`}><time>{new Intl.DateTimeFormat('pl-PL', { dateStyle: 'medium' }).format(new Date(`${item.date}T12:00:00`))}</time><strong>{item.count}×</strong><span>{item.landings?.map((landing) => `${landing.name}: ${landing.count}`).join(' · ')}</span></div>) : <p className="chart-empty">Ten element nie ma jeszcze zapisanych wykonań.</p>}</section>}</div>;
+  return <div className="coach-elements"><div className="element-grid">{elements.data?.map((item) => <button className={`element-card readonly ${selected?.id === item.id ? 'selected' : ''}`} key={item.id} onClick={() => setSelected(item)}><strong>{item.code}</strong><span>{item.name || standardElementName(item.code) || 'Bez nazwy'}</span></button>)}</div>{selected && <section className="history-panel"><h2>Historia: {selected.code}</h2>{history.loading ? <Loading/> : history.error ? <ErrorState message={history.error} retry={history.reload}/> : history.data?.length ? history.data.map((item) => <div key={`${item.trainingId}-${item.date}`}><time>{new Intl.DateTimeFormat('pl-PL', { dateStyle: 'medium' }).format(new Date(`${item.date}T12:00:00`))}</time><strong>{item.count}×</strong><span>{item.landings?.map((landing) => `${landing.name}: ${landing.count}`).join(' · ')}</span></div>) : <p className="chart-empty">Ten element nie ma jeszcze zapisanych wykonań.</p>}</section>}</div>;
 }
 
 function AthleteDashboard({ athlete, onBack, onDisconnected }: { athlete: CoachAthlete; onBack: () => void; onDisconnected: () => void }) {

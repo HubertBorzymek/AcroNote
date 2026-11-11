@@ -254,6 +254,26 @@ Do zrobienia na końcu (z użytkownikiem): przełączenie wdrażania według `do
 ### Wdrożenie 2026-11-11 — awaria portu i naprawa
 
 - Pierwsze wdrożenie przez `deploy.yml` (5fbdcf1) zakończyło się błędem kontroli zdrowia: strona zwracała 503. Kreator Fly zapisał 6 listopada ustawienia jako **sekrety** (`PORT=8080`, `HOST`, `DATABASE_PATH`, `ACRONOTE_DEMO`, `ACRONOTE_BEHIND_PROXY`), a sekrety mają pierwszeństwo przed `[env]` z `fly.toml`. Aplikacja słuchała na 8080, a Fly kierował ruch na 3001.
-- Migracja v6 i kopia przed nią (`/data/backups/acronote-2026-11-11T14-28-12-015Z-0.4.0_5fbdcf1.db`) wykonały się poprawnie. Kopia lokalna: `Dokumenty\AcroNote-kopiecronote-przed-v6-2026-11-11.db`.
+- Migracja v6 i kopia przed nią (`/data/backups/acronote-2026-11-11T14-28-12-015Z-0.4.0_5fbdcf1.db`) wykonały się poprawnie. Kopia lokalna: `Dokumenty\AcroNote-kopie\acronote-przed-v6-2026-11-11.db`.
 - Naprawa bez zmiany sekretów: `fly.toml` przestawiony na `PORT`/`internal_port` 8080. Do zrobienia później: usunąć zbędne sekrety (`fly secrets unset PORT HOST DATABASE_PATH ACRONOTE_DEMO ACRONOTE_BEHIND_PROXY`) i wtedy można wrócić do 3001.
 - Lekcja: przed wdrożeniem porównać `fly secrets list` z `[env]` w `fly.toml`.
+
+## Iteracja 2026-11-11 (2) — skoki bez salta i kody spoza notacji
+
+Prośba użytkownika: dać się dodać „niepoprawny” element (np. `4o`, `40`) po pytaniu Tak/Nie oraz uznać `o`, `<`, `/` za poprawne samodzielne elementy (skoki bez salt i śrub).
+
+- `@acronote/shared`: `parseElementCode` przyjmuje sam znak pozycji (0 ćwiartek, 0 salt, 0 śrub, `direction: null`). Nowe `checkElementCode(value, allowNonStandard)` zwraca `{code, parsed|null}`; kod spoza notacji tylko z potwierdzeniem, przycięty, 1–20 znaków, bez znaków sterujących.
+- API `POST/PUT /api/elements`: flaga `allowNonStandardCode`; PUT bez flagi przyjmuje kod spoza notacji tylko wtedy, gdy się nie zmienia (przełączanie ulubionego/ukrycia). Kontrola właściciela przed walidacją kodu. Kolumny wyliczone dla kodu spoza notacji są `NULL` (schemat już na to pozwalał, migracja niepotrzebna).
+- Web: `ConfirmDialog` (Tak/Nie zamiast `window.confirm`), `CodeHint` pod polem kodu (opis, ostrzeżenie albo podpowiedź), oznaczenie „kod spoza notacji” na karcie, opcja „Bez salta” w filtrach. To samo w okienku wyboru elementu w edytorze treningu.
+
+Weryfikacja: `npm test` 130/130 (API 87, web 43), `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate` (0). Przeglądarka (375×812 i desktop, baza w katalogu tymczasowym, konto testowe): `4o` i `40` pokazują ostrzeżenie i pytanie; „Nie” nic nie zapisuje, „Tak, dodaj” zapisuje z pustymi polami; `/` dodaje się bez pytania z opisem „Skok bez salta i śruby · prosta”; filtr „Bez salta” pokazuje tylko `/`; gwiazdka na `4o` działa bez ponownego pytania. Przy tym skrócono etykiety przycisków, bo „Nie, poprawię” łamało się na telefonie.
+
+Poprawka po uwagach użytkownika (ten sam dzień): elementy bez salta mają nazwy zwyczajowe `o` kuczka, `<` rozkroczka, `/` poziomka (`standardElementName` w `elementCode.ts`; pokazywane zamiast „Bez nazwy”, gdy nie ma własnej nazwy, w podpowiedzi pod kodem i w wyszukiwaniu, niezapisywane w bazie). Opcja filtra: „Element bez salta”. `npm test` 131/131 (API 87, web 44), typecheck, build. Przeglądarka 375×812: karty „Kuczka”, „Rozkroczka”, „Poziomka”, wyszukiwanie „rozkrocz” → `<`, podpowiedzi dla pustego pola, `o`, `<`, `/`, `41o`, `4o`.
+
+### Porządki 2026-11-11 wieczorem (zrobione przez użytkownika, sprawdzone)
+
+- Weryfikacja dwuetapowa ustawiona na koncie administratora.
+- Sekrety kreatora usunięte (`fly secrets list` puste); port zostaje 8080 w `fly.toml`, bez PR na 3001. `/api/health` → `0.4.0+b31b246`.
+- Gałąź `flyio-new-files` usunięta (na `origin` tylko `main` i `dev`).
+- `scripts\pobierz-kopie.bat` zadziałał na prawdziwym Fly (`Dokumenty\AcroNote-kopie\acronote-2026-11-11_2015.db`); zadanie tygodniowe „AcroNote - cotygodniowa kopia bazy” zarejestrowane, najbliższe 15.11.2026 19:00.
+- Wciąż niezweryfikowane: wygląd na prawdziwym iPhonie, to, czy Fly nadpisuje `Fly-Client-IP` wysłany przez klienta, pierwsze uruchomienie zadania tygodniowego.

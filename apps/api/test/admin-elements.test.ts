@@ -17,6 +17,36 @@ describe('elementy i administracja', () => {
   afterEach(async()=>{await app.close();db.close();});
   const auth=(cookie:string)=>({cookie:`acronote_session=${cookie}`});
 
+  it('dodaje skoki o, <, / jako poprawne elementy',async()=>{
+    for(const code of ['o','<','/']){const created=await app.inject({method:'POST',url:'/api/elements',headers:auth(userCookie),payload:{code}});expect(created.statusCode).toBe(201);expect(created.json()).toMatchObject({code,quarterCount:0,saltoCount:0,totalTwists:0,direction:null});}
+    expect((await app.inject({method:'GET',url:'/api/elements?saltoCount=0&position=%3C',headers:auth(userCookie)})).json().map((e:any)=>e.code)).toEqual(['<']);
+    expect((await app.inject({method:'GET',url:'/api/elements?direction=back',headers:auth(userCookie)})).json()).toEqual([]);
+  });
+
+  it('kod spoza notacji zapisuje się tylko po potwierdzeniu i bez wyliczonych pól',async()=>{
+    const refused=await app.inject({method:'POST',url:'/api/elements',headers:auth(userCookie),payload:{code:'4o'}});expect(refused.statusCode).toBe(400);
+    const created=await app.inject({method:'POST',url:'/api/elements',headers:auth(userCookie),payload:{code:' 4o ',name:'Coś',allowNonStandardCode:true}});expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({code:'4o',quarterCount:null,saltoCount:null,totalTwists:null,direction:null,positionSymbol:null});
+    const id=created.json().id;
+    expect(db.prepare('SELECT quarter_count,salto_count,total_twist_halves,direction,position_symbol FROM elements WHERE id=?').get(id)).toEqual({quarter_count:null,salto_count:null,total_twist_halves:null,direction:null,position_symbol:null});
+    // Ten sam kod drugi raz: konflikt, nie duplikat.
+    expect((await app.inject({method:'POST',url:'/api/elements',headers:auth(userCookie),payload:{code:'4o',allowNonStandardCode:true}})).statusCode).toBe(409);
+    // Zmiana ulubionego bez zmiany kodu nie wymaga ponownego potwierdzenia.
+    expect((await app.inject({method:'PUT',url:`/api/elements/${id}`,headers:auth(userCookie),payload:{code:'4o',favorite:true}})).statusCode).toBe(200);
+    // Nowy kod spoza notacji wymaga potwierdzenia, poprawny już nie, i wtedy pola się wyliczają.
+    expect((await app.inject({method:'PUT',url:`/api/elements/${id}`,headers:auth(userCookie),payload:{code:'40'}})).statusCode).toBe(400);
+    expect((await app.inject({method:'PUT',url:`/api/elements/${id}`,headers:auth(userCookie),payload:{code:'40',allowNonStandardCode:true}})).statusCode).toBe(200);
+    expect((await app.inject({method:'PUT',url:`/api/elements/${id}`,headers:auth(userCookie),payload:{code:'40o'}})).statusCode).toBe(200);
+    expect(db.prepare('SELECT code,quarter_count,salto_count FROM elements WHERE id=?').get(id)).toEqual({code:'40o',quarter_count:4,salto_count:1});
+  });
+
+  it('nie pozwala edytować cudzego elementu kodem spoza notacji',async()=>{
+    const other=Number(db.prepare("INSERT INTO users(username,password_hash) VALUES('inny',?)").run(await bcrypt.hash('bezpieczne-haslo',4)).lastInsertRowid);
+    const foreign=Number(db.prepare("INSERT INTO elements(user_id,code) VALUES(?,'4o')").run(other).lastInsertRowid);
+    expect((await app.inject({method:'PUT',url:`/api/elements/${foreign}`,headers:auth(userCookie),payload:{code:'4o'}})).statusCode).toBeGreaterThanOrEqual(400);
+    expect(db.prepare('SELECT code,user_id FROM elements WHERE id=?').get(foreign)).toEqual({code:'4o',user_id:other});
+  });
+
   it('waliduje, wylicza i filtruje kod oraz poprawnie obsługuje ukryte',async()=>{
     expect((await app.inject({method:'POST',url:'/api/elements',headers:auth(userCookie),payload:{code:'121o'}})).statusCode).toBe(400);
     const created=await app.inject({method:'POST',url:'/api/elements',headers:auth(userCookie),payload:{code:'831o',hidden:true}});expect(created.statusCode).toBe(201);expect(created.json()).toMatchObject({quarterCount:8,saltoCount:2,totalTwists:2,direction:'back'});

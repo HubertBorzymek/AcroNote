@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { openBugReport } from './BugReport';
+import { describeElementCode } from '../elementCode';
 
 export type IconName = 'home' | 'spark' | 'routine' | 'chart' | 'user' | 'admin' | 'plus' | 'search' | 'back' | 'more' | 'journal' | 'target' | 'check' | 'sun' | 'moon' | 'clock' | 'chevron' | 'key';
 
@@ -52,6 +53,19 @@ export function Counter({ value, onChange, label = 'Liczba powtórzeń', disable
   </div>;
 }
 
+/** Pytanie z odpowiedziami Tak/Nie; zamiast window.confirm, które na iPhonie wygląda obco i ma „OK/Anuluj”. */
+export function ConfirmDialog({ title, children, confirmLabel = 'Tak', cancelLabel = 'Nie', onConfirm, onCancel }: { title: string; children: ReactNode; confirmLabel?: string; cancelLabel?: string; onConfirm: () => void; onCancel: () => void }) {
+  return <div className="modal-backdrop top" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}><section className="confirm-dialog two" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+    <h2 id="confirm-title">{title}</h2>{children}
+    <div><button type="button" className="button secondary" onClick={onCancel}>{cancelLabel}</button><button type="button" className="button primary" autoFocus onClick={onConfirm}>{confirmLabel}</button></div>
+  </section></div>;
+}
+
+/** Treść pytania o kod spoza notacji. */
+export function NonStandardCodeText({ code }: { code: string }) {
+  return <p>Kod <b>{code.trim()}</b> nie pasuje do notacji (np. <b>40o</b> albo kuczka <b>o</b>). Filtry salt, śrub, kierunku i pozycji go pominą. Czy na pewno chcesz dodać taki element?</p>;
+}
+
 export function PageHeader({ title, eyebrow, onBack, action }: { title: string; eyebrow?: string; onBack?: () => void; action?: ReactNode }) {
   return <header className="page-header">
     {onBack && <button className="icon-button" onClick={onBack} aria-label="Wróć"><Icon name="back"/></button>}
@@ -59,3 +73,12 @@ export function PageHeader({ title, eyebrow, onBack, action }: { title: string; 
     {action}
   </header>;
 }
+
+/** Opis kodu pod polem: rozpoznany kod, ostrzeżenie o kodzie spoza notacji albo krótka podpowiedź. */
+export function CodeHint({ code }: { code: string }) {
+  const description = describeElementCode(code);
+  if (description) return <p className="hint">{description}</p>;
+  if (code.trim()) return <p className="hint warn">Ten kod nie pasuje do notacji. Możesz go zapisać, ale aplikacja zapyta o potwierdzenie.</p>;
+  return <p className="hint">Kod kończy się pozycją: <b>o</b>, <b>&lt;</b> lub <b>/</b>, np. <b>40o</b>. Sam znak to element bez salta: <b>o</b> kuczka, <b>&lt;</b> rozkroczka, <b>/</b> poziomka. Liczba cyfr śrub powinna być taka sama jak liczba salt.</p>;
+}
+

@@ -9,7 +9,8 @@ primary_region = "fra"
 
 [env]
   ACRONOTE_ENV = "production"
-  # Must match the PORT secret set by the Fly launch wizard (secrets override [env]).
+  # Must equal internal_port below. Fly secrets override [env], so keep `fly secrets list` empty
+  # (the launch wizard's PORT=8080 secret once broke a deploy, see docs/WORKLOG.md).
   PORT = "8080"
   HOST = "0.0.0.0"
   DATABASE_PATH = "/data/acronote.db"

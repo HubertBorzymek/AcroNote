@@ -17,7 +17,7 @@ gałąź robocza ──push──► PR do main ──► CI: testy, typecheck, 
 - `deploy.yml` wdraża `main` po scaleniu. Bez sekretu `FLY_API_TOKEN` pomija wdrożenie (nic się nie psuje).
 - Na `main` nie pracuje się bezpośrednio; reguła gałęzi pozwala scalić tylko PR z zielonym `checks`.
 
-**Stan na 2026-11-11:** produkcję nadal wdraża integracja Fly z GitHubem (aplikację utworzono z panelu Fly). Dopóki jej nie odłączysz, nie ustawiaj `FLY_API_TOKEN`, bo każdy merge wdrażałby się dwa razy.
+**Stan na 2026-11-11:** przełączenie zrobione — integracja Fly z GitHubem odłączona, `FLY_API_TOKEN` ustawiony, reguła na `main` aktywna, gałąź `flyio-new-files` usunięta, sekrety kreatora usunięte. Produkcję wdraża wyłącznie `deploy.yml`.
 
 ### Przełączenie wdrażania (jednorazowo, ok. 10 min)
 
@@ -29,6 +29,10 @@ gałąź robocza ──push──► PR do main ──► CI: testy, typecheck, 
    Skopiuj cały wynik (razem z `FlyV1 `) do GitHuba: *Settings → Secrets and variables → Actions → New repository secret*, nazwa `FLY_API_TOKEN`.
 3. GitHub *Settings → Rules → Rulesets → New branch ruleset*: Target `main`, Enforcement **Active**, ✅ *Restrict deletions*, ✅ *Block force pushes*, ✅ *Require a pull request before merging* (**Required approvals: 0**, bo własnego PR nie da się zatwierdzić), ✅ *Require status checks to pass* → **`checks`**.
 4. Usuń gałąź `flyio-new-files` (utworzył ją kreator Fly; obowiązuje `fly.toml` z repozytorium).
+
+## Sekrety Fly
+
+Aplikacja nie potrzebuje żadnych sekretów: cała konfiguracja jest w `[env]` w `fly.toml`, a `fly secrets list -a acronote` ma być puste. Sekrety mają pierwszeństwo przed `[env]`, więc zbędny sekret po cichu zmienia ustawienie (tak było z `PORT=8080` z kreatora, zob. `WORKLOG.md`). Port na Fly to 8080 — numer nie ma znaczenia, ważne, żeby `PORT` i `internal_port` były równe.
 
 ## Administrator
 
@@ -64,7 +68,7 @@ Ograniczenia: jedna aktywna prośba na konto (nową można wysłać po odrzuceni
 
 | Kiedy | Gdzie | Jak |
 |---|---|---|
-| Przy pierwszym starcie każdej nowej wersji (przed migracjami) i co dobę | serwer, `/data/backups`, 14 ostatnich | automatycznie (`ACRONOTE_ENV=production`) |
+| Przy pierwszym starcie każdej nowej wersji (przed migracjami) i co dobę, o ile maszyna działa (sprawdzane przy starcie i co 6 h) | serwer, `/data/backups`, 14 ostatnich | automatycznie (`ACRONOTE_ENV=production`) |
 | Codziennie | snapshot wolumenu Fly (kilka dni wstecz) | automatycznie, `fly volumes snapshots list <id>` |
 | Raz w tygodniu (niedziela 19:00 albo przy najbliższym włączeniu komputera) | `Dokumenty\AcroNote-kopie\acronote-tygodniowa.db`, nadpisywany | `scripts\zaplanuj-kopie.bat` uruchom raz |
 | Na żądanie, np. przed dużym wdrożeniem | `Dokumenty\AcroNote-kopie\acronote-<data>.db` | dwuklik `scripts\pobierz-kopie.bat` |
@@ -91,7 +95,7 @@ Odtwarzanie u siebie: *Admin → Zgłoszenia → Szczegóły → Pobierz JSON*, 
 |---|---|---|
 | `ACRONOTE_ENV` | `production`: bez kont demo, ciasteczka `Secure`, kopie bazy | `production` |
 | `TRUST_PROXY` | liczba zaufanych proxy; za proxy limity żądań liczone są po `Fly-Client-IP` | `1` |
-| `PORT`, `HOST` | port i adres serwera (`internal_port` w `fly.toml`) | `3001`, `0.0.0.0` |
+| `PORT`, `HOST` | port i adres serwera; `PORT` musi być równy `internal_port` w `fly.toml` (lokalnie domyślnie 3001) | `8080`, `0.0.0.0` |
 | `DATABASE_PATH` | plik bazy, nie zmieniać | `/data/acronote.db` |
 | `BACKUP_DIR` | katalog kopii (domyślnie `backups` obok bazy) | — |
 | `ACRONOTE_VERSION` | wersja w aplikacji i zgłoszeniach | ustawiana przy wdrożeniu |

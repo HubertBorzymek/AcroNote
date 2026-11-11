@@ -179,3 +179,5 @@ h1,h2,p { margin-top: 0; } h1,h2,strong { font-family: Manrope, sans-serif; } .i
 }
 :root[data-theme="dark"] .rating-scale button.active{color:#0f1a15}
 a.button{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+.modal-backdrop.top{z-index:70}.confirm-dialog.two .button.secondary{grid-column:auto}.code-flag{display:inline-block;margin-top:4px;font-size:.68rem;font-weight:700;color:#8a5a00;background:#fff4dc;border-radius:6px;padding:2px 6px}.hint.warn{background:#fff4dc;border-left-color:#d79b1d;color:#6b4a00}
+:root[data-theme='dark'] .code-flag,:root[data-theme='dark'] .hint.warn{background:#3a2f17;color:#f1cf8a}

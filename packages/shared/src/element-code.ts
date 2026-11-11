@@ -8,17 +8,25 @@ export interface ParsedElementCode {
   twistDigits: number[];
   totalTwistHalves: number;
   totalTwists: number;
-  direction: ElementDirection;
+  /** Null for a jump without a somersault (o, <, /): it has no direction. */
+  direction: ElementDirection | null;
   position: ElementPosition;
   positionSymbol: 'o' | '<' | '/';
 }
 
 const positions: Record<string, ElementPosition> = { o: 'tuck', '<': 'pike', '/': 'straight' };
 
+export const MAX_ELEMENT_CODE_LENGTH = 20;
+
 /** Parses the complete AcroNote notation. It deliberately accepts no shorthand. */
 export function parseElementCode(value: unknown): ParsedElementCode | null {
   if (typeof value !== 'string') return null;
   const code = value.trim();
+  // A bare position symbol is a jump without somersault or twist (o, <, /).
+  if (/^[o<\/]$/i.test(code)) {
+    const positionSymbol = code.toLowerCase() as 'o' | '<' | '/';
+    return { code: positionSymbol, quarterCount: 0, saltoCount: 0, twistDigits: [], totalTwistHalves: 0, totalTwists: 0, direction: null, position: positions[positionSymbol]!, positionSymbol };
+  }
   const match = /^(\d+)([o<\/])$/i.exec(code);
   if (!match) return null;
   const digits = match[1]!;
@@ -55,8 +63,32 @@ export function parseElementCode(value: unknown): ParsedElementCode | null {
   };
 }
 
+export const INVALID_ELEMENT_CODE_MESSAGE = 'Kod elementu jest nieprawidłowy. Użyj pełnego kodu zakończonego znakiem o, < lub /.';
+
 export function validateElementCode(value: unknown): ParsedElementCode {
   const parsed = parseElementCode(value);
-  if (!parsed) throw new Error('Kod elementu jest nieprawidłowy. Użyj pełnego kodu zakończonego znakiem o, < lub /.');
+  if (!parsed) throw new Error(INVALID_ELEMENT_CODE_MESSAGE);
   return parsed;
+}
+
+export interface CheckedElementCode {
+  code: string;
+  /** Null when the user confirmed a code outside the notation. */
+  parsed: ParsedElementCode | null;
+}
+
+/**
+ * Accepts a code from the user. A code outside the notation is accepted only
+ * when the user confirmed it (allowNonStandard); it is stored as typed and has
+ * no derived fields.
+ */
+export function checkElementCode(value: unknown, allowNonStandard: boolean): CheckedElementCode {
+  const parsed = parseElementCode(value);
+  if (parsed) return { code: parsed.code, parsed };
+  if (!allowNonStandard) throw new Error(INVALID_ELEMENT_CODE_MESSAGE);
+  const code = typeof value === 'string' ? value.trim() : '';
+  if (!code) throw new Error('Kod elementu jest wymagany.');
+  if (code.length > MAX_ELEMENT_CODE_LENGTH) throw new Error(`Kod elementu może mieć najwyżej ${MAX_ELEMENT_CODE_LENGTH} znaków.`);
+  if (/[\p{C}]/u.test(code)) throw new Error('Kod elementu zawiera niedozwolone znaki.');
+  return { code, parsed: null };
 }
