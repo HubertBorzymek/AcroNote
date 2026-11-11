@@ -250,3 +250,10 @@ Weryfikacja: `npm test` 109/109 (API 73, web 36), `npm run typecheck`, `npm run 
 Niezweryfikowane: migracja na kopii prawdziwej bazy produkcyjnej (zrobić przed wdrożeniem: `scripts\pobierz-kopie.bat`, potem `check` na kopii), `backup-prod.ps1` i zadanie tygodniowe na prawdziwym Fly, build obrazu Docker po zmianach (sprawdzi CI), wygląd na prawdziwym iPhonie, to, czy Fly nadpisuje `Fly-Client-IP` wysłany przez klienta.
 
 Do zrobienia na końcu (z użytkownikiem): przełączenie wdrażania według `docs/DEPLOY.md`, usunięcie gałęzi `flyio-new-files`, pierwsze wdrożenie z `dev` przez PR do `main`, ustawienie 2FA na koncie `Hubert Borzymek` przy pierwszym wejściu do panelu.
+
+### Wdrożenie 2026-11-11 — awaria portu i naprawa
+
+- Pierwsze wdrożenie przez `deploy.yml` (5fbdcf1) zakończyło się błędem kontroli zdrowia: strona zwracała 503. Kreator Fly zapisał 6 listopada ustawienia jako **sekrety** (`PORT=8080`, `HOST`, `DATABASE_PATH`, `ACRONOTE_DEMO`, `ACRONOTE_BEHIND_PROXY`), a sekrety mają pierwszeństwo przed `[env]` z `fly.toml`. Aplikacja słuchała na 8080, a Fly kierował ruch na 3001.
+- Migracja v6 i kopia przed nią (`/data/backups/acronote-2026-11-11T14-28-12-015Z-0.4.0_5fbdcf1.db`) wykonały się poprawnie. Kopia lokalna: `Dokumenty\AcroNote-kopiecronote-przed-v6-2026-11-11.db`.
+- Naprawa bez zmiany sekretów: `fly.toml` przestawiony na `PORT`/`internal_port` 8080. Do zrobienia później: usunąć zbędne sekrety (`fly secrets unset PORT HOST DATABASE_PATH ACRONOTE_DEMO ACRONOTE_BEHIND_PROXY`) i wtedy można wrócić do 3001.
+- Lekcja: przed wdrożeniem porównać `fly secrets list` z `[env]` w `fly.toml`.
