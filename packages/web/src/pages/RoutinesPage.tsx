@@ -1,4 +1,5 @@
 import { FormEvent, useMemo, useState } from 'react';
+import { standardElementName } from '../elementCode';
 import { api } from '../api';
 import { useAsync, useUnsavedChanges } from '../hooks';
 import type { Routine, RoutineSlot } from '../types';
@@ -92,7 +93,7 @@ export function RoutinesPage({ setDirty }: { setDirty: (dirty: boolean) => void 
         <div className="sheet-actions"><button type="button" className="button secondary" onClick={close}>Anuluj</button><button className="button primary" disabled={saving || slots.length === 0}>{saving ? 'Zapisywanie…' : 'Zapisz układ'}</button></div>
       </form>
     </section></div>}
-    {picker !== null && <div className="modal-backdrop above"><section className="sheet picker"><PageHeader title="Wybierz element" onBack={() => setPicker(null)}/><div className="search"><Icon name="search"/><input autoFocus placeholder="Kod lub nazwa" value={query} onChange={(e) => setQuery(e.target.value)}/></div><ElementFilterControls value={pickerFilters} onChange={setPickerFilters}/><div className="pick-list">{filterElementChoices(elements.data ?? [], query, pickerFilters).map((item) => <button key={item.id} onClick={() => selectElement(item.id)}><strong>{item.code}</strong><span>{item.name || 'Bez nazwy'}</span>{item.favorite && <b>★</b>}</button>)}</div>{!filterElementChoices(elements.data ?? [], query, pickerFilters).length && <p className="picker-empty">Brak elementów pasujących do wyszukiwania i filtrów.</p>}</section></div>}
+    {picker !== null && <div className="modal-backdrop above"><section className="sheet picker"><PageHeader title="Wybierz element" onBack={() => setPicker(null)}/><div className="search"><Icon name="search"/><input autoFocus placeholder="Kod lub nazwa" value={query} onChange={(e) => setQuery(e.target.value)}/></div><ElementFilterControls value={pickerFilters} onChange={setPickerFilters}/><div className="pick-list">{filterElementChoices(elements.data ?? [], query, pickerFilters).map((item) => <button key={item.id} onClick={() => selectElement(item.id)}><strong>{item.code}</strong><span>{item.name || standardElementName(item.code) || 'Bez nazwy'}</span>{item.favorite && <b>★</b>}</button>)}</div>{!filterElementChoices(elements.data ?? [], query, pickerFilters).length && <p className="picker-empty">Brak elementów pasujących do wyszukiwania i filtrów.</p>}</section></div>}
     {message && <Toast message={message} kind={message.startsWith('Nie') ? 'error' : 'success'} onClose={() => setMessage('')}/>} 
   </div>;
 }

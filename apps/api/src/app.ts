@@ -12,7 +12,7 @@ import { openDatabase, seedExecutionTypes, usernameKey, type Db } from './db.js'
 import { clearTwoStep, hashToken, PASSWORD_MIN_LENGTH, registerAccountRoutes } from './accounts.js';
 import { getTraining, saveTraining, trainingSummary, type TrainingInput } from './training-service.js';
 import { newTimeRecords, timeStats } from './time-stats.js';
-import { validateElementCode } from '@acronote/shared';
+import { checkElementCode, type ParsedElementCode } from '@acronote/shared';
 import { registerBugReportRoutes } from './bug-reports.js';
 
 const bool = (value: unknown) => value ? 1 : 0;
@@ -180,14 +180,21 @@ export async function buildApp(options: AppOptions = {}) {
     return db.prepare(`SELECT id,code,name,favorite,hidden,quarter_count quarterCount,salto_count saltoCount,total_twist_halves/2.0 totalTwists,direction,position_symbol positionSymbol FROM elements WHERE ${conditions.join(' AND ')} ORDER BY favorite DESC,code`).all(...values);
   });
   app.post('/api/elements', auth, async (request,reply) => {
-    const b=request.body as any; const parsed=validateElementCode(b?.code); let id:number;
+    const b=request.body as any; const {code,parsed}=checkElementCode(b?.code,b?.allowNonStandardCode===true); const f=elementCodeFields(parsed); let id:number;
     // A soft-deleted element still owns its code (UNIQUE(user_id,code)), so re-adding the code revives that row.
-    const deleted=db.prepare('SELECT id FROM elements WHERE user_id=? AND code=? AND deleted_at IS NOT NULL').get(request.userId,parsed.code) as {id:number}|undefined;
-    if(deleted){id=deleted.id;db.prepare('UPDATE elements SET deleted_at=NULL,name=?,favorite=?,hidden=?,quarter_count=?,salto_count=?,total_twist_halves=?,direction=?,position_symbol=? WHERE id=?').run(b.name?.trim()||null,bool(b.favorite),bool(b.hidden),parsed.quarterCount,parsed.saltoCount,parsed.totalTwistHalves,parsed.direction,parsed.positionSymbol,id);}
-    else try{id=Number(db.prepare('INSERT INTO elements(user_id,code,name,favorite,hidden,quarter_count,salto_count,total_twist_halves,direction,position_symbol) VALUES(?,?,?,?,?,?,?,?,?,?)').run(request.userId,parsed.code,b.name?.trim()||null,bool(b.favorite),bool(b.hidden),parsed.quarterCount,parsed.saltoCount,parsed.totalTwistHalves,parsed.direction,parsed.positionSymbol).lastInsertRowid);}catch{return reply.status(409).send({message:'Element o tym kodzie już istnieje.'});}
-    return reply.status(201).send({id,code:parsed.code,name:b.name?.trim()||null,favorite:!!b.favorite,hidden:!!b.hidden,quarterCount:parsed.quarterCount,saltoCount:parsed.saltoCount,totalTwists:parsed.totalTwists,direction:parsed.direction,positionSymbol:parsed.positionSymbol});
+    const deleted=db.prepare('SELECT id FROM elements WHERE user_id=? AND code=? AND deleted_at IS NOT NULL').get(request.userId,code) as {id:number}|undefined;
+    if(deleted){id=deleted.id;db.prepare('UPDATE elements SET deleted_at=NULL,name=?,favorite=?,hidden=?,quarter_count=?,salto_count=?,total_twist_halves=?,direction=?,position_symbol=? WHERE id=?').run(b.name?.trim()||null,bool(b.favorite),bool(b.hidden),...f,id);}
+    else try{id=Number(db.prepare('INSERT INTO elements(user_id,code,name,favorite,hidden,quarter_count,salto_count,total_twist_halves,direction,position_symbol) VALUES(?,?,?,?,?,?,?,?,?,?)').run(request.userId,code,b.name?.trim()||null,bool(b.favorite),bool(b.hidden),...f).lastInsertRowid);}catch{return reply.status(409).send({message:'Element o tym kodzie już istnieje.'});}
+    return reply.status(201).send({id,code,name:b.name?.trim()||null,favorite:!!b.favorite,hidden:!!b.hidden,quarterCount:parsed?.quarterCount??null,saltoCount:parsed?.saltoCount??null,totalTwists:parsed?.totalTwists??null,direction:parsed?.direction??null,positionSymbol:parsed?.positionSymbol??null});
   });
-  app.put('/api/elements/:id', auth, async (request,reply) => { const b=request.body as any; const parsed=validateElementCode(b?.code); const id=Number((request.params as any).id); const clash=db.prepare('SELECT deleted_at FROM elements WHERE user_id=? AND code=? AND id<>?').get(request.userId,parsed.code,id) as {deleted_at:string|null}|undefined; if(clash)return reply.status(409).send({message:clash.deleted_at?'Element o tym kodzie został wcześniej usunięty. Dodaj go jako nowy element, aby go przywrócić.':'Element o tym kodzie już istnieje.'}); const info=db.prepare('UPDATE elements SET code=?,name=?,favorite=?,hidden=?,quarter_count=?,salto_count=?,total_twist_halves=?,direction=?,position_symbol=? WHERE id=? AND user_id=? AND deleted_at IS NULL').run(parsed.code,b.name?.trim()||null,bool(b.favorite),bool(b.hidden),parsed.quarterCount,parsed.saltoCount,parsed.totalTwistHalves,parsed.direction,parsed.positionSymbol,id,request.userId); if(!info.changes)throw new Error('Nie znaleziono elementu.'); return {ok:true}; });
+  app.put('/api/elements/:id', auth, async (request,reply) => {
+    const b=request.body as any; const id=Number((request.params as any).id);
+    const current=db.prepare('SELECT code FROM elements WHERE id=? AND user_id=? AND deleted_at IS NULL').get(id,request.userId) as {code:string}|undefined; if(!current)throw new Error('Nie znaleziono elementu.');
+    // Keeping an already saved non-standard code (e.g. toggling favourite) needs no new confirmation.
+    const {code,parsed}=checkElementCode(b?.code,b?.allowNonStandardCode===true||(typeof b?.code==='string'&&b.code.trim()===current.code));
+    const clash=db.prepare('SELECT deleted_at FROM elements WHERE user_id=? AND code=? AND id<>?').get(request.userId,code,id) as {deleted_at:string|null}|undefined; if(clash)return reply.status(409).send({message:clash.deleted_at?'Element o tym kodzie został wcześniej usunięty. Dodaj go jako nowy element, aby go przywrócić.':'Element o tym kodzie już istnieje.'});
+    db.prepare('UPDATE elements SET code=?,name=?,favorite=?,hidden=?,quarter_count=?,salto_count=?,total_twist_halves=?,direction=?,position_symbol=? WHERE id=? AND user_id=? AND deleted_at IS NULL').run(code,b.name?.trim()||null,bool(b.favorite),bool(b.hidden),...elementCodeFields(parsed),id,request.userId); return {ok:true};
+  });
   app.get('/api/elements/:id/usage', auth, async request => elementUsage(db,request.userId,Number((request.params as any).id)));
   app.delete('/api/elements/:id', auth, async request => {
     const id=Number((request.params as any).id); const q=request.query as any; const element=db.prepare('SELECT code,name FROM elements WHERE id=? AND user_id=?').get(id,request.userId) as any; if(!element)throw new Error('Nie znaleziono elementu.');
@@ -381,3 +388,6 @@ function coachElementHistory(db:Db,userId:number,id:number,reply:any){
   for(const row of [...direct,...nested]){const item=map.get(row.trainingId)??{trainingId:row.trainingId,date:row.date,count:0,landingMap:new Map<string,number>()};const count=Number(row.count);item.count+=count;item.landingMap.set(row.landing,(item.landingMap.get(row.landing)??0)+count);map.set(row.trainingId,item);}
   return [...map.values()].sort((a,b)=>a.date.localeCompare(b.date)||a.trainingId-b.trainingId).map(({landingMap,...item})=>({...item,landings:[...landingMap.entries()].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name,'pl'))}));
 }
+
+/** Derived catalog columns; all null for a confirmed non-standard code. */
+function elementCodeFields(parsed:ParsedElementCode|null){return [parsed?.quarterCount??null,parsed?.saltoCount??null,parsed?.totalTwistHalves??null,parsed?.direction??null,parsed?.positionSymbol??null] as const;}

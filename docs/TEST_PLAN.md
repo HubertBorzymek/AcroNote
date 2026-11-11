@@ -58,6 +58,7 @@ Testy nie używają pliku `data/acronote.db`. Każdy zestaw integracyjny otrzymu
 | T39 | Prywatna ocena | Ocena i komentarz nie trafiają do trenera, administratora ani zgłoszenia; zapis admina ich nie zmienia (`times-rating.test.ts`) |
 | T40 | Reset z zatwierdzeniem | Bez zgody nic nie działa; tylko urządzenie z prośbą ustawia hasło; zgoda jednorazowa i z terminem; jedna aktywna prośba na konto (`accounts.test.ts`) |
 | T41 | Weryfikacja dwuetapowa | Sesja po haśle ograniczona do kodu; panel wymaga ustawienia 2FA; limit błędnych kodów; kody zapasowe jednorazowe (`accounts.test.ts`) |
+| T43 | Skoki i kody spoza notacji | `o`, `<`, `/` to poprawne skoki bez salta (filtr „Bez salta”); kod spoza notacji zapisuje się tylko po potwierdzeniu i bez wyliczonych pól; zmiana ulubionego nie wymaga ponownego potwierdzenia; cudzego elementu nie da się edytować (`element-code.test.ts`, `admin-elements.test.ts`, `elementCode.test.ts`, `elementFilters.test.ts`) |
 | T42 | Symbole iOS | W `.tsx`/`.css` nie ma znaków, które iOS rysuje jako emoji (`symbols.test.ts`) |
 
 ## Konta i uprawnienia

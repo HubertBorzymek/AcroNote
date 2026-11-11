@@ -128,6 +128,11 @@
 - Ozdobne znaki zastąpione ikonami SVG (na iPhonie strzałka rysowała się jako niebieskie emoji).
 - Migracja v6. Skrypty kopii produkcyjnej bazy na komputer: na żądanie i co tydzień.
 
+## Iteracja 2026-11-11 (2) — skoki i kody spoza notacji (gałąź `dev`, niewdrożona)
+
+- `o` (kuczka), `<` (rozkroczka), `/` (poziomka) są poprawnymi kodami elementów bez salta i śruby. Nazwa pokazuje się, gdy nie ma własnej, i działa w wyszukiwaniu. Filtry mają opcję „Element bez salta”.
+- Kod spoza notacji (np. `4o`) można dodać po potwierdzeniu „Niepoprawny kod… Czy na pewno?” (Tak/Nie) na stronie *Elementy* i w okienku wyboru elementu w treningu. Na liście ma oznaczenie „kod spoza notacji” i nie trafia do filtrów kodu.
+
 ## Świadomie odłożone
 
 - Cele treningowe i grupy klubowe. (Odzyskiwanie konta: prośba z numerem z ekranu logowania, zatwierdzana przez administratora.)

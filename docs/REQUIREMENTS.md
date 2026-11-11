@@ -36,9 +36,10 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **EL-06:** usunięcie lub ukrycie elementu nie usuwa jego historycznych wykonań ani nie zmienia statystyk.
 - **EL-07:** element utworzony podczas edycji wejścia trafia na stałą listę użytkownika i może zostać od razu wybrany.
 - **EL-08:** aplikacja waliduje i interpretuje kod wyłącznie na potrzeby filtrów; nie tworzy globalnego katalogu elementów ani nie dopisuje nazwy automatycznie.
-- **EL-09:** kod kończy się `o`, `<` albo `/`; zawiera liczbę ćwiartek od 1 do 12 oraz dokładnie `max(1, floor(ćwiartki / 4))` cyfr opisujących półobroty śrub.
+- **EL-09:** kod kończy się `o`, `<` albo `/`; zawiera liczbę ćwiartek od 1 do 12 oraz dokładnie `max(1, floor(ćwiartki / 4))` cyfr opisujących półobroty śrub. Sam znak jest poprawnym kodem elementu bez salta i śruby (0 salt, 0 śrub, bez kierunku; od 2026-11-11): `o` kuczka, `<` rozkroczka, `/` poziomka. Te nazwy aplikacja pokazuje (i wyszukuje), gdy użytkownik nie nadał własnej; nie zapisuje ich.
 - **EL-10:** filtry obejmują liczbę salt, sumę śrub, kierunek wyliczony z parzystości sumy półobrotów oraz pozycję końcową.
 - **EL-11:** te same filtry są dostępne na głównej liście oraz podczas wyboru istniejącego elementu do układu i wejścia treningowego.
+- **EL-12:** kod spoza notacji (np. `4o`, `40`) można zapisać po potwierdzeniu w oknie „Niepoprawny kod” (Tak/Nie). API przyjmuje go tylko z jawnym `allowNonStandardCode` (albo gdy kod zapisanego elementu się nie zmienia), zapisuje go bez wyliczonych pól, więc filtry salt, śrub, kierunku i pozycji go pomijają. Maksymalnie 20 znaków, bez znaków sterujących.
 
 ### Układy
 

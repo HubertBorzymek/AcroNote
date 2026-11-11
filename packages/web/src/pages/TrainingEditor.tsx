@@ -2,7 +2,8 @@ import { FormEvent, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { today, useAsync, useUnsavedChanges } from '../hooks';
 import type { Activity, ElementItem, ExecutionType, Routine, TimeRecord, Training, TrainingEntry } from '../types';
-import { Counter, ErrorState, Icon, Loading, PageHeader, Toast } from '../components/ui';
+import { CodeHint, ConfirmDialog, Counter, ErrorState, Icon, Loading, NonStandardCodeText, PageHeader, Toast } from '../components/ui';
+import { parseElementCode, standardElementName } from '../elementCode';
 import { ElementFilterControls, emptyElementFilters, filterElementChoices } from '../elementFilters';
 import { formatTime, parseSeconds } from '../time';
 
@@ -220,15 +221,18 @@ function ElementPicker({ entryNumber, elements, onCreated, onPick, onClose }: { 
   const [favorite, setFavorite] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [confirmCode, setConfirmCode] = useState(false);
   const [filters, setFilters] = useState(emptyElementFilters);
   const list = filterElementChoices(elements, query, filters);
-  async function create(event: FormEvent) {
-    event.preventDefault(); setSaving(true); setError('');
-    try { const element = await api.createElement({ code: query.trim(), name: name.trim(), favorite, hidden: false }); onCreated(element); setCreating(false); setName(''); }
+  async function create(event?: FormEvent, allowNonStandardCode = false) {
+    event?.preventDefault();
+    if (!allowNonStandardCode && !parseElementCode(query)) { setConfirmCode(true); return; }
+    setConfirmCode(false); setSaving(true); setError('');
+    try { const element = await api.createElement({ code: query.trim(), name: name.trim(), favorite, hidden: false }, allowNonStandardCode); onCreated(element); setCreating(false); setName(''); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Nie udało się dodać elementu.'); }
     finally { setSaving(false); }
   }
-  return <div className="modal-backdrop above"><section className="sheet picker"><PageHeader title={creating ? 'Nowy element' : 'Dodaj element'} eyebrow={`Wejście ${entryNumber}`} onBack={creating ? () => setCreating(false) : onClose}/>{creating ? <form className="form-stack" onSubmit={create}><p className="picker-return">Po zapisaniu wrócisz do wyboru elementu w tym wejściu.</p><label>Kod elementu<input autoFocus required value={query} onChange={(e) => setQuery(e.target.value)} placeholder="np. 41o"/></label><label>Nazwa <span className="optional">opcjonalnie</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="np. Barani"/></label><label className="check-row"><input type="checkbox" checked={favorite} onChange={(e) => setFavorite(e.target.checked)}/><span><strong>Dodaj do ulubionych</strong></span></label>{error && <p className="form-error">{error}</p>}<button className="button primary full" disabled={saving}>{saving ? 'Dodaję…' : 'Dodaj i wróć'}</button></form> : <><div className="search"><Icon name="search"/><input autoFocus placeholder="Wpisz kod lub nazwę" value={query} onChange={(e) => setQuery(e.target.value)}/></div><ElementFilterControls value={filters} onChange={setFilters}/><button className="button secondary full picker-create" onClick={() => setCreating(true)}><Icon name="plus"/> Dodaj nowy element{query ? ` „${query}”` : ''}</button><div className="pick-list">{list.map((item) => <button key={item.id} onClick={() => onPick(item)}><strong>{item.code}</strong><span>{item.name || 'Bez nazwy'}</span>{item.favorite && <b>★</b>}</button>)}</div>{!list.length && <p className="picker-empty">Nie ma takiego elementu. Zmień filtry albo dodaj go tutaj bez utraty treningu.</p>}</>}</section></div>;
+  return <div className="modal-backdrop above"><section className="sheet picker"><PageHeader title={creating ? 'Nowy element' : 'Dodaj element'} eyebrow={`Wejście ${entryNumber}`} onBack={creating ? () => setCreating(false) : onClose}/>{creating ? <form className="form-stack" onSubmit={create}><p className="picker-return">Po zapisaniu wrócisz do wyboru elementu w tym wejściu.</p><label>Kod elementu<input autoFocus required value={query} onChange={(e) => setQuery(e.target.value)} placeholder="np. 41o"/></label><CodeHint code={query}/><label>Nazwa <span className="optional">opcjonalnie</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="np. Barani"/></label><label className="check-row"><input type="checkbox" checked={favorite} onChange={(e) => setFavorite(e.target.checked)}/><span><strong>Dodaj do ulubionych</strong></span></label>{error && <p className="form-error">{error}</p>}<button className="button primary full" disabled={saving}>{saving ? 'Dodaję…' : 'Dodaj i wróć'}</button>{confirmCode && <ConfirmDialog title="Niepoprawny kod" confirmLabel="Tak, dodaj" onCancel={() => setConfirmCode(false)} onConfirm={() => void create(undefined, true)}><NonStandardCodeText code={query}/></ConfirmDialog>}</form> : <><div className="search"><Icon name="search"/><input autoFocus placeholder="Wpisz kod lub nazwę" value={query} onChange={(e) => setQuery(e.target.value)}/></div><ElementFilterControls value={filters} onChange={setFilters}/><button className="button secondary full picker-create" onClick={() => setCreating(true)}><Icon name="plus"/> Dodaj nowy element{query ? ` „${query}”` : ''}</button><div className="pick-list">{list.map((item) => <button key={item.id} onClick={() => onPick(item)}><strong>{item.code}</strong><span>{item.name || standardElementName(item.code) || 'Bez nazwy'}</span>{item.favorite && <b>★</b>}</button>)}</div>{!list.length && <p className="picker-empty">Nie ma takiego elementu. Zmień filtry albo dodaj go tutaj bez utraty treningu.</p>}</>}</section></div>;
 }
 
 function RoutinePicker({ entryNumber, routines, elements, onRoutineUpdated, onPick, onClose }: { entryNumber: number; routines: Routine[]; elements: ElementItem[]; onRoutineUpdated: (routine: Routine) => void; onPick: (routine: Routine, start: number, end: number) => void; onClose: () => void }) {
