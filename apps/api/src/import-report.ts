@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseElementCode } from '@acronote/shared';
-import { openDatabase, resolveDatabasePath, type Db } from './db.js';
+import { defaultApparatus, openDatabase, resolveDatabasePath, type Db } from './db.js';
 import { SNAPSHOT_FORMAT } from './bug-reports.js';
 
 export async function importSnapshot(db: Db, snapshot: any, baseName: string): Promise<{ userId: number; username: string; password: string }> {
@@ -21,6 +21,10 @@ export async function importSnapshot(db: Db, snapshot: any, baseName: string): P
       .run(username, hash, snapshot.user?.athleteEnabled === false ? 0 : 1, snapshot.user?.coachEnabled ? 1 : 0).lastInsertRowid);
     const types = new Map<number, number>(); const elements = new Map<number, number>(); const routines = new Map<number, number>();
     const mapped = (map: Map<number, number>, id: unknown) => id == null ? null : map.get(Number(id)) ?? null;
+    // Reports from before v7 have no apparatus: everything was on the trampoline (the defaults).
+    const apparatus = new Map<number, number>();
+    for (const a of snapshot.apparatus ?? []) apparatus.set(a.id, Number(db.prepare('INSERT INTO apparatus(user_id,name,sort_order,catalog,tracks_time,hidden,deleted_at) VALUES(?,?,?,?,?,?,?)').run(userId, a.name, a.sortOrder ?? 0, a.catalog === 'tumbling' ? 'tumbling' : 'trampoline', a.tracksTime ? 1 : 0, a.hidden ? 1 : 0, a.deletedAt ?? null).lastInsertRowid));
+    const fallbackApparatus = defaultApparatus(db, userId);
     for (const t of snapshot.executionTypes ?? []) types.set(t.id, Number(db.prepare('INSERT INTO execution_types(user_id,name,sort_order,hidden,deleted_at) VALUES(?,?,?,?,?)').run(userId, t.name, t.sortOrder ?? 0, t.hidden ? 1 : 0, t.deletedAt ?? null).lastInsertRowid));
     for (const e of snapshot.elements ?? []) {
       const p = parseElementCode(e.code);
@@ -28,7 +32,7 @@ export async function importSnapshot(db: Db, snapshot: any, baseName: string): P
         .run(userId, e.code, e.name ?? null, e.favorite ? 1 : 0, e.hidden ? 1 : 0, e.deletedAt ?? null, p?.quarterCount ?? null, p?.saltoCount ?? null, p?.totalTwistHalves ?? null, p?.direction ?? null, p?.positionSymbol ?? null).lastInsertRowid));
     }
     for (const r of snapshot.routines ?? []) {
-      const id = Number(db.prepare('INSERT INTO routines(user_id,name,template_version,slot_count,deleted_at) VALUES(?,?,?,?,?)').run(userId, r.name, r.templateVersion ?? 1, r.slotCount ?? 10, r.deletedAt ?? null).lastInsertRowid);
+      const id = Number(db.prepare('INSERT INTO routines(user_id,name,template_version,slot_count,apparatus_id,deleted_at) VALUES(?,?,?,?,?,?)').run(userId, r.name, r.templateVersion ?? 1, r.slotCount ?? 10, mapped(apparatus, r.apparatusId) ?? fallbackApparatus.id, r.deletedAt ?? null).lastInsertRowid);
       routines.set(r.id, id);
       for (const item of r.items ?? []) db.prepare('INSERT INTO routine_items(routine_id,position,element_id,code_snapshot,name_snapshot) VALUES(?,?,?,?,?)').run(id, item.position, mapped(elements, item.elementId), item.code, item.name ?? null);
     }
@@ -39,7 +43,8 @@ export async function importSnapshot(db: Db, snapshot: any, baseName: string): P
       if (!t) continue;
       const trainingId = Number(db.prepare('INSERT INTO trainings(user_id,training_date,created_at,updated_at) VALUES(?,?,?,?)').run(userId, t.date, t.createdAt, t.updatedAt).lastInsertRowid);
       for (const entry of t.entries ?? []) {
-        const entryId = Number(db.prepare('INSERT INTO training_entries(training_id,position,default_execution_type_id,default_execution_type_name) VALUES(?,?,?,?)').run(trainingId, entry.position, mapped(types, entry.defaultExecutionTypeId), entry.defaultExecutionTypeName).lastInsertRowid);
+        const entryApparatus = mapped(apparatus, entry.apparatusId);
+        const entryId = Number(db.prepare('INSERT INTO training_entries(training_id,position,default_execution_type_id,default_execution_type_name,apparatus_id,apparatus_name) VALUES(?,?,?,?,?,?)').run(trainingId, entry.position, mapped(types, entry.defaultExecutionTypeId), entry.defaultExecutionTypeName, entryApparatus ?? fallbackApparatus.id, entryApparatus ? entry.apparatusName : fallbackApparatus.name).lastInsertRowid);
         for (const a of entry.activities ?? []) {
           const activityId = Number(addActivity.run(entryId, a.position, a.kind, a.repetitions, mapped(types, a.executionTypeId), a.executionTypeName, mapped(elements, a.sourceElementId), a.code ?? null, a.name ?? null,
             mapped(routines, a.sourceRoutineId), a.sourceRoutineName ?? null, a.sourceTemplateVersion ?? null, a.rangeStart ?? null, a.rangeEnd ?? null, a.isFullRange ? 1 : 0, a.matchedOriginalTemplate ? 1 : 0).lastInsertRowid);

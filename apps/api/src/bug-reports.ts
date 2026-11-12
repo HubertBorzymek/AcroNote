@@ -15,7 +15,7 @@ const SNAPSHOT_TRAINING_LIMIT = 200;
  */
 export function buildUserSnapshot(db: Db, userId: number) {
   const user = db.prepare('SELECT username,athlete_enabled athleteEnabled,coach_enabled coachEnabled,created_at createdAt FROM users WHERE id=?').get(userId) as any;
-  const routines = db.prepare('SELECT id,name,template_version templateVersion,slot_count slotCount,deleted_at deletedAt FROM routines WHERE user_id=? ORDER BY id').all(userId) as any[];
+  const routines = db.prepare('SELECT id,name,template_version templateVersion,slot_count slotCount,apparatus_id apparatusId,deleted_at deletedAt FROM routines WHERE user_id=? ORDER BY id').all(userId) as any[];
   const items = db.prepare('SELECT position,element_id elementId,code_snapshot code,name_snapshot name FROM routine_items WHERE routine_id=? ORDER BY position');
   for (const routine of routines) routine.items = items.all(routine.id);
   const trainingIds = db.prepare('SELECT id FROM trainings WHERE user_id=? ORDER BY training_date DESC,id DESC LIMIT ?').all(userId, SNAPSHOT_TRAINING_LIMIT) as { id: number }[];
@@ -24,6 +24,7 @@ export function buildUserSnapshot(db: Db, userId: number) {
     format: SNAPSHOT_FORMAT, version: 1, createdAt: new Date().toISOString(),
     user: { ...user, athleteEnabled: !!user?.athleteEnabled, coachEnabled: !!user?.coachEnabled },
     executionTypes: db.prepare('SELECT id,name,sort_order sortOrder,hidden,deleted_at deletedAt FROM execution_types WHERE user_id=? ORDER BY sort_order,id').all(userId),
+    apparatus: db.prepare('SELECT id,name,sort_order sortOrder,catalog,tracks_time tracksTime,hidden,deleted_at deletedAt FROM apparatus WHERE user_id=? ORDER BY sort_order,id').all(userId),
     elements: db.prepare('SELECT id,code,name,favorite,hidden,deleted_at deletedAt,created_at createdAt FROM elements WHERE user_id=? ORDER BY id').all(userId),
     routines,
     trainings: trainingIds.map(row => getTraining(db, userId, row.id)).reverse(),

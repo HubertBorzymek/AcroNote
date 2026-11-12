@@ -2,13 +2,16 @@ import { FormEvent, useMemo, useState } from 'react';
 import { standardElementName } from '../elementCode';
 import { api } from '../api';
 import { useAsync, useUnsavedChanges } from '../hooks';
-import type { Routine, RoutineSlot } from '../types';
+import type { Apparatus, Routine, RoutineSlot } from '../types';
 import { EmptyState, ErrorState, Icon, Loading, PageHeader, Toast } from '../components/ui';
 import { ElementFilterControls, emptyElementFilters, filterElementChoices } from '../elementFilters';
 
 export function RoutinesPage({ setDirty }: { setDirty: (dirty: boolean) => void }) {
   const routines = useAsync(api.routines, []);
   const elements = useAsync(() => api.elements(false), []);
+  const apparatus = useAsync(() => api.apparatus().catch(() => [] as Apparatus[]), []);
+  const [apparatusId, setApparatusId] = useState('');
+  const [shown, setShown] = useState('all');
   const [editing, setEditing] = useState<Routine | 'new' | null>(null);
   const [name, setName] = useState('');
   const [slots, setSlots] = useState<RoutineSlot[]>([]);
@@ -27,7 +30,9 @@ export function RoutinesPage({ setDirty }: { setDirty: (dirty: boolean) => void 
   }, [slots]);
 
   function open(item: Routine | 'new') {
+    const visible = (apparatus.data ?? []).filter((x) => !x.hidden);
     setEditing(item); setName(item === 'new' ? '' : item.name);
+    setApparatusId(item === 'new' ? (shown !== 'all' ? shown : visible[0]?.id ?? '') : item.apparatusId ?? visible[0]?.id ?? '');
     setSlots(item === 'new' ? [] : item.slots.map((slot, index) => ({ ...slot, position: index + 1 })));
     markDirty(false);
   }
@@ -53,7 +58,7 @@ export function RoutinesPage({ setDirty }: { setDirty: (dirty: boolean) => void 
   async function save(event: FormEvent) {
     event.preventDefault(); setSaving(true);
     try {
-      const input = { name, slots: slots.map(({ elementId, code, name, position }) => ({ elementId, code, name, position })) };
+      const input = { name, apparatusId: apparatusId || undefined, slots: slots.map(({ elementId, code, name, position }) => ({ elementId, code, name, position })) };
       editing === 'new' ? await api.createRoutine(input) : editing && await api.updateRoutine(editing.id, input);
       await routines.reload(); setEditing(null); markDirty(false); setMessage('Układ został zapisany. Poprzednie treningi zachowują własne migawki.');
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Nie udało się zapisać układu.'); }
@@ -67,11 +72,16 @@ export function RoutinesPage({ setDirty }: { setDirty: (dirty: boolean) => void 
 
   if (routines.loading || elements.loading) return <Loading/>;
   if (routines.error || elements.error) return <ErrorState message={routines.error || elements.error} retry={() => void Promise.all([routines.reload(), elements.reload()])}/>;
+  const apparatusOptions = (apparatus.data ?? []).filter((x) => !x.hidden);
+  const multipleApparatus = apparatusOptions.length > 1;
+  const listed = (routines.data ?? []).filter((routine) => shown === 'all' || !routine.apparatusId || routine.apparatusId === shown);
   return <div className="page">
     <PageHeader title="Moje układy" eyebrow={`${routines.data?.length ?? 0} zapisanych`} action={<button className="button primary compact" onClick={() => open('new')}><Icon name="plus"/> Dodaj</button>}/>
+    {multipleApparatus && !!routines.data?.length && <div className="filter-row" role="group" aria-label="Sprzęt">{[{ id: 'all', name: 'Wszystkie' }, ...apparatusOptions].map((item) => <button key={item.id} className={shown === item.id ? 'active' : ''} aria-pressed={shown === item.id} onClick={() => setShown(item.id)}>{item.name}</button>)}</div>}
     {!routines.data?.length ? <EmptyState icon="routine" title="Stwórz pierwszy układ" description="Ułóż elementy w kolejności. Późniejsze zmiany nie wpłyną na historię treningów." action={<button className="button primary" onClick={() => open('new')}>Utwórz układ</button>}/>
-      : <div className="routine-list">{routines.data.map((routine) => <article className="routine-card" key={routine.id}>
-        <div className="routine-heading"><div><span>Układ</span><h2>{routine.name}</h2></div><button className="icon-button" aria-label="Edytuj układ" onClick={() => open(routine)}><Icon name="more"/></button></div>
+      : !listed.length ? <p className="chart-empty">Brak układów na ten sprzęt.</p>
+      : <div className="routine-list">{listed.map((routine) => <article className="routine-card" key={routine.id}>
+        <div className="routine-heading"><div><span>{multipleApparatus && routine.apparatusName ? `Układ · ${routine.apparatusName}` : 'Układ'}</span><h2>{routine.name}</h2></div><button className="icon-button" aria-label="Edytuj układ" onClick={() => open(routine)}><Icon name="more"/></button></div>
         <div className="routine-preview">{routine.slots.map((slot, index) => <span key={slot.id ?? `${slot.elementId}-${index}`}><small>{index + 1}</small>{slot.code ?? elements.data?.find((x) => x.id === slot.elementId)?.code ?? '—'}</span>)}</div>
         <footer><span>{routine.slots.length} {routine.slots.length === 1 ? 'element' : 'elementów'}</span><button onClick={() => open(routine)}>Edytuj</button><button className="danger-link" onClick={() => void remove(routine)}>Usuń</button></footer>
       </article>)}</div>}
@@ -80,6 +90,10 @@ export function RoutinesPage({ setDirty }: { setDirty: (dirty: boolean) => void 
       <PageHeader title={editing === 'new' ? 'Nowy układ' : 'Edytuj układ'} onBack={close}/>
       <form onSubmit={save} className="form-stack">
         <label>Nazwa układu<input value={name} onChange={(e) => { setName(e.target.value); markDirty(true); }} required placeholder="np. Układ 1" autoFocus/></label>
+        {(multipleApparatus || (apparatusId && !apparatusOptions.some((x) => x.id === apparatusId))) && <label>Sprzęt<select value={apparatusId} onChange={(e) => { setApparatusId(e.target.value); markDirty(true); }}>
+          {apparatusId && !apparatusOptions.some((x) => x.id === apparatusId) && <option value={apparatusId} disabled>{(apparatus.data ?? []).find((x) => x.id === apparatusId)?.name ?? 'Usunięty sprzęt'}</option>}
+          {apparatusOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select><small>Układ pojawi się przy wejściach na tym sprzęcie.</small></label>}
         <div className="field-label"><span>Elementy układu</span><small>{slots.length} / dowolna liczba</small></div>
         <div className="slot-list">
           {slots.map((slot, index) => <div className={`slot ${duplicateIds.has(slot.elementId) ? 'duplicate' : ''}`} key={`${slot.elementId}-${index}`}>

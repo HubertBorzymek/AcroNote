@@ -1,5 +1,5 @@
 import { recordRequest, type Diagnostics } from './diagnostics';
-import type { Activity, AdminBugReport, AdminBugReportSummary, AdminSummary, AdminUser, BugReportSummary, OwnPasswordReset, PasswordResetRequest, TimeStats, TwoStepSetup, AdminUserData, CoachAthlete, CoachInvitation, CoachLink, ElementHistoryItem, ElementItem, ExecutionType, LandingCount, Routine, RoutineSlot, StatsSummary, Training, TrainingEntry, User } from './types';
+import type { Activity, AdminBugReport, Apparatus, AdminBugReportSummary, AdminSummary, AdminUser, BugReportSummary, OwnPasswordReset, PasswordResetRequest, TimeStats, TwoStepSetup, AdminUserData, CoachAthlete, CoachInvitation, CoachLink, ElementHistoryItem, ElementItem, ExecutionType, LandingCount, Routine, RoutineSlot, StatsSummary, Training, TrainingEntry, User } from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public details?: unknown) {
@@ -44,10 +44,10 @@ function landingCounts(value: unknown): LandingCount[] {
 
 type RawRoutine = Omit<Routine, 'id' | 'slots'> & { id: unknown; items?: Array<Record<string, unknown>>; slots?: Array<Record<string, unknown>> };
 function mapRoutine(raw: RawRoutine): Routine {
-  return { ...raw, id: String(raw.id), slots: (raw.items ?? raw.slots ?? []).map((item, index): RoutineSlot => ({ id: id(item.id), elementId: id(item.elementId ?? item.sourceElementId) ?? '', position: Number(item.position ?? index + 1), code: item.code as string | undefined, name: item.name as string | null | undefined })) };
+  return { ...raw, id: String(raw.id), apparatusId: id(raw.apparatusId), slots: (raw.items ?? raw.slots ?? []).map((item, index): RoutineSlot => ({ id: id(item.id), elementId: id(item.elementId ?? item.sourceElementId) ?? '', position: Number(item.position ?? index + 1), code: item.code as string | undefined, name: item.name as string | null | undefined })) };
 }
-function routineBody(input: Pick<Routine, 'name' | 'slots'>) {
-  return { name: input.name, items: input.slots.map((slot, index) => ({ elementId: apiId(slot.elementId), code: slot.code, name: slot.name ?? null, position: index + 1 })) };
+function routineBody(input: Pick<Routine, 'name' | 'slots' | 'apparatusId'>) {
+  return { name: input.name, apparatusId: apiId(input.apparatusId), items: input.slots.map((slot, index) => ({ elementId: apiId(slot.elementId), code: slot.code, name: slot.name ?? null, position: index + 1 })) };
 }
 function mapActivity(raw: Record<string, unknown>): Activity {
   const kind = (raw.kind ?? raw.type) as 'element' | 'routine';
@@ -66,10 +66,10 @@ function activityBody(activity: Activity) {
     elements: activity.elements?.map((item, index) => ({ sourceElementId: apiId(item.elementId), code: item.code, name: item.name ?? null, executionTypeId: apiId(item.executionTypeId), executionTypeName: item.executionTypeName, timeMs: item.timeMs ?? null, position: index + 1 })) };
 }
 function trainingBody(input: Pick<Training, 'date' | 'entries' | 'rating' | 'comment'>) {
-  return { date: input.date, ...('rating' in input && { rating: input.rating ?? null }), ...('comment' in input && { comment: input.comment ?? null }), entries: input.entries.map((entry) => ({ defaultExecutionTypeId: apiId(entry.defaultExecutionTypeId), defaultExecutionTypeName: entry.defaultExecutionTypeName, activities: entry.activities.map(activityBody) })) };
+  return { date: input.date, ...('rating' in input && { rating: input.rating ?? null }), ...('comment' in input && { comment: input.comment ?? null }), entries: input.entries.map((entry) => ({ defaultExecutionTypeId: apiId(entry.defaultExecutionTypeId), defaultExecutionTypeName: entry.defaultExecutionTypeName, apparatusId: apiId(entry.apparatusId), apparatusName: entry.apparatusName, activities: entry.activities.map(activityBody) })) };
 }
 function mapTraining(raw: Record<string, unknown>): Training {
-  const mapped = { ...(raw as unknown as Training), id: String(raw.id), date: String(raw.date), entries: ((raw.entries ?? []) as Array<Record<string, unknown>>).map((entry): TrainingEntry => ({ id: id(entry.id), defaultExecutionTypeId: id(entry.defaultExecutionTypeId), defaultExecutionTypeName: String(entry.defaultExecutionTypeName ?? ''), activities: ((entry.activities ?? []) as Array<Record<string, unknown>>).map(mapActivity) })) };
+  const mapped = { ...(raw as unknown as Training), id: String(raw.id), date: String(raw.date), entries: ((raw.entries ?? []) as Array<Record<string, unknown>>).map((entry): TrainingEntry => ({ id: id(entry.id), defaultExecutionTypeId: id(entry.defaultExecutionTypeId), defaultExecutionTypeName: String(entry.defaultExecutionTypeName ?? ''), apparatusId: id(entry.apparatusId), apparatusName: entry.apparatusName == null ? undefined : String(entry.apparatusName), activities: ((entry.activities ?? []) as Array<Record<string, unknown>>).map(mapActivity) })) };
   if (raw.entriesCount != null || raw.totalElements != null) mapped.summary = { entries: Number(raw.entriesCount ?? 0), elements: Number(raw.totalElements ?? 0), fullRoutines: 0, fragments: 0, byCode: [] };
   return mapped;
 }
@@ -90,10 +90,13 @@ export const api = {
   deleteElement: (id: string, removeFromRoutines = false) => request<void>(`/elements/${id}?routineHandling=${removeFromRoutines ? 'remove' : 'keep'}`, { method: 'DELETE' }),
 
   routines: async () => (await request<RawRoutine[]>('/routines')).map(mapRoutine),
-  createRoutine: async (input: Pick<Routine, 'name' | 'slots'>) => mapRoutine(await request<RawRoutine>('/routines', { method: 'POST', ...json(routineBody(input)) })),
-  updateRoutine: async (routineId: string, input: Pick<Routine, 'name' | 'slots'>) => mapRoutine(await request<RawRoutine>(`/routines/${routineId}`, { method: 'PUT', ...json(routineBody(input)) })),
+  createRoutine: async (input: Pick<Routine, 'name' | 'slots' | 'apparatusId'>) => mapRoutine(await request<RawRoutine>('/routines', { method: 'POST', ...json(routineBody(input)) })),
+  updateRoutine: async (routineId: string, input: Pick<Routine, 'name' | 'slots' | 'apparatusId'>) => mapRoutine(await request<RawRoutine>(`/routines/${routineId}`, { method: 'PUT', ...json(routineBody(input)) })),
   deleteRoutine: (id: string) => request<void>(`/routines/${id}`, { method: 'DELETE' }),
 
+  apparatus: async () => mapIds(await request<Array<Apparatus & { id: unknown }>>('/apparatus')),
+  createApparatus: async (input: Pick<Apparatus, 'name' | 'catalog' | 'tracksTime'>) => { const item = await request<Apparatus & { id: unknown }>('/apparatus', { method: 'POST', ...json(input) }); return { ...item, id: String(item.id) }; },
+  updateApparatus: (item: Apparatus) => request<void>(`/apparatus/${item.id}`, { method: 'PUT', ...json({ name: item.name, sortOrder: item.sortOrder ?? 0, hidden: !!item.hidden, tracksTime: item.tracksTime }) }),
   executionTypes: async () => (await request<Array<Omit<ExecutionType, 'id'> & { id: unknown }>>('/execution-types')).map((item) => ({ ...item, id: String(item.id) })),
   createExecutionType: (name: string) => request<ExecutionType>('/execution-types', { method: 'POST', ...json({ name }) }),
   updateExecutionType: (item: ExecutionType) => request<void>(`/execution-types/${item.id}`, { method: 'PUT', ...json({ name: item.name, sortOrder: item.sortOrder ?? 0, hidden: !!item.hidden }) }),
@@ -102,8 +105,8 @@ export const api = {
   createTraining: async (input: Pick<Training, 'date' | 'entries' | 'rating' | 'comment'>) => mapTraining(await request<Record<string, unknown>>('/trainings', { method: 'POST', ...json(trainingBody(input)) })),
   updateTraining: async (trainingId: string, input: Pick<Training, 'date' | 'entries' | 'rating' | 'comment'>) => mapTraining(await request<Record<string, unknown>>(`/trainings/${trainingId}`, { method: 'PUT', ...json(trainingBody(input)) })),
   deleteTraining: (id: string) => request<void>(`/trainings/${id}`, { method: 'DELETE' }),
-  stats: async (from?: string, to?: string, elementId?: string) => {
-    const raw = await request<Record<string, unknown>>(`/stats/summary?${new URLSearchParams({ ...(from && { from }), ...(to && { to }), ...(elementId && { elementId }) })}`);
+  stats: async (from?: string, to?: string, elementId?: string, apparatusId?: string) => {
+    const raw = await request<Record<string, unknown>>(`/stats/summary?${new URLSearchParams({ ...(from && { from }), ...(to && { to }), ...(elementId && { elementId }), ...(apparatusId && { apparatusId }) })}`);
     const byCode = raw.byCode as Record<string, number> | Array<{ code: string; count: number }> | undefined;
     return { entries: Number(raw.entries ?? raw.totalEntries ?? 0), elements: Number(raw.totalElements ?? raw.elements ?? 0), trainings: Number(raw.trainings ?? raw.trainingCount ?? 0), fullRoutines: Number(raw.fullRoutines ?? 0), fragments: Number(raw.fragments ?? raw.routineFragments ?? 0),
       byCode: Array.isArray(byCode) ? byCode : Object.entries(byCode ?? {}).map(([code, count]) => ({ code, count })).sort((a, b) => b.count - a.count),
@@ -111,8 +114,8 @@ export const api = {
       byLanding: landingCounts(raw.byLanding ?? raw.landings),
       landingByCode: Array.isArray(raw.landingByCode) ? (raw.landingByCode as Array<Record<string, unknown>>).map((item) => ({ code: String(item.code), landings: landingCounts(item.landings ?? item.byLanding) })) : Object.entries((raw.landingByCode ?? {}) as Record<string, unknown>).map(([code, value]) => ({ code, landings: landingCounts(value) })) } satisfies StatsSummary;
   },
-  timeStats: (from?: string, to?: string) => request<TimeStats>(`/stats/times?${new URLSearchParams({ ...(from && { from }), ...(to && { to }) })}`),
-  coachTimeStats: (athleteId: string, from?: string, to?: string) => request<TimeStats>(`/coach/athletes/${athleteId}/stats/times?${new URLSearchParams({ ...(from && { from }), ...(to && { to }) })}`),
+  timeStats: (from?: string, to?: string, apparatusId?: string) => request<TimeStats>(`/stats/times?${new URLSearchParams({ ...(from && { from }), ...(to && { to }), ...(apparatusId && { apparatusId }) })}`),
+  coachTimeStats: (athleteId: string, from?: string, to?: string, apparatusId?: string) => request<TimeStats>(`/coach/athletes/${athleteId}/stats/times?${new URLSearchParams({ ...(from && { from }), ...(to && { to }), ...(apparatusId && { apparatusId }) })}`),
   invitations: async () => mapIds(await request<Array<CoachInvitation & { id: unknown }>>('/coach/invitations')),
   previewInvitation: (value: string) => request<{ id: number; role: 'athlete' | 'coach'; creatorUsername: string; expiresAt: string; requiredProfile: 'athlete' | 'coach' }>(`/coach/invitations/preview?${new URLSearchParams(value.length <= 12 ? { shortCode: value.toUpperCase() } : { token: value })}`),
   createInvitation: async (role: 'athlete' | 'coach', expiresInHours = 24) => { const item = await request<CoachInvitation & { id: unknown }>('/coach/invitations', { method: 'POST', ...json({ role, expiresInHours }) }); return { ...item, id: String(item.id) }; },
@@ -124,12 +127,13 @@ export const api = {
   disconnectCoach: (coachId: string) => request<void>(`/athlete/coaches/${coachId}`, { method: 'DELETE' }),
   coachAthlete: async (athleteId: string) => { const item = await request<CoachAthlete & { id: unknown }>(`/coach/athletes/${athleteId}`); return { ...item, id: String(item.id) }; },
   coachElements: async (athleteId: string) => mapIds(await request<Array<ElementItem & { id: unknown }>>(`/coach/athletes/${athleteId}/elements`)),
+  coachApparatus: async (athleteId: string) => mapIds(await request<Array<Apparatus & { id: unknown }>>(`/coach/athletes/${athleteId}/apparatus`)),
   coachExecutionTypes: async (athleteId: string) => mapIds(await request<Array<ExecutionType & { id: unknown }>>(`/coach/athletes/${athleteId}/execution-types`)),
   coachRoutines: async (athleteId: string) => (await request<RawRoutine[]>(`/coach/athletes/${athleteId}/routines`)).map(mapRoutine),
   coachTrainings: async (athleteId: string, from?: string, to?: string) => (await request<Array<Record<string, unknown>>>(`/coach/athletes/${athleteId}/trainings?${new URLSearchParams({ ...(from && { from }), ...(to && { to }) })}`)).map(mapTraining),
   coachTraining: async (athleteId: string, trainingId: string) => mapTraining(await request<Record<string, unknown>>(`/coach/athletes/${athleteId}/trainings/${trainingId}`)),
-  coachStats: async (athleteId: string, from?: string, to?: string, elementId?: string) => {
-    const raw = await request<Record<string, unknown>>(`/coach/athletes/${athleteId}/stats?${new URLSearchParams({ ...(from && { from }), ...(to && { to }), ...(elementId && { elementId }) })}`);
+  coachStats: async (athleteId: string, from?: string, to?: string, elementId?: string, apparatusId?: string) => {
+    const raw = await request<Record<string, unknown>>(`/coach/athletes/${athleteId}/stats?${new URLSearchParams({ ...(from && { from }), ...(to && { to }), ...(elementId && { elementId }), ...(apparatusId && { apparatusId }) })}`);
     const byCode = raw.byCode as Record<string, number> | Array<{ code: string; count: number }> | undefined;
     return { entries: Number(raw.entries ?? raw.totalEntries ?? 0), elements: Number(raw.totalElements ?? raw.elements ?? 0), trainings: Number(raw.trainings ?? raw.trainingCount ?? 0), fullRoutines: Number(raw.fullRoutines ?? 0), fragments: Number(raw.fragments ?? raw.routineFragments ?? 0), byCode: Array.isArray(byCode) ? byCode : Object.entries(byCode ?? {}).map(([code, count]) => ({ code, count })).sort((a, b) => b.count - a.count), timeline: ((raw.timeline ?? []) as Array<Record<string, unknown>>).map((point) => ({ date: String(point.date), entries: Number(point.entries ?? 0), elements: Number(point.totalElements ?? point.elements ?? 0) })), byLanding: landingCounts(raw.byLanding ?? raw.landings), landingByCode: Array.isArray(raw.landingByCode) ? (raw.landingByCode as Array<Record<string, unknown>>).map((item) => ({ code: String(item.code), landings: landingCounts(item.landings ?? item.byLanding) })) : Object.entries((raw.landingByCode ?? {}) as Record<string, unknown>).map(([code, value]) => ({ code, landings: landingCounts(value) })) } satisfies StatsSummary;
   },

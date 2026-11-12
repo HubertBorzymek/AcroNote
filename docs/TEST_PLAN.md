@@ -59,6 +59,7 @@ Testy nie używają pliku `data/acronote.db`. Każdy zestaw integracyjny otrzymu
 | T40 | Reset z zatwierdzeniem | Bez zgody nic nie działa; tylko urządzenie z prośbą ustawia hasło; zgoda jednorazowa i z terminem; jedna aktywna prośba na konto (`accounts.test.ts`) |
 | T41 | Weryfikacja dwuetapowa | Sesja po haśle ograniczona do kodu; panel wymaga ustawienia 2FA; limit błędnych kodów; kody zapasowe jednorazowe (`accounts.test.ts`) |
 | T43 | Skoki i kody spoza notacji | `o`, `<`, `/` to poprawne skoki bez salta (filtr „Bez salta”); kod spoza notacji zapisuje się tylko po potwierdzeniu i bez wyliczonych pól; zmiana ulubionego nie wymaga ponownego potwierdzenia; cudzego elementu nie da się edytować (`element-code.test.ts`, `admin-elements.test.ts`, `elementCode.test.ts`, `elementFilters.test.ts`) |
+| T44 | Sprzęty | Domyślne Trampolina i DMT; lista edytowalna, zapis elementów niezmienny, nie da się ukryć ostatniego; kontrola właściciela w sprzęcie, treningu, układzie i statystykach; migawka nazwy w wejściu; statystyki, czasy i rekordy osobno na sprzęt; trener tylko odczyt; migracja v7 bazy sprzed sprzętów (`apparatus.test.ts`); dziedziczenie sprzętu w wejściach, filtr układów, wybór w statystykach (`trainingEditor.test.ts`) |
 | T42 | Symbole iOS | W `.tsx`/`.css` nie ma znaków, które iOS rysuje jako emoji (`symbols.test.ts`) |
 
 ## Konta i uprawnienia

@@ -133,6 +133,14 @@
 - `o` (kuczka), `<` (rozkroczka), `/` (poziomka) są poprawnymi kodami elementów bez salta i śruby. Nazwa pokazuje się, gdy nie ma własnej, i działa w wyszukiwaniu. Filtry mają opcję „Element bez salta”.
 - Kod spoza notacji (np. `4o`) można dodać po potwierdzeniu „Niepoprawny kod… Czy na pewno?” (Tak/Nie) na stronie *Elementy* i w okienku wyboru elementu w treningu. Na liście ma oznaczenie „kod spoza notacji” i nie trafia do filtrów kodu.
 
+## Iteracja 2026-11-12 — sprzęty, etap 1 (gałąź `dev`, niewdrożona)
+
+- *Profil → Na czym skaczę*: lista sprzętów jak miejsca lądowania (nazwa, kolejność, ukrywanie, pomiar czasu). Zapis elementów wybiera się przy dodawaniu; na razie tylko trampolinowy, ścieżkowy oznaczony „wkrótce”. Nowe konto: Trampolina (domyślna) i DMT.
+- Wejście ma sprzęt (mały wybór w nagłówku, widoczny przy więcej niż jednym sprzęcie); kolejne wejście dostaje sprzęt poprzedniego. Nazwa sprzętu jest w migawce wejścia. Pole czasu tylko na sprzęcie z pomiarem czasu.
+- Układy mają sprzęt (wybór w formularzu, filtr na liście); przy wejściu widać tylko układy jego sprzętu.
+- Statystyki, czasy i rekordy osobno na sprzęt, z zapamiętywanym przełącznikiem; to samo u trenera (tylko odczyt). Sprzęt na kartach treningów.
+- Migracja v7: wszystkie dotychczasowe wejścia i układy na Trampolinie; sprawdzona na kopii bazy produkcyjnej.
+
 ## Świadomie odłożone
 
 - Cele treningowe i grupy klubowe. (Odzyskiwanie konta: prośba z numerem z ekranu logowania, zatwierdzana przez administratora.)

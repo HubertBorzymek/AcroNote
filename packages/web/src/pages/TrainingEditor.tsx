@@ -1,7 +1,7 @@
 import { FormEvent, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { today, useAsync, useUnsavedChanges } from '../hooks';
-import type { Activity, ElementItem, ExecutionType, Routine, TimeRecord, Training, TrainingEntry } from '../types';
+import type { Activity, Apparatus, ElementItem, ExecutionType, Routine, TimeRecord, Training, TrainingEntry } from '../types';
 import { CodeHint, ConfirmDialog, Counter, ErrorState, Icon, Loading, NonStandardCodeText, PageHeader, Toast } from '../components/ui';
 import { parseElementCode, standardElementName } from '../elementCode';
 import { ElementFilterControls, emptyElementFilters, filterElementChoices } from '../elementFilters';
@@ -51,6 +51,18 @@ export function splitRepetitions(activity: Activity): Activity[] {
   return Array.from({ length: activity.repetitions }, (_, index) => index === 0 ? { ...activity, repetitions: 1 } : nextTimedCopy(activity));
 }
 
+/** A new entry continues on the apparatus of the previous one; the first entry uses the default (first visible). */
+export function nextEntryApparatus(entries: TrainingEntry[], apparatus: Apparatus[]): Apparatus | undefined {
+  const visible = apparatus.filter((item) => !item.hidden);
+  const previous = entries.length ? entries[entries.length - 1].apparatusId : undefined;
+  return visible.find((item) => item.id === previous) ?? visible[0];
+}
+
+/** Routines of this entry's apparatus (a routine without an apparatus fits everywhere). */
+export function routinesForApparatus(routines: Routine[], apparatusId: string | undefined) {
+  return routines.filter((routine) => !routine.apparatusId || !apparatusId || routine.apparatusId === apparatusId);
+}
+
 function recordsMessage(records: TimeRecord[] | undefined) {
   if (!records?.length) return undefined;
   return `Nowy rekord: ${records.map((item) => `${item.label} — ${formatTime(item.timeMs)}`).join(', ')}`;
@@ -60,8 +72,8 @@ type EditingActivity = { entryIndex: number; activityIndex: number; focusTime?: 
 
 export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { initial?: Training; onBack: () => void; onSaved: (message?: string) => void | Promise<void>; setGlobalDirty: (dirty: boolean) => void }) {
   const sources = useAsync(async () => {
-    const [elements, routines, executionTypes] = await Promise.all([api.elements(false), api.routines(), api.executionTypes().catch(() => fallbackExecutionTypes)]);
-    return { elements, routines, executionTypes: (executionTypes.length ? executionTypes : fallbackExecutionTypes).map((type) => ({ ...type, name: type.name === 'Na płasko' ? 'Siatka' : type.name })) };
+    const [elements, routines, executionTypes, apparatus] = await Promise.all([api.elements(false), api.routines(), api.executionTypes().catch(() => fallbackExecutionTypes), api.apparatus().catch(() => [] as Apparatus[])]);
+    return { elements, routines, apparatus, executionTypes: (executionTypes.length ? executionTypes : fallbackExecutionTypes).map((type) => ({ ...type, name: type.name === 'Na płasko' ? 'Siatka' : type.name })) };
   }, []);
   const keyCounter = useRef(0);
   const newKey = () => `entry-${++keyCounter.current}`;
@@ -89,7 +101,8 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
     const execution = sources.data?.executionTypes[0] ?? fallbackExecutionTypes[0];
     // Previous entries fold away, so on a phone only the entry being filled in is open.
     setCollapsed(new Set(entries.map((entry) => entry.clientKey!)));
-    setEntries([...entries, { defaultExecutionTypeId: execution.id, defaultExecutionTypeName: execution.name, activities: [], clientKey: newKey() }]);
+    const apparatus = nextEntryApparatus(entries, sources.data?.apparatus ?? []);
+    setEntries([...entries, { defaultExecutionTypeId: execution.id, defaultExecutionTypeName: execution.name, apparatusId: apparatus?.id, apparatusName: apparatus?.name, activities: [], clientKey: newKey() }]);
     setVisibleEntryCount((current) => current > 5 ? current + 1 : 5);
     markDirty();
   }
@@ -149,6 +162,10 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
   if (sources.loading) return <Loading/>;
   if (sources.error) return <ErrorState message={sources.error} retry={sources.reload}/>;
   const landingOptions = sources.data!.executionTypes.filter((x) => !x.hidden);
+  const apparatusOptions = sources.data!.apparatus.filter((x) => !x.hidden);
+  // With a single apparatus nothing changes for the athlete: no extra chip in the entry header.
+  const multipleApparatus = apparatusOptions.length > 1 || entries.some((entry) => entry.apparatusId && !apparatusOptions.some((x) => x.id === entry.apparatusId));
+  const apparatusOf = (entry: TrainingEntry) => sources.data!.apparatus.find((x) => x.id === entry.apparatusId);
   return <div className="page editor-page">
     <PageHeader title={savedId ? 'Edytuj trening' : 'Nowy trening'} eyebrow={dirty ? 'Niezapisane zmiany' : savedId ? 'Zmiany widoczne dla trenera' : 'Dziennik'} onBack={back} action={<button className="button primary compact" onClick={() => void save(false)} disabled={saving}>{saving ? 'Zapisuję…' : 'Zapisz'}</button>}/>
     <section className="date-panel"><label>Data treningu<input type="date" value={date} onChange={(e) => { setDate(e.target.value); markDirty(); }}/></label><div><strong>{entries.length}</strong><span>wejść</span></div><div><strong>{total}</strong><span>elementów</span></div></section>
@@ -164,12 +181,21 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
               <span className="entry-index">{entryIndex + 1}</span>
               <div><span>Wejście {entryIndex + 1}</span><h2>{elementCountLabel(entryElements)}</h2>{isCollapsed && <small className="entry-summary">{entrySummary(entry)}</small>}</div>
             </button>
+            <div className="entry-chips">
+            {multipleApparatus && <label className="landing-chip apparatus-chip" title="Sprzęt tego wejścia">
+              <span className="sr-only">Sprzęt</span>
+              <select value={entry.apparatusId ?? ''} onChange={(e) => { const item = apparatusOptions.find((x) => x.id === e.target.value); if (item) updateEntry(entryIndex, (current) => ({ ...current, apparatusId: item.id, apparatusName: item.name })); }}>
+                {entry.apparatusId && !apparatusOptions.some((x) => x.id === entry.apparatusId) && <option value={entry.apparatusId} disabled>{entry.apparatusName ?? 'Usunięty sprzęt'}</option>}
+                {apparatusOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>}
             <label className="landing-chip" title="Domyślne miejsce lądowania dla nowych pozycji w tym wejściu">
               <span className="sr-only">Domyślne miejsce lądowania</span>
               <select value={entry.defaultExecutionTypeId} onChange={(e) => { const type = sources.data!.executionTypes.find((x) => x.id === e.target.value)!; updateEntry(entryIndex, (current) => ({ ...current, defaultExecutionTypeId: type.id, defaultExecutionTypeName: type.name })); }}>
                 <option value="" disabled>Lądowanie</option>{landingOptions.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
               </select>
             </label>
+            </div>
             <button className="icon-button collapse-button" aria-label={isCollapsed ? `Rozwiń wejście ${entryIndex + 1}` : `Zwiń wejście ${entryIndex + 1}`} aria-expanded={!isCollapsed} onClick={() => toggleEntry(key)}><Icon name="chevron"/></button>
           </header>
           {!isCollapsed && <>
@@ -195,13 +221,14 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
     {savedId && <button className="delete-training" onClick={() => void removeTraining()}>Usuń trening</button>}
     <div className="sticky-save"><span><strong>{entries.length}</strong> wejść · <strong>{total}</strong> elementów</span><div><button className="button secondary" onClick={() => void save(false)} disabled={saving}>{saving ? 'Zapisywanie…' : 'Zapisz i kontynuuj'}</button><button className="button primary" onClick={() => void save(true)} disabled={saving}>{saving ? 'Zapisywanie…' : 'Zapisz i zamknij'}</button></div></div>
     {picker?.type === 'element' && <ElementPicker entryNumber={picker.entryIndex + 1} elements={sources.data!.elements} onCreated={(element) => sources.setData({ ...sources.data!, elements: [...sources.data!.elements, element] })} onPick={(element) => addElement(picker.entryIndex, element)} onClose={() => setPicker(null)}/>}
-    {picker?.type === 'routine' && <RoutinePicker entryNumber={picker.entryIndex + 1} routines={sources.data!.routines} elements={sources.data!.elements} onRoutineUpdated={(updated) => sources.setData({ ...sources.data!, routines: sources.data!.routines.map((routine) => routine.id === updated.id ? updated : routine) })} onPick={(routine, start, end) => addRoutine(picker.entryIndex, routine, start, end)} onClose={() => setPicker(null)}/>}
+    {picker?.type === 'routine' && <RoutinePicker entryNumber={picker.entryIndex + 1} apparatusName={multipleApparatus ? entries[picker.entryIndex]?.apparatusName : undefined} routines={routinesForApparatus(sources.data!.routines, entries[picker.entryIndex]?.apparatusId)} elements={sources.data!.elements} onRoutineUpdated={(updated) => sources.setData({ ...sources.data!, routines: sources.data!.routines.map((routine) => routine.id === updated.id ? updated : routine) })} onPick={(routine, start, end) => addRoutine(picker.entryIndex, routine, start, end)} onClose={() => setPicker(null)}/>}
     {editingActivity && entries[editingActivity.entryIndex]?.activities[editingActivity.activityIndex] && <ActivityEditor
       key={`${editingActivity.entryIndex}-${editingActivity.activityIndex}-${editingActivity.seq ?? 0}`}
       entryNumber={editingActivity.entryIndex + 1}
       activity={entries[editingActivity.entryIndex].activities[editingActivity.activityIndex]}
       routines={sources.data!.routines}
       executionTypes={sources.data!.executionTypes}
+      tracksTime={apparatusOf(entries[editingActivity.entryIndex])?.tracksTime ?? true}
       focusTime={!!editingActivity.focusTime}
       onClose={() => setEditingActivity(null)}
       onDelete={() => { updateEntry(editingActivity.entryIndex, (entry) => ({ ...entry, activities: entry.activities.filter((_, i) => i !== editingActivity.activityIndex) })); setEditingActivity(null); }}
@@ -235,7 +262,7 @@ function ElementPicker({ entryNumber, elements, onCreated, onPick, onClose }: { 
   return <div className="modal-backdrop above"><section className="sheet picker"><PageHeader title={creating ? 'Nowy element' : 'Dodaj element'} eyebrow={`Wejście ${entryNumber}`} onBack={creating ? () => setCreating(false) : onClose}/>{creating ? <form className="form-stack" onSubmit={create}><p className="picker-return">Po zapisaniu wrócisz do wyboru elementu w tym wejściu.</p><label>Kod elementu<input autoFocus required value={query} onChange={(e) => setQuery(e.target.value)} placeholder="np. 41o"/></label><CodeHint code={query}/><label>Nazwa <span className="optional">opcjonalnie</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="np. Barani"/></label><label className="check-row"><input type="checkbox" checked={favorite} onChange={(e) => setFavorite(e.target.checked)}/><span><strong>Dodaj do ulubionych</strong></span></label>{error && <p className="form-error">{error}</p>}<button className="button primary full" disabled={saving}>{saving ? 'Dodaję…' : 'Dodaj i wróć'}</button>{confirmCode && <ConfirmDialog title="Niepoprawny kod" confirmLabel="Tak, dodaj" onCancel={() => setConfirmCode(false)} onConfirm={() => void create(undefined, true)}><NonStandardCodeText code={query}/></ConfirmDialog>}</form> : <><div className="search"><Icon name="search"/><input autoFocus placeholder="Wpisz kod lub nazwę" value={query} onChange={(e) => setQuery(e.target.value)}/></div><ElementFilterControls value={filters} onChange={setFilters}/><button className="button secondary full picker-create" onClick={() => setCreating(true)}><Icon name="plus"/> Dodaj nowy element{query ? ` „${query}”` : ''}</button><div className="pick-list">{list.map((item) => <button key={item.id} onClick={() => onPick(item)}><strong>{item.code}</strong><span>{item.name || standardElementName(item.code) || 'Bez nazwy'}</span>{item.favorite && <b>★</b>}</button>)}</div>{!list.length && <p className="picker-empty">Nie ma takiego elementu. Zmień filtry albo dodaj go tutaj bez utraty treningu.</p>}</>}</section></div>;
 }
 
-function RoutinePicker({ entryNumber, routines, elements, onRoutineUpdated, onPick, onClose }: { entryNumber: number; routines: Routine[]; elements: ElementItem[]; onRoutineUpdated: (routine: Routine) => void; onPick: (routine: Routine, start: number, end: number) => void; onClose: () => void }) {
+function RoutinePicker({ entryNumber, apparatusName, routines, elements, onRoutineUpdated, onPick, onClose }: { entryNumber: number; apparatusName?: string; routines: Routine[]; elements: ElementItem[]; onRoutineUpdated: (routine: Routine) => void; onPick: (routine: Routine, start: number, end: number) => void; onClose: () => void }) {
   const [selected, setSelected] = useState<Routine>();
   const [start, setStart] = useState(1); const [end, setEnd] = useState(1);
   const [query, setQuery] = useState('');
@@ -267,7 +294,7 @@ function RoutinePicker({ entryNumber, routines, elements, onRoutineUpdated, onPi
   return <div className="modal-backdrop above"><section className="sheet picker">
     {slotPicker !== null ? <><PageHeader title="Wybierz element" eyebrow={`Edycja · ${editName}`} onBack={() => setSlotPicker(null)}/><div className="search"><Icon name="search"/><input autoFocus placeholder="Kod lub nazwa" value={elementQuery} onChange={(event) => setElementQuery(event.target.value)}/></div><ElementFilterControls value={filters} onChange={setFilters}/><div className="pick-list">{choices.map((element) => <button key={element.id} onClick={() => chooseElement(element)}><strong>{element.code}</strong><span>{element.name || 'Bez nazwy'}</span>{element.favorite && <b>★</b>}</button>)}</div>{!choices.length && <p className="picker-empty">Brak elementów pasujących do wyszukiwania i filtrów.</p>}</>
       : editing ? <><PageHeader title="Edytuj szablon" eyebrow="Zmiana nie ruszy dawnych treningów" onBack={() => setEditing(false)}/><form className="form-stack" onSubmit={saveTemplate}><label>Nazwa układu<input value={editName} onChange={(event) => setEditName(event.target.value)} required/></label><div className="field-label"><span>Elementy układu</span><small>{editSlots.length}</small></div><div className="slot-list">{editSlots.map((slot, index) => <div className="slot" key={`${slot.elementId}-${index}`}><span className="slot-number">{index + 1}</span><button type="button" className="slot-main" onClick={() => setSlotPicker(index)}><strong>{slot.code}</strong><small>{slot.name || 'Bez nazwy'}</small></button><div className="slot-actions"><button type="button" disabled={index === 0} onClick={() => moveSlot(index, -1)}>↑</button><button type="button" disabled={index === editSlots.length - 1} onClick={() => moveSlot(index, 1)}>↓</button><button type="button" onClick={() => setEditSlots(editSlots.filter((_, itemIndex) => itemIndex !== index).map((item, position) => ({ ...item, position: position + 1 })))}>×</button></div></div>)}<button type="button" className="add-slot" onClick={() => setSlotPicker(editSlots.length)}><Icon name="plus"/> Dodaj element</button></div><p className="hint">Zapis zmieni bieżący szablon i jego przyszłe użycia. Wcześniejsze treningi zachowają własne migawki.</p>{error && <p className="form-error">{error}</p>}<button className="button primary full" disabled={saving || !editSlots.length}>{saving ? 'Zapisuję…' : 'Zapisz szablon'}</button></form></>
-      : !selected ? <><PageHeader title="Dodaj układ" eyebrow={`Wejście ${entryNumber}`} onBack={onClose}/><div className="search"><Icon name="search"/><input autoFocus placeholder="Nazwa lub kod w układzie" value={query} onChange={(event) => setQuery(event.target.value)}/></div><div className="pick-list routines">{listedRoutines.map((routine) => <button key={routine.id} onClick={() => { setSelected(routine); setStart(1); setEnd(routine.slots.length); }}><strong>{routine.name}</strong><span>{routine.slots.length} elementów · {routine.slots.map((slot) => slot.code).join(' · ')}</span><i>›</i></button>)}{!listedRoutines.length && <p className="picker-empty">Nie znaleziono układu.</p>}</div></>
+      : !selected ? <><PageHeader title="Dodaj układ" eyebrow={`Wejście ${entryNumber}`} onBack={onClose}/><div className="search"><Icon name="search"/><input autoFocus placeholder="Nazwa lub kod w układzie" value={query} onChange={(event) => setQuery(event.target.value)}/></div><div className="pick-list routines">{listedRoutines.map((routine) => <button key={routine.id} onClick={() => { setSelected(routine); setStart(1); setEnd(routine.slots.length); }}><strong>{routine.name}</strong><span>{routine.slots.length} elementów · {routine.slots.map((slot) => slot.code).join(' · ')}</span><i>›</i></button>)}{!listedRoutines.length && <p className="picker-empty">{!routines.length && apparatusName ? `Nie masz układów na sprzęt „${apparatusName}”. Utwórz go w zakładce Układy.` : 'Nie znaleziono układu.'}</p>}</div></>
       : <><PageHeader title="Dodaj układ" eyebrow={`Wejście ${entryNumber}`} onBack={() => setSelected(undefined)}/><div className="range-picker"><div className="template-heading"><div><span className="kicker">{selected.name}</span><h2>Wybierz zakres</h2></div><button className="button secondary compact" onClick={beginEdit}>Edytuj szablon</button></div><div className="range-fields"><label>Od<select value={start} onChange={(event) => { const value = Number(event.target.value); setStart(value); setEnd(Math.max(end, value)); }}>{selected.slots.map((_, index) => <option key={index} value={index + 1}>{index + 1}</option>)}</select></label><span>—</span><label>Do<select value={end} onChange={(event) => setEnd(Number(event.target.value))}>{selected.slots.map((_, index) => index + 1 >= start && <option key={index} value={index + 1}>{index + 1}</option>)}</select></label></div><div className="routine-preview selected">{selected.slots.slice(start - 1, end).map((slot, index) => <span key={index}><small>{start + index}</small>{slot.code}</span>)}</div><button className="button primary full" onClick={() => onPick(selected, start, end)}>{start === 1 && end === selected.slots.length ? 'Dodaj cały układ' : `Dodaj fragment ${start}–${end}`}</button></div></>}
   </section></div>;
 }
@@ -283,7 +310,7 @@ function TimeField({ label, valueMs, onChange, autoFocus = false, compact = fals
   </label>;
 }
 
-function ActivityEditor({ entryNumber, activity, routines, executionTypes, focusTime, onClose, onDelete, onChange, onSplit, onAddNextTimed }: { entryNumber: number; activity: Activity; routines: Routine[]; executionTypes: ExecutionType[]; focusTime: boolean; onClose: () => void; onDelete: () => void; onChange: (activity: Activity) => void; onSplit: () => void; onAddNextTimed: () => void }) {
+function ActivityEditor({ entryNumber, activity, routines, executionTypes, tracksTime, focusTime, onClose, onDelete, onChange, onSplit, onAddNextTimed }: { entryNumber: number; activity: Activity; routines: Routine[]; executionTypes: ExecutionType[]; tracksTime: boolean; focusTime: boolean; onClose: () => void; onDelete: () => void; onChange: (activity: Activity) => void; onSplit: () => void; onAddNextTimed: () => void }) {
   const currentRoutine = activity.type === 'routine' ? routines.find((routine) => routine.id === activity.routineId) : undefined;
   const canResize = activity.type === 'routine' && currentRoutine && activity.sourceTemplateVersion != null && currentRoutine.templateVersion === activity.sourceTemplateVersion;
   const [showTime, setShowTime] = useState(activity.timeMs != null || focusTime);
@@ -314,7 +341,7 @@ function ActivityEditor({ entryNumber, activity, routines, executionTypes, focus
     <Counter value={activity.repetitions} disabled={timed} onChange={(repetitions) => onChange({ ...activity, repetitions })}/>
     {timed && <p className="hint">Pozycja z czasem to jedno wykonanie. Kolejne wykonanie na czas dodasz przyciskiem poniżej.</p>}
 
-    <div className="time-section">
+    {(tracksTime || showTime || showElementTimes) && <div className="time-section">
       {askSplit ? <div className="split-prompt" role="alertdialog" aria-label="Rozdzielenie powtórzeń">
         <p>Czas wpisuje się dla jednego wykonania. Rozdzielić „{name} ×{activity.repetitions}” na {activity.repetitions} osobnych pozycji ×1, każdą z własnym czasem?</p>
         <div><button className="button primary" onClick={onSplit}>Rozdziel na {activity.repetitions}</button><button className="button secondary" onClick={() => setAskSplit(null)}>Anuluj</button></div>
@@ -323,10 +350,10 @@ function ActivityEditor({ entryNumber, activity, routines, executionTypes, focus
         <TimeField label={timeLabel} valueMs={activity.timeMs} autoFocus={focusTime} onChange={(timeMs) => onChange({ ...activity, timeMs })}/>
         <button className="text-button" onClick={() => { onChange({ ...activity, timeMs: null }); setShowTime(false); }}>Usuń czas</button>
       </div>
-      : <button className="time-add" onClick={() => requestTime('time')}><Icon name="clock"/> Dodaj czas{activity.type === 'routine' ? activity.isFullRoutine ? ' układu' : ' fragmentu' : ''}</button>}
-      {activity.type === 'routine' && !askSplit && !showElementTimes && <button className="time-add" onClick={() => requestTime('elements')}><Icon name="clock"/> Dodaj czasy elementów</button>}
-      {timed && activity.repetitions === 1 && <button className="button secondary full" onClick={onAddNextTimed}><Icon name="plus"/> Kolejne wykonanie na czas</button>}
-    </div>
+      : tracksTime && <button className="time-add" onClick={() => requestTime('time')}><Icon name="clock"/> Dodaj czas{activity.type === 'routine' ? activity.isFullRoutine ? ' układu' : ' fragmentu' : ''}</button>}
+      {tracksTime && activity.type === 'routine' && !askSplit && !showElementTimes && <button className="time-add" onClick={() => requestTime('elements')}><Icon name="clock"/> Dodaj czasy elementów</button>}
+      {tracksTime && timed && activity.repetitions === 1 && <button className="button secondary full" onClick={onAddNextTimed}><Icon name="plus"/> Kolejne wykonanie na czas</button>}
+    </div>}
 
     {activity.type === 'routine' && (canResize ? <div className="routine-count-editor"><div className="field-label"><span>Wykonany fragment układu</span><small>{activity.elements?.length ?? 0} z {currentRoutine.slots.length} elementów</small></div><div className="range-fields"><label>Od<select value={rangeStart} onChange={(event) => { const value = Number(event.target.value); changeRange(value, Math.max(rangeEnd, value)); }}>{currentRoutine.slots.map((_, index) => <option key={index} value={index + 1}>{index + 1}</option>)}</select></label><span>—</span><label>Do<select value={rangeEnd} onChange={(event) => changeRange(rangeStart, Number(event.target.value))}>{currentRoutine.slots.map((_, index) => index + 1 >= rangeStart && <option key={index} value={index + 1}>{index + 1}</option>)}</select></label></div></div> : <p className="form-warning">Nie można tutaj zmienić liczby elementów, ponieważ źródłowy układ został usunięty albo od czasu tego wykonania zmieniono jego szablon. Jeśli zapis ma mieć inny skład, usuń tę czynność i dodaj wykonane elementy pojedynczo.</p>)}
     <label>Miejsce lądowania<select value={activity.executionTypeId} onChange={(event) => { const type = executionTypes.find((item) => item.id === event.target.value)!; onChange({ ...activity, executionTypeId: type.id, executionTypeName: type.name }); }}><option value="" disabled>Wybierz</option>{executionTypes.map((type) => <option value={type.id} key={type.id}>{type.name}</option>)}</select><small>{activity.type === 'routine' ? 'Dla układu to wartość startowa. Poniżej możesz zaznaczyć, że np. ostatni element był na materac, a wcześniejsze na siatkę.' : 'Domyślnie takie jak w wejściu.'}</small></label>

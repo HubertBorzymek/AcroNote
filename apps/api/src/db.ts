@@ -87,6 +87,22 @@ function migrate(db: Db): void {
     add('sessions', 'mfa_attempts', 'INTEGER NOT NULL DEFAULT 0');
     db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(6)').run();
   })();
+
+  // v7: apparatus. Every entry and routine belongs to an apparatus; the entry keeps the apparatus name
+  // as part of its snapshot. All existing history was recorded on the trampoline.
+  db.transaction(() => {
+    const add = (table: string, column: string, definition: string) => { if (!columns(table).has(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`); };
+    add('training_entries', 'apparatus_id', 'INTEGER');
+    add('training_entries', 'apparatus_name', 'TEXT');
+    add('routines', 'apparatus_id', 'INTEGER');
+    if (!db.prepare('SELECT 1 FROM migrations WHERE version=7').get()) {
+      for (const { id } of db.prepare('SELECT id FROM users').all() as { id: number }[]) seedApparatus(db, id);
+      db.prepare(`UPDATE training_entries SET apparatus_id=(SELECT a.id FROM trainings t JOIN apparatus a ON a.user_id=t.user_id AND a.name='Trampolina'
+        WHERE t.id=training_entries.training_id), apparatus_name='Trampolina' WHERE apparatus_id IS NULL`).run();
+      db.prepare(`UPDATE routines SET apparatus_id=(SELECT a.id FROM apparatus a WHERE a.user_id=routines.user_id AND a.name='Trampolina') WHERE apparatus_id IS NULL`).run();
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(7)').run();
+  })();
 }
 
 /** Case- and normalization-insensitive form of a username, used for uniqueness and login. */
@@ -94,7 +110,26 @@ export function usernameKey(username: string): string {
   return username.normalize('NFC').toLowerCase();
 }
 
+/** Per-user defaults: landing places and apparatus. */
 export function seedExecutionTypes(db: Db, userId: number): void {
   const insert = db.prepare('INSERT OR IGNORE INTO execution_types(user_id,name,sort_order) VALUES(?,?,?)');
   ['Siatka', 'Materac', 'Gąbki'].forEach((name, index) => insert.run(userId, name, index));
+  seedApparatus(db, userId);
+}
+
+/** Default apparatus for a user without any. Tumbling (Ścieżka) arrives with its own element catalog. */
+export function seedApparatus(db: Db, userId: number): void {
+  if (db.prepare('SELECT 1 FROM apparatus WHERE user_id=?').get(userId)) return;
+  const insert = db.prepare("INSERT INTO apparatus(user_id,name,sort_order,catalog,tracks_time) VALUES(?,?,?,'trampoline',?)");
+  insert.run(userId, 'Trampolina', 0, 1);
+  insert.run(userId, 'DMT', 1, 0);
+}
+
+/** The first visible apparatus is the default one (seeding the defaults when the user has none). */
+export function defaultApparatus(db: Db, userId: number): { id: number; name: string } {
+  const pick = () => db.prepare('SELECT id,name FROM apparatus WHERE user_id=? AND deleted_at IS NULL ORDER BY hidden,sort_order,id LIMIT 1').get(userId) as { id: number; name: string } | undefined;
+  let found = pick();
+  if (!found) { seedApparatus(db, userId); found = pick(); }
+  if (!found) throw new Error('Brak sprzętu. Dodaj sprzęt w profilu.');
+  return found;
 }

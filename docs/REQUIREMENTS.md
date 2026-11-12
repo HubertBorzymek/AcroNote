@@ -99,6 +99,23 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **STA-09:** pełne wykonania zgodne z zapisaną wersją są rozróżniane od pełnych wykonań zmodyfikowanych i fragmentów.
 - **STA-10:** statystyki są przeliczane z aktualnej treści historycznych czynności po ich świadomej edycji.
 
+### Sprzęty: trampolina, DMT, ścieżka (ustalone 2026-11-11)
+
+Ustalenia z użytkownikiem; realizacja w dwóch etapach opisanych w `WORKLOG.md`. Etap 1 (APP-01..APP-07, APP-10, APP-11 bez katalogu ścieżkowego) zrobiony 2026-11-12; etap 2 (APP-08, APP-09, sprzęt „Ścieżka”) jeszcze nie.
+
+- **APP-01:** profil ma listę sprzętów „Na czym skaczę”, edytowalną jak miejsca lądowania: nazwa, kolejność, ukrywanie i usuwanie. Pierwszy widoczny sprzęt z góry jest domyślny. Nowe konto dostaje „Trampolina” (domyślna, jak dotąd) i „DMT”; „Ścieżka” dochodzi w etapie 2. Musi zostać co najmniej jeden widoczny sprzęt.
+- **APP-02:** przy dodawaniu sprzętu wybiera się katalog elementów (*trampolinowy* albo *ścieżkowy*) — później nie da się go zmienić — oraz to, czy mierzy się czas (to można zmieniać). Domyślnie: Trampolina — katalog trampolinowy, z czasem; DMT — katalog trampolinowy, bez czasu; Ścieżka — katalog ścieżkowy, bez czasu.
+- **APP-03:** sprzęt jest cechą wejścia. Pierwsze wejście treningu dostaje sprzęt domyślny, każde kolejne sprzęt poprzedniego wejścia. Zmiana sprzętu to mały wybór w nagłówku wejścia, jak miejsce lądowania; przy jednym widocznym sprzęcie wybór się nie pokazuje. Jeden trening może łączyć wejścia na różnych sprzętach.
+- **APP-04:** wejście pokazuje elementy z katalogu swojego sprzętu i układy przypisane do tego sprzętu. Pole czasu pojawia się tylko dla sprzętu z pomiarem czasu.
+- **APP-05:** nazwa i rodzaj sprzętu są częścią migawki wejścia: zmiana nazwy lub usunięcie sprzętu nie zmienia dawnych treningów.
+- **APP-06:** statystyki, rekordy czasu i rozkład lądowań liczą się osobno dla każdego sprzętu (przełącznik w statystykach, zapamiętywany na urządzeniu; jest też „Wszystkie sprzęty”). Filtr działa po identyfikatorze sprzętu, więc zmiana nazwy nie dzieli statystyk. Salto w tył na trampolinie i na ścieżce to osobne liczby.
+- **APP-07:** układ ma przypisany sprzęt; liczba elementów pozostaje dowolna (np. podejście DMT z 2 elementów, przebieg na ścieżce z 8).
+- **APP-08:** dwa osobne katalogi elementów: *trampolina i DMT* (zapis liczbowy FIG, jak dotąd) oraz *ścieżka* (symbole FIG). Elementów nie konwertuje się między katalogami; ten sam kod może istnieć w obu. Strona *Elementy* ma przełącznik katalogu. Na razie DMT używa dokładnie zapisu trampolinowego (bez `4–o`).
+- **APP-09:** zapis ścieżkowy: jedna cyfra na salto (liczba półśrub w tym salcie), pozycja `o`, `<`, `/` (opcjonalna przy elementach ze śrubą), kropka przed = przód (`.0o`, `.1`), kropka po = tył ze śrubą (`1.`, `2.`), bez kropki = tył (`0o`, `00/`, `22o`), `x` na końcu = bok (`0ox`). Spacje są pomijane (`0 0 /` = `00/`). Elementy specjalne z nazwami zwyczajowymi: `(` rundak, `F` flik, `H` przerzut w przód, `X` przerzut bokiem, `^` tempo. Kod spoza notacji można dodać po potwierdzeniu, jak w katalogu trampolinowym.
+- **APP-10:** historia: wszystkie istniejące wejścia, treningi i układy dostają sprzęt „Trampolina”; wszystkie istniejące elementy trafiają do katalogu trampolinowego.
+- **APP-11:** trener (tylko odczyt) widzi u zawodnika ten sam podział: sprzęt przy wejściach, katalogi elementów i statystyki z przełącznikiem sprzętu. Nie dostaje żadnych nowych operacji zapisu.
+- Punktacja i trudność pozostają poza zakresem.
+
 ### Interfejs
 
 - **UI-01:** interfejs jest po polsku, responsywny i projektowany przede wszystkim dla telefonu.

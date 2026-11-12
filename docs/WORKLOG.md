@@ -277,3 +277,37 @@ Poprawka po uwagach użytkownika (ten sam dzień): elementy bez salta mają nazw
 - Gałąź `flyio-new-files` usunięta (na `origin` tylko `main` i `dev`).
 - `scripts\pobierz-kopie.bat` zadziałał na prawdziwym Fly (`Dokumenty\AcroNote-kopie\acronote-2026-11-11_2015.db`); zadanie tygodniowe „AcroNote - cotygodniowa kopia bazy” zarejestrowane, najbliższe 15.11.2026 19:00.
 - Wciąż niezweryfikowane: wygląd na prawdziwym iPhonie, to, czy Fly nadpisuje `Fly-Client-IP` wysłany przez klienta, pierwsze uruchomienie zadania tygodniowego.
+
+## Plan 2026-11-11 — sprzęty: trampolina, DMT, ścieżka (ustalony, niezaczęty)
+
+Wymagania: `REQUIREMENTS.md`, APP-01..APP-11. Notacje sprawdzone w FIG Code of Points 2025–2028 (Trampoline Gymnastics), dodatki G, I, J, K: trampolina i DMT mają ten sam zapis liczbowy (ćwiartki + półśruby na salto + pozycja), ścieżka ma symbole na salto, kropkę dla kierunku i elementy specjalne. Tabela DMT zapisuje salto w tył `4–`, a w przód `40`; na razie DMT działa dokładnie jak trampolina.
+
+Ważne dla obecnego kodu: kierunek w katalogu trampolinowym jest zgadywany z parzystości półśrub (`40o` = tył), co zostaje bez zmian.
+
+Etap 1 — sprzęty, bez ścieżki (do wdrożenia osobno):
+- Migracja v7: tabela `apparatus` (`user_id`, `name`, `sort_order`, `catalog` `trampoline|tumbling`, `tracks_time`, `hidden`, `deleted_at`); każdemu użytkownikowi „Trampolina” i „DMT”; `training_entries.apparatus_id` + migawka `apparatus_name`, `apparatus_catalog`, `apparatus_tracks_time`; `routines.apparatus_id`. Wszystkie istniejące wejścia i układy → „Trampolina”.
+- Profil: lista sprzętów jak miejsca lądowania (nazwa, katalog, czas, kolejność, ukrywanie).
+- Edytor: wybór sprzętu w nagłówku wejścia, dziedziczenie z poprzedniego wejścia, układy filtrowane po sprzęcie, pole czasu tylko dla sprzętu z czasem.
+- Statystyki, czasy i lądowania z przełącznikiem sprzętu; widok trenera z tym samym przełącznikiem (tylko odczyt, kontrola relacji bez zmian).
+- Migracja sprawdzona na kopii bazy produkcyjnej przed wdrożeniem.
+
+Etap 2 — ścieżka:
+- `elements.catalog` (`trampoline|tumbling`) i unikalność `(user_id, catalog, code)`: w SQLite wymaga przebudowy tabeli `elements` (nowa tabela, kopia, zamiana, odtworzenie indeksów i kluczy obcych) w migracji v8, w transakcji, sprawdzonej na kopii produkcji.
+- Parser zapisu ścieżkowego w `@acronote/shared` i w web (APP-09), z nazwami zwyczajowymi elementów specjalnych; filtry dla ścieżki.
+- Strona *Elementy* z przełącznikiem katalogu; okno wyboru w wejściu pokazuje katalog sprzętu.
+- Każdy użytkownik dostaje sprzęt „Ścieżka” (katalog ścieżkowy, bez czasu).
+
+Otwarte na później: zapis DMT `4–o`/`40` z jawnym kierunkiem, ewentualny osobny katalog DMT.
+
+## Iteracja 2026-11-12 — sprzęty, etap 1
+
+Doprecyzowanie użytkownika: lista sprzętów jest dowolna (jak lądowania), a do sprzętu przy dodawaniu przypisuje się jeden z dwóch zapisów elementów. Nowe konto ma domyślnie trampolinę, „tak jak było”.
+
+- Baza (v7, w transakcji): tabela `apparatus` (`name`, `sort_order`, `catalog` `trampoline|tumbling`, `tracks_time`, `hidden`, `deleted_at`, `UNIQUE(user_id,name)`); `training_entries.apparatus_id` + migawka `apparatus_name`; `routines.apparatus_id`. Każdy użytkownik dostaje Trampolinę (z czasem) i DMT (bez czasu); wszystkie istniejące wejścia i układy → Trampolina. `seedExecutionTypes` sieje też sprzęty; `defaultApparatus` zwraca pierwszy widoczny (i sieje, gdy konto nie ma żadnego).
+- API: `GET/POST/PUT /api/apparatus` (bez zmiany `catalog`, `tumbling` odrzucany „wkrótce”, nie da się ukryć ostatniego widocznego, przywracanie usuniętej nazwy tylko z tym samym zapisem), `GET /api/coach/athletes/:id/apparatus`. Zapis treningu i układu sprawdza właściciela sprzętu. `apparatusId` w `/api/stats/summary`, `/api/stats/times` i odpowiednikach trenera (cudzy → 404). Klucze czasów zawierają sprzęt, więc rekordy porównują się w obrębie sprzętu. Listy treningów mają `apparatusNames`. Migawka zgłoszenia i `import-report` obsługują sprzęty (stare zgłoszenia → Trampolina).
+- Web: `ApparatusSettings` w profilu; edytor (`nextEntryApparatus`, `routinesForApparatus`, chip sprzętu w nagłówku wejścia tylko przy >1 widocznym sprzęcie, czas ukryty dla sprzętu bez czasu, istniejące czasy nadal widoczne); układy (wybór sprzętu, filtr, oznaczenie); statystyki (`statsApparatusChoice`, wybór w `localStorage`, „Wszystkie sprzęty”); karty treningów i widok trenera z nazwami sprzętów.
+
+Weryfikacja: `npm test` 143/143 (API 96, web 47), `npm run typecheck`. Migracja na kopii `Dokumenty\AcroNote-kopie\acronote-2026-11-11_2015.db` (v6 → v7): `integrity_check` ok, `foreign_key_check` pusty, aktywności, elementy układów, wejścia, konta i treningi identyczne jak w oryginale, 8 kont × 2 sprzęty, 48/48 wejść i 4/4 układy na Trampolinie, ponowne otwarcie bez zmian.
+Przeglądarka (375×812 i 1280×800, testowa baza v6 w katalogu tymczasowym zmigrowana przy starcie): profil z listą sprzętów i dodaniem „Airtrack” (zapis ścieżkowy wyłączony „wkrótce”); nowy trening: wejście 1 Trampolina, wejście 2 odziedziczyło Trampolinę i zmienione na DMT, wejście 3 odziedziczyło DMT; na DMT brak przycisków czasu, na Trampolinie „Dodaj czas”; karta treningu „· Trampolina, DMT”; statystyki Trampolina 1 / DMT 2 / wszystkie 3 elementy, wybór zapamiętany; układy z oznaczeniem i filtrem sprzętu, nowy układ z filtra DMT dostaje DMT. Poprawione przy tym: ucięta nazwa sprzętu w chipie (szerszy chip, bez powtórzenia w nagłówku), przełącznik sprzętu w statystykach nieodróżnialny od okresu (wypełniony aktywny), nieostylowany `select` w formularzach (`.form-stack select`), przyciski listy sprzętów łamane na telefonie.
+
+Niezweryfikowane: wygląd na prawdziwym iPhonie; zachowanie przy usuniętym (a nie ukrytym) sprzęcie — API nie ma usuwania, więc dziś nie występuje.

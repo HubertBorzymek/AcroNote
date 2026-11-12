@@ -52,19 +52,19 @@ describe('czas wykonania i prywatna ocena treningu', () => {
     expect(third.json().newRecords).toEqual([expect.objectContaining({ kind: 'routine', label: 'Układ A', timeMs: 9500, previousMs: 9000 })]);
 
     const stats = timeStats(db, athleteId, undefined, undefined, new Date('2026-11-10T12:00:00Z'));
-    const forty = stats.items.find(item => item.key === 'element:40o')!;
+    const forty = stats.items.find(item => item.kind === 'element' && item.label === '40o')!;
     expect(forty).toMatchObject({ count: 5, bestMs: 1400, bestDate: '2026-09-10', avgMs: 1250, lastMs: 1100, lastDate: '2026-11-05', recentAvgMs: 1100, earlierAvgMs: 1288, trendMs: -188 });
     expect(forty.series).toEqual([
       expect.objectContaining({ date: '2026-09-01', count: 2, bestMs: 1300, worstMs: 1200, avgMs: 1250 }),
       expect.objectContaining({ date: '2026-09-10', count: 2, bestMs: 1400, worstMs: 1250 }),
       expect.objectContaining({ date: '2026-11-05', count: 1, bestMs: 1100 }),
     ]);
-    expect(stats.items.find(item => item.key === 'element:41o')).toMatchObject({ count: 1, bestMs: 1100 });
+    expect(stats.items.find(item => item.kind === 'element' && item.label === '41o')).toMatchObject({ count: 1, bestMs: 1100 });
     expect(stats.items.find(item => item.label === 'Układ A')).toMatchObject({ kind: 'routine', count: 2, bestMs: 9500 });
     expect(stats.items.find(item => item.label === 'Układ A (poz. 2–2)')).toMatchObject({ count: 1, bestMs: 4000 });
     // Range filter applies to the endpoint too.
     const ranged = (await app.inject({ method: 'GET', url: '/api/stats/times?from=2026-11-01', headers: { cookie: athlete } })).json();
-    expect(ranged.items.find((item: any) => item.key === 'element:40o')).toMatchObject({ count: 1, bestMs: 1100 });
+    expect(ranged.items.find((item: any) => item.kind === 'element' && item.label === '40o')).toMatchObject({ count: 1, bestMs: 1100 });
   });
 
   it('ocena i komentarz są widoczne tylko dla zawodnika, nie dla trenera, admina ani w zgłoszeniu', async () => {

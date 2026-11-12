@@ -1,4 +1,4 @@
-import type { Db } from './db.js';
+import { defaultApparatus, type Db } from './db.js';
 
 type SnapshotElement = { sourceElementId?: number | null; code: string; name?: string | null; executionTypeId?: number | null; executionTypeName?: string; position?: number; timeMs?: number | null };
 type Activity = {
@@ -10,7 +10,7 @@ type Activity = {
   timeMs?: number | null;
 };
 export type TrainingInput = {
-  date: string; entries: { defaultExecutionTypeId?: number | null; defaultExecutionTypeName?: string; activities: Activity[] }[];
+  date: string; entries: { defaultExecutionTypeId?: number | null; defaultExecutionTypeName?: string; apparatusId?: number | null; apparatusName?: string; activities: Activity[] }[];
   /** Private to the athlete: never returned to coaches or administrators. Omitted = keep the stored value. */
   rating?: number | null; comment?: string | null;
 };
@@ -68,7 +68,8 @@ export function saveTraining(db: Db, userId: number, input: TrainingInput, train
     } else {
       id = Number(db.prepare('INSERT INTO trainings(user_id,training_date,rating,comment) VALUES(?,?,?,?)').run(userId, input.date, rating, comment).lastInsertRowid);
     }
-    const addEntry = db.prepare('INSERT INTO training_entries(training_id,position,default_execution_type_id,default_execution_type_name) VALUES(?,?,?,?)');
+    const addEntry = db.prepare('INSERT INTO training_entries(training_id,position,default_execution_type_id,default_execution_type_name,apparatus_id,apparatus_name) VALUES(?,?,?,?,?,?)');
+    const ownApparatus = db.prepare('SELECT id,name FROM apparatus WHERE id=? AND user_id=?');
     const addActivity = db.prepare(`INSERT INTO activities(entry_id,position,kind,repetitions,execution_type_id,execution_type_name,
       source_element_id,code_snapshot,name_snapshot,source_routine_id,source_routine_name,source_template_version,
       range_start,range_end,is_full_range,matched_original_template,time_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
@@ -76,7 +77,15 @@ export function saveTraining(db: Db, userId: number, input: TrainingInput, train
       execution_type_id,execution_type_name,time_ms) VALUES(?,?,?,?,?,?,?,?)`);
     input.entries.forEach((entry, entryIndex) => {
       const defaultName = requiredText(entry.defaultExecutionTypeName ?? 'Siatka', 'Miejsce lądowania');
-      const entryId = Number(addEntry.run(id, entryIndex, entry.defaultExecutionTypeId ?? null, defaultName).lastInsertRowid);
+      // The apparatus must belong to this user; its name is kept in the entry snapshot (like the landing place).
+      let apparatus = defaultApparatus(db, userId);
+      if (entry.apparatusId != null) {
+        const owned = ownApparatus.get(entry.apparatusId, userId) as { id: number; name: string } | undefined;
+        if (!owned) throw new Error('Wybrany sprzęt nie istnieje.');
+        apparatus = owned;
+      }
+      const apparatusName = typeof entry.apparatusName === 'string' && entry.apparatusName.trim() && entry.apparatusId != null ? entry.apparatusName.trim() : apparatus.name;
+      const entryId = Number(addEntry.run(id, entryIndex, entry.defaultExecutionTypeId ?? null, defaultName, apparatus.id, apparatusName).lastInsertRowid);
       entry.activities.forEach((activity, activityIndex) => {
         if (!Number.isInteger(activity.repetitions) || activity.repetitions < 1) throw new Error('Liczba powtórzeń musi być dodatnią liczbą całkowitą.');
         const activityTime = timeValue(activity.timeMs);
@@ -129,7 +138,7 @@ function matchesCurrentSnapshot(db: Db, userId: number, activity: Activity): boo
 export function getTraining(db: Db, userId: number, id: number, access: TrainingAccess = {}) {
   const training = db.prepare(`SELECT id,training_date date,created_at createdAt,updated_at updatedAt${access.includePrivate ? ',rating,comment' : ''} FROM trainings WHERE id=? AND user_id=?`).get(id, userId) as any;
   if (!training) return null;
-  training.entries = db.prepare('SELECT id,position,default_execution_type_id defaultExecutionTypeId,default_execution_type_name defaultExecutionTypeName FROM training_entries WHERE training_id=? ORDER BY position').all(id) as any[];
+  training.entries = db.prepare('SELECT id,position,default_execution_type_id defaultExecutionTypeId,default_execution_type_name defaultExecutionTypeName,apparatus_id apparatusId,apparatus_name apparatusName FROM training_entries WHERE training_id=? ORDER BY position').all(id) as any[];
   for (const entry of training.entries) {
     entry.activities = db.prepare(`SELECT id,position,kind,repetitions,execution_type_id executionTypeId,execution_type_name executionTypeName,
       source_element_id sourceElementId,code_snapshot code,name_snapshot name,source_routine_id sourceRoutineId,
@@ -142,14 +151,19 @@ export function getTraining(db: Db, userId: number, id: number, access: Training
   return training;
 }
 
-export function trainingSummary(db: Db, userId: number, from?: string, to?: string, elementId?: number) {
+/** `apparatusId` limits everything to entries on that apparatus (statistics are kept per apparatus). */
+export function trainingSummary(db: Db, userId: number, from?: string, to?: string, elementId?: number, apparatusId?: number) {
   const conditions = ['t.user_id=?']; const values: unknown[] = [userId];
   if (from) { conditions.push('t.training_date>=?'); values.push(from); }
   if (to) { conditions.push('t.training_date<=?'); values.push(to); }
   const where = conditions.join(' AND ');
-  const trainings = db.prepare(`SELECT t.id,t.training_date date,COUNT(DISTINCT te.id) entries FROM trainings t LEFT JOIN training_entries te ON te.training_id=t.id WHERE ${where} GROUP BY t.id ORDER BY t.training_date`).all(...values) as any[];
+  const onApparatus = apparatusId === undefined ? '' : ' AND te.apparatus_id=?';
+  const apparatusValues = apparatusId === undefined ? [] : [apparatusId];
+  const trainings = db.prepare(apparatusId === undefined
+    ? `SELECT t.id,t.training_date date,COUNT(DISTINCT te.id) entries FROM trainings t LEFT JOIN training_entries te ON te.training_id=t.id WHERE ${where} GROUP BY t.id ORDER BY t.training_date`
+    : `SELECT t.id,t.training_date date,COUNT(DISTINCT te.id) entries FROM trainings t JOIN training_entries te ON te.training_id=t.id WHERE ${where}${onApparatus} GROUP BY t.id ORDER BY t.training_date`).all(...values, ...apparatusValues) as any[];
   const activityRows = db.prepare(`SELECT a.id,a.kind,a.repetitions,a.is_full_range,a.matched_original_template,a.source_routine_name,
-    a.source_element_id,a.code_snapshot,a.execution_type_name FROM trainings t JOIN training_entries te ON te.training_id=t.id JOIN activities a ON a.entry_id=te.id WHERE ${where}`).all(...values) as any[];
+    a.source_element_id,a.code_snapshot,a.execution_type_name FROM trainings t JOIN training_entries te ON te.training_id=t.id JOIN activities a ON a.entry_id=te.id WHERE ${where}${onApparatus}`).all(...values, ...apparatusValues) as any[];
   const ids = activityRows.map(row => row.id);
   const snapshotRows = ids.length ? db.prepare(`SELECT ae.activity_id,ae.source_element_id,ae.code_snapshot code,ae.execution_type_name,a.repetitions FROM activity_elements ae JOIN activities a ON a.id=ae.activity_id WHERE ae.activity_id IN (${ids.map(()=>'?').join(',')})`).all(...ids) as any[] : [];
   const byCode: Record<string, number> = {};
@@ -171,12 +185,12 @@ export function trainingSummary(db: Db, userId: number, from?: string, to?: stri
   }
   let totalElements = Object.values(byCode).reduce((sum, count) => sum + count, 0);
   for (const training of trainings) {
-    const rows=db.prepare(`SELECT a.kind,a.repetitions,a.code_snapshot FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=?`).all(training.id) as any[];
-    const routineIds=db.prepare(`SELECT a.id,a.repetitions FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=? AND a.kind='routine'`).all(training.id) as any[];
+    const rows=db.prepare(`SELECT a.kind,a.repetitions,a.code_snapshot FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=?${onApparatus}`).all(training.id,...apparatusValues) as any[];
+    const routineIds=db.prepare(`SELECT a.id,a.repetitions FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=?${onApparatus} AND a.kind='routine'`).all(training.id,...apparatusValues) as any[];
     const direct=elementId===undefined?rows.filter(r=>r.kind==='element').reduce((s,r)=>s+r.repetitions,0):
-      Number((db.prepare(`SELECT COALESCE(SUM(a.repetitions),0) count FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=? AND a.kind='element' AND a.source_element_id=?`).get(training.id,elementId) as any).count);
+      Number((db.prepare(`SELECT COALESCE(SUM(a.repetitions),0) count FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=?${onApparatus} AND a.kind='element' AND a.source_element_id=?`).get(training.id,...apparatusValues,elementId) as any).count);
     const nested=elementId===undefined?routineIds.reduce((sum,r)=>sum+(db.prepare('SELECT COUNT(*) count FROM activity_elements WHERE activity_id=?').get(r.id) as any).count*r.repetitions,0):
-      Number((db.prepare(`SELECT COALESCE(SUM(a.repetitions),0) count FROM training_entries te JOIN activities a ON a.entry_id=te.id JOIN activity_elements ae ON ae.activity_id=a.id WHERE te.training_id=? AND ae.source_element_id=?`).get(training.id,elementId) as any).count);
+      Number((db.prepare(`SELECT COALESCE(SUM(a.repetitions),0) count FROM training_entries te JOIN activities a ON a.entry_id=te.id JOIN activity_elements ae ON ae.activity_id=a.id WHERE te.training_id=?${onApparatus} AND ae.source_element_id=?`).get(training.id,...apparatusValues,elementId) as any).count);
     training.totalElements=direct+nested;
   }
   if(elementId!==undefined){

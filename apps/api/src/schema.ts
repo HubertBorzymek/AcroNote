@@ -95,4 +95,13 @@ CREATE TABLE IF NOT EXISTS admin_recovery_codes (
   code_hash TEXT NOT NULL, used_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_admin_recovery_codes_user ON admin_recovery_codes(user_id);
+-- Apparatus ("Na czym skaczę"): a user-editable list like landing places. The element notation
+-- (catalog) is chosen when the apparatus is added and never changes afterwards.
+CREATE TABLE IF NOT EXISTS apparatus (
+  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0,
+  catalog TEXT NOT NULL DEFAULT 'trampoline' CHECK(catalog IN ('trampoline','tumbling')),
+  tracks_time INTEGER NOT NULL DEFAULT 1, hidden INTEGER NOT NULL DEFAULT 0, deleted_at TEXT,
+  UNIQUE(user_id, name)
+);
 `;
