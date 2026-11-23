@@ -70,7 +70,7 @@ Ograniczenia: jedna aktywna prośba na konto (nową można wysłać po odrzuceni
 |---|---|---|
 | Przy pierwszym starcie każdej nowej wersji (przed migracjami) i co dobę, o ile maszyna działa (sprawdzane przy starcie i co 6 h) | serwer, `/data/backups`, 14 ostatnich | automatycznie (`ACRONOTE_ENV=production`) |
 | Codziennie | snapshot wolumenu Fly (kilka dni wstecz) | automatycznie, `fly volumes snapshots list <id>` |
-| Raz w tygodniu (niedziela 19:00 albo przy najbliższym włączeniu komputera) | `Dokumenty\AcroNote-kopie\acronote-tygodniowa.db`, nadpisywany | `scripts\zaplanuj-kopie.bat` uruchom raz |
+| Raz w tygodniu (niedziela 19:00 albo przy najbliższym włączeniu komputera) | `Dokumenty\AcroNote-kopie\acronote-tygodniowa.db`, nadpisywany | `scripts\zaplanuj-kopie.bat` uruchom raz (po zmianie z 2026-11-23 uruchom jeszcze raz, żeby zadanie startowało także na baterii) |
 | Na żądanie, np. przed dużym wdrożeniem | `Dokumenty\AcroNote-kopie\acronote-<data>.db` | dwuklik `scripts\pobierz-kopie.bat` |
 
 Skrypty wymagają `flyctl` zalogowanego raz przez `fly auth login`. Wynik i błędy trafiają do `Dokumenty\AcroNote-kopie\kopie.log`. Kopie zawierają prawdziwe dane użytkowników (z hasłami w postaci skrótów): trzymaj je tylko u siebie, nigdy w repozytorium.

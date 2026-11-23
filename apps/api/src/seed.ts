@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { parseElementCode } from '@acronote/shared';
-import { openDatabase, seedExecutionTypes, type Db } from './db.js';
+import { defaultApparatus, openDatabase, seedExecutionTypes, type Db } from './db.js';
 import { saveTraining } from './training-service.js';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -46,8 +46,9 @@ function seedDemoContent(db:Db,userId:number):void {
   const insert=db.prepare(`INSERT INTO elements(user_id,code,name,favorite,quarter_count,salto_count,total_twist_halves,direction,position_symbol) VALUES(?,?,?,?,?,?,?,?,?)`);
   const ids:number[]=[];
   demoElements.forEach(([code,name],index)=>{const parsed=parseElementCode(code);if(!parsed)throw new Error(`Nieprawidłowy kod danych demo: ${code}`);ids.push(Number(insert.run(userId,code,name,index%7===0?1:0,parsed.quarterCount,parsed.saltoCount,parsed.totalTwistHalves,parsed.direction,parsed.positionSymbol).lastInsertRowid));});
-  const routineInsert=db.prepare("INSERT INTO routines(user_id,name,slot_count) VALUES(?,?,?)");
-  const routine1=Number(routineInsert.run(userId,'Układ 1',8).lastInsertRowid);const routine2=Number(routineInsert.run(userId,'Układ 2',8).lastInsertRowid);
+  const trampoline=defaultApparatus(db,userId).id;
+  const routineInsert=db.prepare("INSERT INTO routines(user_id,name,slot_count,apparatus_id) VALUES(?,?,?,?)");
+  const routine1=Number(routineInsert.run(userId,'Układ 1',8,trampoline).lastInsertRowid);const routine2=Number(routineInsert.run(userId,'Układ 2',8,trampoline).lastInsertRowid);
   const item=db.prepare('INSERT INTO routine_items(routine_id,position,element_id,code_snapshot,name_snapshot) VALUES(?,?,?,?,?)');
   const first=[0,11,2,17,25,6,20,29];const second=[4,14,8,14,22,1,27,10];
   for(const [routine,indexes] of [[routine1,first],[routine2,second]] as const)indexes.forEach((elementIndex,position)=>item.run(routine,position+1,ids[elementIndex],demoElements[elementIndex]![0],demoElements[elementIndex]![1]));

@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { schema } from './schema.js';
-import { parseElementCode } from '@acronote/shared';
+import { parseCatalogCode, type ElementCatalog } from '@acronote/shared';
 
 export type Db = Database.Database;
 
@@ -41,8 +41,10 @@ function migrate(db: Db): void {
     db.prepare("UPDATE execution_types SET name='Siatka' WHERE name='Na płasko' AND deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM execution_types other WHERE other.user_id=execution_types.user_id AND other.name='Siatka')").run();
     db.prepare("UPDATE execution_types SET deleted_at=CURRENT_TIMESTAMP WHERE name='Na płasko' AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM execution_types other WHERE other.user_id=execution_types.user_id AND other.name='Siatka' AND other.deleted_at IS NULL)").run();
     const update = db.prepare('UPDATE elements SET quarter_count=?,salto_count=?,total_twist_halves=?,direction=?,position_symbol=? WHERE id=?');
-    for (const row of db.prepare('SELECT id,code FROM elements').all() as {id:number;code:string}[]) {
-      const parsed = parseElementCode(row.code);
+    // Recomputed on every start with the parser of the element's catalog (tumbling codes are not trampoline codes).
+    const hasCatalog = columns('elements').has('catalog');
+    for (const row of db.prepare(`SELECT id,code,${hasCatalog ? 'catalog' : "'trampoline' catalog"} FROM elements`).all() as {id:number;code:string;catalog:ElementCatalog}[]) {
+      const parsed = parseCatalogCode(row.catalog, row.code);
       update.run(parsed?.quarterCount ?? null, parsed?.saltoCount ?? null, parsed?.totalTwistHalves ?? null, parsed?.direction ?? null, parsed?.positionSymbol ?? null, row.id);
     }
     db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(2)').run();
@@ -87,6 +89,54 @@ function migrate(db: Db): void {
     add('sessions', 'mfa_attempts', 'INTEGER NOT NULL DEFAULT 0');
     db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(6)').run();
   })();
+
+  // v7: apparatus. Every entry and routine belongs to an apparatus; the entry keeps the apparatus name
+  // as part of its snapshot. All existing history was recorded on the trampoline.
+  db.transaction(() => {
+    const add = (table: string, column: string, definition: string) => { if (!columns(table).has(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`); };
+    add('training_entries', 'apparatus_id', 'INTEGER');
+    add('training_entries', 'apparatus_name', 'TEXT');
+    add('routines', 'apparatus_id', 'INTEGER');
+    if (!db.prepare('SELECT 1 FROM migrations WHERE version=7').get()) {
+      for (const { id } of db.prepare('SELECT id FROM users').all() as { id: number }[]) seedApparatus(db, id);
+      db.prepare(`UPDATE training_entries SET apparatus_id=(SELECT a.id FROM trainings t JOIN apparatus a ON a.user_id=t.user_id AND a.name='Trampolina'
+        WHERE t.id=training_entries.training_id), apparatus_name='Trampolina' WHERE apparatus_id IS NULL`).run();
+      db.prepare(`UPDATE routines SET apparatus_id=(SELECT a.id FROM apparatus a WHERE a.user_id=routines.user_id AND a.name='Trampolina') WHERE apparatus_id IS NULL`).run();
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(7)').run();
+  })();
+
+  // v8: element catalogs. Elements get `catalog` (all existing ones: trampoline) and the code is unique
+  // per catalog, which SQLite can only do by rebuilding the table (nothing references elements by a
+  // foreign key; ids are kept, so routine items and training snapshots stay linked). Every user gets
+  // the "Ścieżka" apparatus with the tumbling notation.
+  db.transaction(() => {
+    if (!columns('elements').has('catalog')) {
+      db.exec(`CREATE TABLE elements_v8 (
+        id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code TEXT NOT NULL, name TEXT, favorite INTEGER NOT NULL DEFAULT 0,
+        hidden INTEGER NOT NULL DEFAULT 0, deleted_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        quarter_count INTEGER, salto_count INTEGER, total_twist_halves INTEGER,
+        direction TEXT, position_symbol TEXT,
+        catalog TEXT NOT NULL DEFAULT 'trampoline' CHECK(catalog IN ('trampoline','tumbling')),
+        UNIQUE(user_id, catalog, code));
+        INSERT INTO elements_v8(id,user_id,code,name,favorite,hidden,deleted_at,created_at,quarter_count,salto_count,total_twist_halves,direction,position_symbol,catalog)
+          SELECT id,user_id,code,name,favorite,hidden,deleted_at,created_at,quarter_count,salto_count,total_twist_halves,direction,position_symbol,'trampoline' FROM elements;
+        DROP TABLE elements;
+        ALTER TABLE elements_v8 RENAME TO elements;`);
+    }
+    if (!db.prepare('SELECT 1 FROM migrations WHERE version=8').get()) {
+      for (const { id } of db.prepare('SELECT id FROM users').all() as { id: number }[]) addTumblingApparatus(db, id);
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(8)').run();
+  })();
+}
+
+/** "Ścieżka" with the tumbling notation, unless the user already has an apparatus of that name. */
+function addTumblingApparatus(db: Db, userId: number): void {
+  if (db.prepare("SELECT 1 FROM apparatus WHERE user_id=? AND name='Ścieżka'").get(userId)) return;
+  const order = (db.prepare('SELECT COALESCE(MAX(sort_order),-1)+1 n FROM apparatus WHERE user_id=?').get(userId) as { n: number }).n;
+  db.prepare("INSERT INTO apparatus(user_id,name,sort_order,catalog,tracks_time) VALUES(?,'Ścieżka',?,'tumbling',0)").run(userId, order);
 }
 
 /** Case- and normalization-insensitive form of a username, used for uniqueness and login. */
@@ -94,7 +144,27 @@ export function usernameKey(username: string): string {
   return username.normalize('NFC').toLowerCase();
 }
 
+/** Per-user defaults: landing places and apparatus. */
 export function seedExecutionTypes(db: Db, userId: number): void {
   const insert = db.prepare('INSERT OR IGNORE INTO execution_types(user_id,name,sort_order) VALUES(?,?,?)');
   ['Siatka', 'Materac', 'Gąbki'].forEach((name, index) => insert.run(userId, name, index));
+  seedApparatus(db, userId);
+}
+
+/** Default apparatus for a user without any: Trampolina (the default, with time), DMT, Ścieżka. */
+export function seedApparatus(db: Db, userId: number): void {
+  if (db.prepare('SELECT 1 FROM apparatus WHERE user_id=?').get(userId)) return;
+  const insert = db.prepare('INSERT INTO apparatus(user_id,name,sort_order,catalog,tracks_time) VALUES(?,?,?,?,?)');
+  insert.run(userId, 'Trampolina', 0, 'trampoline', 1);
+  insert.run(userId, 'DMT', 1, 'trampoline', 0);
+  insert.run(userId, 'Ścieżka', 2, 'tumbling', 0);
+}
+
+/** The first visible apparatus is the default one (seeding the defaults when the user has none). */
+export function defaultApparatus(db: Db, userId: number): { id: number; name: string; catalog: 'trampoline' | 'tumbling' } {
+  const pick = () => db.prepare('SELECT id,name,catalog FROM apparatus WHERE user_id=? AND deleted_at IS NULL ORDER BY hidden,sort_order,id LIMIT 1').get(userId) as { id: number; name: string; catalog: 'trampoline' | 'tumbling' } | undefined;
+  let found = pick();
+  if (!found) { seedApparatus(db, userId); found = pick(); }
+  if (!found) throw new Error('Brak sprzętu. Dodaj sprzęt w profilu.');
+  return found;
 }

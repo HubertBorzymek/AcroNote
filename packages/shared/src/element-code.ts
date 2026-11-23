@@ -71,21 +71,95 @@ export function validateElementCode(value: unknown): ParsedElementCode {
   return parsed;
 }
 
-export interface CheckedElementCode {
+/** Element notation of a catalog: trampoline/DMT (FIG numeric) or tumbling (FIG symbols). */
+export type ElementCatalog = 'trampoline' | 'tumbling';
+export const ELEMENT_CATALOGS: readonly ElementCatalog[] = ['trampoline', 'tumbling'];
+
+/** Tumbling elements without a somersault and their Polish names. */
+export const TUMBLING_SPECIALS = { '(': 'Rundak', F: 'Flik', H: 'Przerzut w przód', X: 'Przerzut bokiem', '^': 'Tempo' } as const;
+export type TumblingSpecial = keyof typeof TUMBLING_SPECIALS;
+
+export interface ParsedTumblingCode {
   code: string;
-  /** Null when the user confirmed a code outside the notation. */
-  parsed: ParsedElementCode | null;
+  special: TumblingSpecial | null;
+  saltoCount: number;
+  twistDigits: number[];
+  totalTwistHalves: number;
+  totalTwists: number;
+  direction: ElementDirection | 'side' | null;
+  position: ElementPosition | null;
+  positionSymbol: 'o' | '<' | '/' | null;
 }
 
 /**
- * Accepts a code from the user. A code outside the notation is accepted only
- * when the user confirmed it (allowNonStandard); it is stored as typed and has
+ * FIG tumbling symbols: one digit per somersault (half twists in it), an optional position
+ * (o, <, /; required without twists), a dot before = forward (.0o, .1), a dot after = backward
+ * with twist (1., 2./), no dot = backward (0o, 00/, 22o), x at the end = side (0ox).
+ * Spaces are ignored ("0 0 /" = "00/"). Special elements: ( F H X ^.
+ */
+export function parseTumblingCode(value: unknown): ParsedTumblingCode | null {
+  if (typeof value !== 'string') return null;
+  const compact = value.replace(/\s+/g, '');
+  if (compact.length === 1) {
+    const symbol = (compact === '(' || compact === '^' ? compact : compact.toUpperCase()) as TumblingSpecial;
+    if (symbol in TUMBLING_SPECIALS) return { code: symbol, special: symbol, saltoCount: 0, twistDigits: [], totalTwistHalves: 0, totalTwists: 0, direction: null, position: null, positionSymbol: null };
+  }
+  const match = /^(\.)?(\d{1,4})(\.)?([o<\/])?(x)?$/i.exec(compact);
+  if (!match) return null;
+  const [, front, digits, backDot, shapeText, sideText] = match;
+  const shape = shapeText?.toLowerCase() as 'o' | '<' | '/' | undefined;
+  const side = Boolean(sideText);
+  const twistDigits = [...digits!].map(Number);
+  const totalTwistHalves = twistDigits.reduce((sum, digit) => sum + digit, 0);
+  if (front && backDot) return null;
+  if (side && (front || backDot || !shape)) return null;
+  // Without twists the position is the whole description, and a "back" dot means nothing.
+  if (totalTwistHalves === 0 && (!shape || backDot)) return null;
+  return {
+    code: `${front ? '.' : ''}${digits}${backDot ? '.' : ''}${shape ?? ''}${side ? 'x' : ''}`,
+    special: null, saltoCount: digits!.length, twistDigits, totalTwistHalves, totalTwists: totalTwistHalves / 2,
+    direction: side ? 'side' : front ? 'front' : 'back',
+    position: shape ? positions[shape]! : null, positionSymbol: shape ?? null,
+  };
+}
+
+/** The derived catalog columns of an element (filters), whatever its notation. */
+export interface ElementCodeFields {
+  code: string;
+  quarterCount: number;
+  saltoCount: number;
+  totalTwistHalves: number;
+  totalTwists: number;
+  direction: ElementDirection | 'side' | null;
+  positionSymbol: 'o' | '<' | '/' | null;
+}
+
+export function parseCatalogCode(catalog: ElementCatalog, value: unknown): ElementCodeFields | null {
+  if (catalog === 'tumbling') {
+    const parsed = parseTumblingCode(value);
+    return parsed && { code: parsed.code, quarterCount: parsed.saltoCount * 4, saltoCount: parsed.saltoCount, totalTwistHalves: parsed.totalTwistHalves, totalTwists: parsed.totalTwists, direction: parsed.direction, positionSymbol: parsed.positionSymbol };
+  }
+  const parsed = parseElementCode(value);
+  return parsed && { code: parsed.code, quarterCount: parsed.quarterCount, saltoCount: parsed.saltoCount, totalTwistHalves: parsed.totalTwistHalves, totalTwists: parsed.totalTwists, direction: parsed.direction, positionSymbol: parsed.positionSymbol };
+}
+
+export const INVALID_TUMBLING_CODE_MESSAGE = 'Kod elementu jest nieprawidłowy w zapisie ścieżkowym. Przykłady: 0o, .0<, 1., 22/, ( F ^.';
+
+export interface CheckedElementCode {
+  code: string;
+  /** Null when the user confirmed a code outside the notation. */
+  parsed: ElementCodeFields | null;
+}
+
+/**
+ * Accepts a code from the user in the notation of the catalog. A code outside the notation is
+ * accepted only when the user confirmed it (allowNonStandard); it is stored as typed and has
  * no derived fields.
  */
-export function checkElementCode(value: unknown, allowNonStandard: boolean): CheckedElementCode {
-  const parsed = parseElementCode(value);
+export function checkElementCode(value: unknown, allowNonStandard: boolean, catalog: ElementCatalog = 'trampoline'): CheckedElementCode {
+  const parsed = parseCatalogCode(catalog, value);
   if (parsed) return { code: parsed.code, parsed };
-  if (!allowNonStandard) throw new Error(INVALID_ELEMENT_CODE_MESSAGE);
+  if (!allowNonStandard) throw new Error(catalog === 'tumbling' ? INVALID_TUMBLING_CODE_MESSAGE : INVALID_ELEMENT_CODE_MESSAGE);
   const code = typeof value === 'string' ? value.trim() : '';
   if (!code) throw new Error('Kod elementu jest wymagany.');
   if (code.length > MAX_ELEMENT_CODE_LENGTH) throw new Error(`Kod elementu może mieć najwyżej ${MAX_ELEMENT_CODE_LENGTH} znaków.`);

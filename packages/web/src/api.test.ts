@@ -62,3 +62,12 @@ describe('request', () => {
     expect(body.entries[0].activities[0].sourceTemplateVersion).toBe(4);
   });
 });
+
+describe('elementy z API', () => {
+  it('flagi 0/1 z SQLite stają się wartościami logicznymi (bez „0” w listach)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([{ id: 5, code: '(', favorite: 0, hidden: 1, catalog: 'tumbling' }]), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    try { expect(await api.elements(true)).toEqual([{ id: '5', code: '(', favorite: false, hidden: true, catalog: 'tumbling' }]); }
+    finally { vi.unstubAllGlobals(); }
+  });
+});

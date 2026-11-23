@@ -27,7 +27,7 @@ export interface AdminUser {
 }
 
 export interface AdminUserData {
-  elements: Array<{ id: ID; code: string; name?: string | null; deletedAt?: string | null }>;
+  elements: Array<{ id: ID; code: string; name?: string | null; catalog?: 'trampoline' | 'tumbling'; deletedAt?: string | null }>;
   routines: Array<{ id: ID; name: string; deletedAt?: string | null }>;
   trainings: Array<{ id: ID; date: string }>;
 }
@@ -38,6 +38,18 @@ export interface ElementItem {
   name?: string | null;
   favorite: boolean;
   hidden: boolean;
+  /** Notation of the element: trampoline/DMT or tumbling (missing = trampoline). */
+  catalog?: 'trampoline' | 'tumbling';
+}
+
+/** "Na czym skaczę": a user-editable list. The element notation is fixed when the apparatus is added. */
+export interface Apparatus {
+  id: ID;
+  name: string;
+  sortOrder?: number;
+  catalog: 'trampoline' | 'tumbling';
+  tracksTime: boolean;
+  hidden?: boolean;
 }
 
 export interface ExecutionType {
@@ -61,6 +73,8 @@ export interface Routine {
   slots: RoutineSlot[];
   templateVersion?: number;
   updatedAt?: string;
+  apparatusId?: ID;
+  apparatusName?: string | null;
 }
 
 export interface ActivityElement {
@@ -98,6 +112,9 @@ export interface TrainingEntry {
   id?: ID;
   defaultExecutionTypeId?: ID;
   defaultExecutionTypeName: string;
+  /** The apparatus of this entry; its name is part of the saved snapshot. */
+  apparatusId?: ID;
+  apparatusName?: string;
   activities: Activity[];
   /** Client-only key for list rendering and the collapsed state; never sent to the API. */
   clientKey?: string;
@@ -114,12 +131,14 @@ export interface Training {
   comment?: string | null;
   /** Returned after saving: times that beat the athlete's earlier best. */
   newRecords?: TimeRecord[];
+  /** Distinct apparatus names of the entries (training lists only). */
+  apparatusNames?: string[];
 }
 
-export interface TimeRecord { key: string; kind: 'element' | 'routine'; label: string; timeMs: number; previousMs: number }
+export interface TimeRecord { key: string; kind: 'element' | 'routine'; label: string; apparatusName?: string | null; timeMs: number; previousMs: number }
 
 export interface TimeStatsItem {
-  key: string; kind: 'element' | 'routine'; label: string; count: number;
+  key: string; kind: 'element' | 'routine'; label: string; count: number; apparatusId?: number | null; apparatusName?: string | null;
   bestMs: number; bestDate: string; avgMs: number; lastMs: number; lastDate: string;
   recentAvgMs: number | null; earlierAvgMs: number | null; trendMs: number | null;
   series: Array<{ trainingId: number; date: string; count: number; bestMs: number; worstMs: number; avgMs: number }>;

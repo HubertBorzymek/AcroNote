@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { openBugReport } from './BugReport';
-import { describeElementCode } from '../elementCode';
+import { describeElementCode, type Catalog } from '../elementCode';
 
 export type IconName = 'home' | 'spark' | 'routine' | 'chart' | 'user' | 'admin' | 'plus' | 'search' | 'back' | 'more' | 'journal' | 'target' | 'check' | 'sun' | 'moon' | 'clock' | 'chevron' | 'key';
 
@@ -62,8 +62,8 @@ export function ConfirmDialog({ title, children, confirmLabel = 'Tak', cancelLab
 }
 
 /** Treść pytania o kod spoza notacji. */
-export function NonStandardCodeText({ code }: { code: string }) {
-  return <p>Kod <b>{code.trim()}</b> nie pasuje do notacji (np. <b>40o</b> albo kuczka <b>o</b>). Filtry salt, śrub, kierunku i pozycji go pominą. Czy na pewno chcesz dodać taki element?</p>;
+export function NonStandardCodeText({ code, catalog = 'trampoline' }: { code: string; catalog?: Catalog }) {
+  return <p>Kod <b>{code.trim()}</b> nie pasuje do {catalog === 'tumbling' ? <>zapisu ścieżkowego (np. <b>00/</b>, <b>.1</b> albo rundak <b>(</b>)</> : <>notacji (np. <b>40o</b> albo kuczka <b>o</b>)</>}. Filtry salt, śrub, kierunku i pozycji go pominą. Czy na pewno chcesz dodać taki element?</p>;
 }
 
 export function PageHeader({ title, eyebrow, onBack, action }: { title: string; eyebrow?: string; onBack?: () => void; action?: ReactNode }) {
@@ -75,10 +75,11 @@ export function PageHeader({ title, eyebrow, onBack, action }: { title: string; 
 }
 
 /** Opis kodu pod polem: rozpoznany kod, ostrzeżenie o kodzie spoza notacji albo krótka podpowiedź. */
-export function CodeHint({ code }: { code: string }) {
-  const description = describeElementCode(code);
+export function CodeHint({ code, catalog = 'trampoline' }: { code: string; catalog?: Catalog }) {
+  const description = describeElementCode(code, catalog);
   if (description) return <p className="hint">{description}</p>;
-  if (code.trim()) return <p className="hint warn">Ten kod nie pasuje do notacji. Możesz go zapisać, ale aplikacja zapyta o potwierdzenie.</p>;
+  if (code.trim()) return <p className="hint warn">Ten kod nie pasuje do {catalog === 'tumbling' ? 'zapisu ścieżkowego' : 'notacji'}. Możesz go zapisać, ale aplikacja zapyta o potwierdzenie.</p>;
+  if (catalog === 'tumbling') return <p className="hint">Cyfra na każde salto (półśruby w nim), potem pozycja <b>o</b>, <b>&lt;</b> lub <b>/</b>, np. <b>00/</b>. Kropka z przodu to przód (<b>.0o</b>), kropka po cyfrze to tył ze śrubą (<b>1.</b>). Bez salta: <b>(</b> rundak, <b>F</b> flik, <b>H</b> przerzut w przód, <b>X</b> przerzut bokiem, <b>^</b> tempo.</p>;
   return <p className="hint">Kod kończy się pozycją: <b>o</b>, <b>&lt;</b> lub <b>/</b>, np. <b>40o</b>. Sam znak to element bez salta: <b>o</b> kuczka, <b>&lt;</b> rozkroczka, <b>/</b> poziomka. Liczba cyfr śrub powinna być taka sama jak liczba salt.</p>;
 }
 
