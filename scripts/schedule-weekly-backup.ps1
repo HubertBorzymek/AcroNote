@@ -11,7 +11,8 @@ if ($Remove) { Unregister-ScheduledTask -TaskName $name -Confirm:$false; Write-H
 $script = Join-Path $PSScriptRoot 'backup-prod.ps1'
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`" -Weekly"
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $Day -At $At
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+# A laptop is often on battery at that time; Windows' default (no start on battery) skipped every run.
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
 # Runs as the signed-in user, because flyctl keeps its login in this user's profile.
 Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger -Settings $settings -Description 'Pobiera kopię bazy AcroNote z Fly.io do Dokumenty\AcroNote-kopie (scripts\backup-prod.ps1 -Weekly).' -Force | Out-Null
 Write-Host "Zadanie „$name” ustawione: co tydzień ($Day, $At). Wynik i błędy: Dokumenty\AcroNote-kopie\kopie.log"

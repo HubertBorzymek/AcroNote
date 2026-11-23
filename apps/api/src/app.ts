@@ -12,7 +12,7 @@ import { defaultApparatus, openDatabase, seedExecutionTypes, usernameKey, type D
 import { clearTwoStep, hashToken, PASSWORD_MIN_LENGTH, registerAccountRoutes } from './accounts.js';
 import { getTraining, saveTraining, trainingSummary, type TrainingInput } from './training-service.js';
 import { newTimeRecords, timeStats } from './time-stats.js';
-import { checkElementCode, type ParsedElementCode } from '@acronote/shared';
+import { checkElementCode, type ElementCatalog, type ElementCodeFields } from '@acronote/shared';
 import { registerBugReportRoutes } from './bug-reports.js';
 
 const bool = (value: unknown) => value ? 1 : 0;
@@ -202,24 +202,26 @@ export async function buildApp(options: AppOptions = {}) {
     if (q.quarterCount !== undefined) { conditions.push('quarter_count=?'); values.push(integerQuery(q.quarterCount,'Liczba ćwiartek')); }
     if (q.saltoCount !== undefined) { conditions.push('salto_count=?'); values.push(integerQuery(q.saltoCount,'Liczba salt')); }
     if (q.totalTwists !== undefined) { const twists=Number(q.totalTwists); if(!Number.isFinite(twists)||twists<0||!Number.isInteger(twists*2))throw new Error('Liczba śrub musi być wielokrotnością 0,5.');conditions.push('total_twist_halves=?');values.push(twists*2); }
-    if (q.direction !== undefined) { if(!['front','back'].includes(q.direction))throw new Error('Kierunek musi mieć wartość front albo back.');conditions.push('direction=?');values.push(q.direction); }
+    if (q.catalog !== undefined) { conditions.push('catalog=?'); values.push(elementCatalog(q.catalog)); }
+    if (q.direction !== undefined) { if(!['front','back','side'].includes(q.direction))throw new Error('Kierunek musi mieć wartość front, back albo side.');conditions.push('direction=?');values.push(q.direction); }
     if (q.position !== undefined) { if(!['o','<','/'].includes(q.position))throw new Error('Pozycja musi mieć wartość o, < albo /.');conditions.push('position_symbol=?');values.push(q.position); }
-    return db.prepare(`SELECT id,code,name,favorite,hidden,quarter_count quarterCount,salto_count saltoCount,total_twist_halves/2.0 totalTwists,direction,position_symbol positionSymbol FROM elements WHERE ${conditions.join(' AND ')} ORDER BY favorite DESC,code`).all(...values);
+    return db.prepare(`SELECT id,code,name,favorite,hidden,quarter_count quarterCount,salto_count saltoCount,total_twist_halves/2.0 totalTwists,direction,position_symbol positionSymbol,catalog FROM elements WHERE ${conditions.join(' AND ')} ORDER BY favorite DESC,code`).all(...values);
   });
   app.post('/api/elements', auth, async (request,reply) => {
-    const b=request.body as any; const {code,parsed}=checkElementCode(b?.code,b?.allowNonStandardCode===true); const f=elementCodeFields(parsed); let id:number;
-    // A soft-deleted element still owns its code (UNIQUE(user_id,code)), so re-adding the code revives that row.
-    const deleted=db.prepare('SELECT id FROM elements WHERE user_id=? AND code=? AND deleted_at IS NOT NULL').get(request.userId,code) as {id:number}|undefined;
+    const b=request.body as any; const catalog=elementCatalog(b?.catalog); const {code,parsed}=checkElementCode(b?.code,b?.allowNonStandardCode===true,catalog); const f=elementCodeFields(parsed); let id:number;
+    // A soft-deleted element still owns its code (UNIQUE(user_id,catalog,code)), so re-adding the code revives that row.
+    const deleted=db.prepare('SELECT id FROM elements WHERE user_id=? AND catalog=? AND code=? AND deleted_at IS NOT NULL').get(request.userId,catalog,code) as {id:number}|undefined;
     if(deleted){id=deleted.id;db.prepare('UPDATE elements SET deleted_at=NULL,name=?,favorite=?,hidden=?,quarter_count=?,salto_count=?,total_twist_halves=?,direction=?,position_symbol=? WHERE id=?').run(b.name?.trim()||null,bool(b.favorite),bool(b.hidden),...f,id);}
-    else try{id=Number(db.prepare('INSERT INTO elements(user_id,code,name,favorite,hidden,quarter_count,salto_count,total_twist_halves,direction,position_symbol) VALUES(?,?,?,?,?,?,?,?,?,?)').run(request.userId,code,b.name?.trim()||null,bool(b.favorite),bool(b.hidden),...f).lastInsertRowid);}catch{return reply.status(409).send({message:'Element o tym kodzie już istnieje.'});}
-    return reply.status(201).send({id,code,name:b.name?.trim()||null,favorite:!!b.favorite,hidden:!!b.hidden,quarterCount:parsed?.quarterCount??null,saltoCount:parsed?.saltoCount??null,totalTwists:parsed?.totalTwists??null,direction:parsed?.direction??null,positionSymbol:parsed?.positionSymbol??null});
+    else try{id=Number(db.prepare('INSERT INTO elements(user_id,code,name,favorite,hidden,quarter_count,salto_count,total_twist_halves,direction,position_symbol,catalog) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(request.userId,code,b.name?.trim()||null,bool(b.favorite),bool(b.hidden),...f,catalog).lastInsertRowid);}catch{return reply.status(409).send({message:'Element o tym kodzie już istnieje.'});}
+    return reply.status(201).send({id,code,name:b.name?.trim()||null,favorite:!!b.favorite,hidden:!!b.hidden,quarterCount:parsed?.quarterCount??null,saltoCount:parsed?.saltoCount??null,totalTwists:parsed?.totalTwists??null,direction:parsed?.direction??null,positionSymbol:parsed?.positionSymbol??null,catalog});
   });
   app.put('/api/elements/:id', auth, async (request,reply) => {
     const b=request.body as any; const id=Number((request.params as any).id);
-    const current=db.prepare('SELECT code FROM elements WHERE id=? AND user_id=? AND deleted_at IS NULL').get(id,request.userId) as {code:string}|undefined; if(!current)throw new Error('Nie znaleziono elementu.');
+    const current=db.prepare('SELECT code,catalog FROM elements WHERE id=? AND user_id=? AND deleted_at IS NULL').get(id,request.userId) as {code:string;catalog:ElementCatalog}|undefined; if(!current)throw new Error('Nie znaleziono elementu.');
+    if(b?.catalog!==undefined&&b.catalog!==current.catalog)return reply.status(400).send({message:'Elementu nie można przenieść do innego zapisu. Dodaj go w drugim zapisie jako nowy element.'});
     // Keeping an already saved non-standard code (e.g. toggling favourite) needs no new confirmation.
-    const {code,parsed}=checkElementCode(b?.code,b?.allowNonStandardCode===true||(typeof b?.code==='string'&&b.code.trim()===current.code));
-    const clash=db.prepare('SELECT deleted_at FROM elements WHERE user_id=? AND code=? AND id<>?').get(request.userId,code,id) as {deleted_at:string|null}|undefined; if(clash)return reply.status(409).send({message:clash.deleted_at?'Element o tym kodzie został wcześniej usunięty. Dodaj go jako nowy element, aby go przywrócić.':'Element o tym kodzie już istnieje.'});
+    const {code,parsed}=checkElementCode(b?.code,b?.allowNonStandardCode===true||(typeof b?.code==='string'&&b.code.trim()===current.code),current.catalog);
+    const clash=db.prepare('SELECT deleted_at FROM elements WHERE user_id=? AND catalog=? AND code=? AND id<>?').get(request.userId,current.catalog,code,id) as {deleted_at:string|null}|undefined; if(clash)return reply.status(409).send({message:clash.deleted_at?'Element o tym kodzie został wcześniej usunięty. Dodaj go jako nowy element, aby go przywrócić.':'Element o tym kodzie już istnieje.'});
     db.prepare('UPDATE elements SET code=?,name=?,favorite=?,hidden=?,quarter_count=?,salto_count=?,total_twist_halves=?,direction=?,position_symbol=? WHERE id=? AND user_id=? AND deleted_at IS NULL').run(code,b.name?.trim()||null,bool(b.favorite),bool(b.hidden),...elementCodeFields(parsed),id,request.userId); return {ok:true};
   });
   app.get('/api/elements/:id/usage', auth, async request => elementUsage(db,request.userId,Number((request.params as any).id)));
@@ -277,7 +279,7 @@ export async function buildApp(options: AppOptions = {}) {
   app.post('/api/admin/users/:userId/restore', adminAuth, async (request,reply) => {const userId=Number((request.params as any).userId);const info=db.prepare('UPDATE users SET deleted_at=NULL WHERE id=? AND deleted_at IS NOT NULL').run(userId);if(!info.changes)return reply.status(404).send({message:'Nie znaleziono usuniętego konta.'});return adminUser(db,userId);});
   app.get('/api/admin/users/:userId/data', adminAuth, async (request,reply) => {
     const userId=Number((request.params as any).userId);if(!adminUser(db,userId))return reply.status(404).send({message:'Nie znaleziono konta.'});
-    return {elements:db.prepare('SELECT id,code,name,favorite,hidden,deleted_at deletedAt,created_at createdAt FROM elements WHERE user_id=? ORDER BY id').all(userId),routines:db.prepare('SELECT id,name,template_version templateVersion,slot_count slotCount,deleted_at deletedAt,created_at createdAt FROM routines WHERE user_id=? ORDER BY id').all(userId),trainings:db.prepare('SELECT id,training_date date,created_at createdAt,updated_at updatedAt FROM trainings WHERE user_id=? ORDER BY training_date DESC,id DESC').all(userId)};
+    return {elements:db.prepare('SELECT id,code,name,favorite,hidden,catalog,deleted_at deletedAt,created_at createdAt FROM elements WHERE user_id=? ORDER BY id').all(userId),routines:db.prepare('SELECT id,name,template_version templateVersion,slot_count slotCount,deleted_at deletedAt,created_at createdAt FROM routines WHERE user_id=? ORDER BY id').all(userId),trainings:db.prepare('SELECT id,training_date date,created_at createdAt,updated_at updatedAt FROM trainings WHERE user_id=? ORDER BY training_date DESC,id DESC').all(userId)};
   });
   app.get('/api/admin/users/:userId/trainings/:id', adminAuth, async (request,reply) => {const p=request.params as any;const training=getTraining(db,Number(p.userId),Number(p.id));return training??reply.status(404).send({message:'Nie znaleziono treningu.'});});
   app.put('/api/admin/users/:userId/trainings/:id', adminAuth, async request => {const p=request.params as any;const id=saveTraining(db,Number(p.userId),request.body as TrainingInput,Number(p.id));return getTraining(db,Number(p.userId),id);});
@@ -385,14 +387,16 @@ function listRoutines(db:Db,userId:number,id?:number){const rows=db.prepare(`SEL
 function saveRoutine(db:Db,userId:number,b:any,id?:number){const name=text(b.name,'Nazwa układu');const slotCount=Math.max(1,Math.min(100,Number(b.slotCount??10)));const items=Array.isArray(b.items)?b.items:[];return db.transaction(()=>{
   // The apparatus must be the user's own; without one the routine keeps its apparatus (new routines: the default).
   let apparatusId:number|null=null;if(b.apparatusId!=null){if(!db.prepare('SELECT 1 FROM apparatus WHERE id=? AND user_id=? AND deleted_at IS NULL').get(Number(b.apparatusId),userId))throw new Error('Wybrany sprzęt nie istnieje.');apparatusId=Number(b.apparatusId);}
-  if(id){const info=db.prepare('UPDATE routines SET name=?,slot_count=?,apparatus_id=COALESCE(?,apparatus_id),template_version=template_version+1 WHERE id=? AND user_id=? AND deleted_at IS NULL').run(name,slotCount,apparatusId,id,userId);if(!info.changes)throw new Error('Nie znaleziono układu.');db.prepare('DELETE FROM routine_items WHERE routine_id=?').run(id);}else id=Number(db.prepare('INSERT INTO routines(user_id,name,slot_count,apparatus_id) VALUES(?,?,?,?)').run(userId,name,slotCount,apparatusId??defaultApparatus(db,userId).id).lastInsertRowid);const insert=db.prepare('INSERT INTO routine_items(routine_id,position,element_id,code_snapshot,name_snapshot) VALUES(?,?,?,?,?)');items.forEach((item:any,index:number)=>{let code=item.code,nameValue=item.name??null;if(item.elementId){const element=db.prepare('SELECT code,name FROM elements WHERE id=? AND user_id=? AND deleted_at IS NULL').get(item.elementId,userId) as any;if(!element)throw new Error('Wybrany element nie istnieje.');code=element.code;nameValue=element.name;}insert.run(id,index+1,item.elementId??null,text(code,'Kod elementu'),nameValue);});return id!;})();}
+  if(id){const info=db.prepare('UPDATE routines SET name=?,slot_count=?,apparatus_id=COALESCE(?,apparatus_id),template_version=template_version+1 WHERE id=? AND user_id=? AND deleted_at IS NULL').run(name,slotCount,apparatusId,id,userId);if(!info.changes)throw new Error('Nie znaleziono układu.');db.prepare('DELETE FROM routine_items WHERE routine_id=?').run(id);}else id=Number(db.prepare('INSERT INTO routines(user_id,name,slot_count,apparatus_id) VALUES(?,?,?,?)').run(userId,name,slotCount,apparatusId??defaultApparatus(db,userId).id).lastInsertRowid);
+  // A routine only holds elements written in its apparatus' notation.
+  const catalog=(db.prepare('SELECT a.catalog FROM routines r JOIN apparatus a ON a.id=r.apparatus_id WHERE r.id=?').get(id) as {catalog:ElementCatalog}|undefined)?.catalog;const insert=db.prepare('INSERT INTO routine_items(routine_id,position,element_id,code_snapshot,name_snapshot) VALUES(?,?,?,?,?)');items.forEach((item:any,index:number)=>{let code=item.code,nameValue=item.name??null;if(item.elementId){const element=db.prepare('SELECT code,name,catalog FROM elements WHERE id=? AND user_id=? AND deleted_at IS NULL').get(item.elementId,userId) as any;if(!element)throw new Error('Wybrany element nie istnieje.');if(catalog&&element.catalog!==catalog)throw new Error(catalogMismatch(catalog));code=element.code;nameValue=element.name;}insert.run(id,index+1,item.elementId??null,text(code,'Kod elementu'),nameValue);});return id!;})();}
 function hasEnabledProfile(db:Db,userId:number,profile:'athlete'|'coach'){const column=profile==='athlete'?'athlete_enabled':'coach_enabled';return Boolean(db.prepare(`SELECT 1 FROM users WHERE id=? AND deleted_at IS NULL AND ${column}=1`).get(userId));}
 function hasCoachAccess(db:Db,athleteId:number,coachId:number){return Boolean(db.prepare(`SELECT 1 FROM coach_links cl JOIN users a ON a.id=cl.athlete_id JOIN users c ON c.id=cl.coach_id
   WHERE cl.athlete_id=? AND cl.coach_id=? AND a.deleted_at IS NULL AND c.deleted_at IS NULL AND a.athlete_enabled=1 AND c.coach_enabled=1`).get(athleteId,coachId));}
 function coachDenied(reply:any){return reply.status(403).send({message:'Brak dostępu do danych zawodnika.'});}
 function findPendingInvitation(db:Db,credential:string){return db.prepare(`SELECT i.id,i.creator_id,i.role,i.expires_at,u.username creator_username FROM invitations i JOIN users u ON u.id=i.creator_id
   WHERE (i.token_hash=? OR i.short_code_hash=?) AND i.used_at IS NULL AND i.cancelled_at IS NULL AND i.expires_at>datetime('now') AND u.deleted_at IS NULL`).get(hashToken(credential),hashToken(credential.toUpperCase())) as any;}
-function listElements(db:Db,userId:number){return db.prepare(`SELECT id,code,name,favorite,hidden,quarter_count quarterCount,salto_count saltoCount,total_twist_halves/2.0 totalTwists,direction,position_symbol positionSymbol
+function listElements(db:Db,userId:number){return db.prepare(`SELECT id,code,name,favorite,hidden,quarter_count quarterCount,salto_count saltoCount,total_twist_halves/2.0 totalTwists,direction,position_symbol positionSymbol,catalog
   FROM elements WHERE user_id=? AND deleted_at IS NULL ORDER BY favorite DESC,code`).all(userId);}
 function listTrainings(db:Db,conditions:string[],values:any[]){return db.prepare(`SELECT t.id,t.training_date date,t.created_at createdAt,t.updated_at updatedAt,
   (SELECT COUNT(*) FROM training_entries te WHERE te.training_id=t.id) entriesCount,${APPARATUS_NAMES_COLUMN}
@@ -421,11 +425,12 @@ function coachElementHistory(db:Db,userId:number,id:number,reply:any){
 }
 
 /** Derived catalog columns; all null for a confirmed non-standard code. */
-function elementCodeFields(parsed:ParsedElementCode|null){return [parsed?.quarterCount??null,parsed?.saltoCount??null,parsed?.totalTwistHalves??null,parsed?.direction??null,parsed?.positionSymbol??null] as const;}
+function elementCodeFields(parsed:ElementCodeFields|null){return [parsed?.quarterCount??null,parsed?.saltoCount??null,parsed?.totalTwistHalves??null,parsed?.direction??null,parsed?.positionSymbol??null] as const;}
 
 function listApparatus(db:Db,userId:number){return (db.prepare('SELECT id,name,sort_order sortOrder,catalog,tracks_time tracksTime,hidden FROM apparatus WHERE user_id=? AND deleted_at IS NULL ORDER BY sort_order,id').all(userId) as any[]).map(row=>({...row,tracksTime:!!row.tracksTime,hidden:!!row.hidden}));}
-// Stage 1: only the trampoline notation exists; the tumbling catalog comes with its own parser.
-function apparatusCatalog(value:unknown){if(value===undefined||value==='trampoline')return 'trampoline';if(value==='tumbling')throw new Error('Zapis ścieżkowy będzie dostępny wkrótce.');throw new Error('Nieprawidłowy zapis elementów sprzętu.');}
+function apparatusCatalog(value:unknown):ElementCatalog{if(value===undefined||value==='trampoline')return 'trampoline';if(value==='tumbling')return 'tumbling';throw new Error('Nieprawidłowy zapis elementów sprzętu.');}
+function elementCatalog(value:unknown):ElementCatalog{if(value===undefined||value===''||value==='trampoline')return 'trampoline';if(value==='tumbling')return 'tumbling';throw new Error('Nieprawidłowy zapis elementów.');}
+export function catalogMismatch(catalog:ElementCatalog){return catalog==='tumbling'?'Na tym sprzęcie są elementy w zapisie ścieżkowym. Wybierz element ścieżkowy.':'Na tym sprzęcie są elementy w zapisie trampolinowym. Wybierz element trampolinowy.';}
 /** undefined = no filter; null = not this user's apparatus. */
 function apparatusQuery(db:Db,userId:number,value:unknown):number|undefined|null{if(value===undefined||value==='')return undefined;const id=integerQuery(value,'Sprzęt');return db.prepare('SELECT 1 FROM apparatus WHERE id=? AND user_id=?').get(id,userId)?id:null;}
 /** Distinct apparatus names of a training, in entry order (from the entry snapshots). */

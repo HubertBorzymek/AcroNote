@@ -36,6 +36,8 @@ const id = (value: unknown) => value == null ? undefined : String(value);
 const apiId = (value: string | undefined) => value && /^\d+$/.test(value) ? Number(value) : value || null;
 const mapUser = (user: User & { id: unknown }): User => ({ ...user, id: String(user.id) });
 const mapIds = <T extends { id: unknown }>(items: T[]) => items.map((item) => ({ ...item, id: String(item.id) }));
+// SQLite returns 0/1: as booleans, so `item.favorite && …` never renders a stray "0".
+const mapElement = (item: Omit<ElementItem, 'id'> & { id: unknown }): ElementItem => ({ ...item, id: String(item.id), favorite: Boolean(item.favorite), hidden: Boolean(item.hidden) });
 function landingCounts(value: unknown): LandingCount[] {
   if (Array.isArray(value)) return value.map((item) => ({ name: String(item.name ?? item.executionTypeName ?? item.landing ?? 'Inne'), count: Number(item.count ?? 0) }));
   if (value && typeof value === 'object') return Object.entries(value as Record<string, unknown>).map(([name, count]) => ({ name, count: Number(count) }));
@@ -82,9 +84,9 @@ export const api = {
   changePassword: (currentPassword: string, newPassword: string) => request<void>('/auth/password', { method: 'PUT', ...json({ currentPassword, newPassword }) }),
   updateProfiles: async (athleteEnabled: boolean, coachEnabled: boolean) => mapUser(await request<User & { id: unknown }>('/profile', { method: 'PUT', ...json({ athleteEnabled, coachEnabled }) })),
 
-  elements: async (includeHidden = false) => (await request<Array<Omit<ElementItem, 'id'> & { id: unknown }>>(`/elements${includeHidden ? '?hidden=all' : ''}`)).map((item) => ({ ...item, id: String(item.id) })),
+  elements: async (includeHidden = false) => (await request<Array<Omit<ElementItem, 'id'> & { id: unknown }>>(`/elements${includeHidden ? '?hidden=all' : ''}`)).map(mapElement),
   // allowNonStandardCode: the user confirmed a code outside the notation (e.g. 4o).
-  createElement: async (input: Omit<ElementItem, 'id'>, allowNonStandardCode = false) => { const item = await request<Omit<ElementItem, 'id'> & { id: unknown }>('/elements', { method: 'POST', ...json({ ...input, allowNonStandardCode }) }); return { ...item, id: String(item.id) }; },
+  createElement: async (input: Omit<ElementItem, 'id'>, allowNonStandardCode = false) => { const item = await request<Omit<ElementItem, 'id'> & { id: unknown }>('/elements', { method: 'POST', ...json({ ...input, allowNonStandardCode }) }); return mapElement(item); },
   updateElement: (elementId: string, input: Omit<ElementItem, 'id'>, allowNonStandardCode = false) => request<void>(`/elements/${elementId}`, { method: 'PUT', ...json({ ...input, allowNonStandardCode }) }),
   elementUsage: (elementId: string) => request<{ routineCount: number }>(`/elements/${elementId}/usage`),
   deleteElement: (id: string, removeFromRoutines = false) => request<void>(`/elements/${id}?routineHandling=${removeFromRoutines ? 'remove' : 'keep'}`, { method: 'DELETE' }),
@@ -126,7 +128,7 @@ export const api = {
   disconnectAthlete: (athleteId: string) => request<void>(`/coach/links/${athleteId}`, { method: 'DELETE' }),
   disconnectCoach: (coachId: string) => request<void>(`/athlete/coaches/${coachId}`, { method: 'DELETE' }),
   coachAthlete: async (athleteId: string) => { const item = await request<CoachAthlete & { id: unknown }>(`/coach/athletes/${athleteId}`); return { ...item, id: String(item.id) }; },
-  coachElements: async (athleteId: string) => mapIds(await request<Array<ElementItem & { id: unknown }>>(`/coach/athletes/${athleteId}/elements`)),
+  coachElements: async (athleteId: string) => (await request<Array<ElementItem & { id: unknown }>>(`/coach/athletes/${athleteId}/elements`)).map(mapElement),
   coachApparatus: async (athleteId: string) => mapIds(await request<Array<Apparatus & { id: unknown }>>(`/coach/athletes/${athleteId}/apparatus`)),
   coachExecutionTypes: async (athleteId: string) => mapIds(await request<Array<ExecutionType & { id: unknown }>>(`/coach/athletes/${athleteId}/execution-types`)),
   coachRoutines: async (athleteId: string) => (await request<RawRoutine[]>(`/coach/athletes/${athleteId}/routines`)).map(mapRoutine),

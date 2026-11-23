@@ -4,6 +4,7 @@ import { today, useAsync } from '../hooks';
 import { ErrorState, Icon, Loading, PageHeader } from '../components/ui';
 import type { Apparatus, TimeStatsItem } from '../types';
 import { formatTime, formatTimeDelta } from '../time';
+import { catalogOf, elementLabel } from '../elementFilters';
 
 const shortDate = (date: string) => new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'short' }).format(new Date(`${date}T12:00:00`));
 
@@ -70,7 +71,10 @@ function StatsView({ coachAthleteId, embedded = false, refreshKey = 0, apparatus
   if (result.error || elements.error || !result.data) return <ErrorState message={result.error || elements.error || 'Brak danych.'} retry={() => void Promise.all([result.reload(), elements.reload()])}/>;
   const max = Math.max(...result.data.timeline.map((x) => x.elements), 1);
   const maxEntries = Math.max(...result.data.timeline.map((x) => x.entries), 1);
-  const selected = elements.data?.find((item) => item.id === elementId);
+  // With one apparatus chosen, only elements of its notation make sense in the element filter.
+  const shownCatalog = apparatus.find((item) => item.id === shown)?.catalog;
+  const shownElements = (elements.data ?? []).filter((item) => !shownCatalog || catalogOf(item) === shownCatalog);
+  const selected = shownElements.find((item) => item.id === elementId);
   const landingData = selected ? result.data.landingByCode.find((item) => item.code === selected.code)?.landings ?? result.data.byLanding : result.data.byLanding;
   const landingTotal = landingData.reduce((sum, item) => sum + item.count, 0);
   const timeItems = (times.data?.items ?? []).filter((item) => !selected || (item.kind === 'element' && item.label === selected.code));
@@ -78,7 +82,7 @@ function StatsView({ coachAthleteId, embedded = false, refreshKey = 0, apparatus
     {!embedded && <PageHeader title="Statystyki" eyebrow="Twój postęp"/>}
     {visibleApparatus.length > 1 && <div className="filter-row apparatus-switch" role="group" aria-label="Sprzęt">{[...visibleApparatus, { id: 'all', name: 'Wszystkie sprzęty' }].map((item) => <button key={item.id} className={shown === item.id ? 'active' : ''} aria-pressed={shown === item.id} onClick={() => choose(item.id)}>{item.name}</button>)}</div>}
     <div className="filter-row period">{([['week', 'Ten tydzień'], ['month', 'Ten miesiąc'], ['all', 'Cały czas']] as const).map(([key, label]) => <button className={period === key ? 'active' : ''} onClick={() => setPeriod(key)} key={key}>{label}</button>)}</div>
-    <label className="stats-element-filter"><span>Pokaż wyniki</span><select value={elementId} onChange={(e) => setElementId(e.target.value)}><option value="">Wszystkie elementy</option>{elements.data?.map((item) => <option value={item.id} key={item.id}>{item.code}{item.name ? ` — ${item.name}` : ''}</option>)}</select></label>
+    <label className="stats-element-filter"><span>Pokaż wyniki</span><select value={elementId} onChange={(e) => setElementId(e.target.value)}><option value="">Wszystkie elementy</option>{shownElements.map((item) => <option value={item.id} key={item.id}>{item.code} — {elementLabel(item)}</option>)}</select></label>
     <section className="stats-grid"><article className="stat-card accent"><span>Wykonane elementy</span><strong>{result.data.elements.toLocaleString('pl-PL')}</strong><small>Łącznie w okresie</small></article><article className="stat-card"><span>Wejścia</span><strong>{result.data.entries}</strong><small>w {result.data.trainings} treningach</small></article><article className="stat-card"><span>Pełne układy</span><strong>{result.data.fullRoutines}</strong><small>+ {result.data.fragments} fragmentów</small></article></section>
     {!!timeItems.length && <TimeStatsSection items={timeItems} recentDays={times.data!.recentDays} showApparatus={shown === 'all' && visibleApparatus.length > 1}/>}
     <section className="chart-card"><header><div><span>Aktywność</span><h2>{selected ? `${selected.code} w czasie` : 'Elementy w czasie'}</h2></div><span className="chart-legend"><i/> liczba wykonań</span></header>{result.data.timeline.length ? <div className="bar-chart" role="img" aria-label={`Wykres liczby wykonań${selected ? ` elementu ${selected.code}` : ''} w czasie`}>{result.data.timeline.map((point) => <div className="bar-column" key={point.date} title={`${point.date}: ${point.elements}`}><span>{point.elements || ''}</span><i style={{ height: `${Math.max(3, point.elements / max * 100)}%` }}/><small>{new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'short' }).format(new Date(`${point.date}T12:00:00`))}</small></div>)}</div> : <p className="chart-empty">W tym okresie nie ma jeszcze zapisanych wykonań.</p>}</section>

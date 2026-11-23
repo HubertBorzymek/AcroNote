@@ -25,7 +25,7 @@ export function buildUserSnapshot(db: Db, userId: number) {
     user: { ...user, athleteEnabled: !!user?.athleteEnabled, coachEnabled: !!user?.coachEnabled },
     executionTypes: db.prepare('SELECT id,name,sort_order sortOrder,hidden,deleted_at deletedAt FROM execution_types WHERE user_id=? ORDER BY sort_order,id').all(userId),
     apparatus: db.prepare('SELECT id,name,sort_order sortOrder,catalog,tracks_time tracksTime,hidden,deleted_at deletedAt FROM apparatus WHERE user_id=? ORDER BY sort_order,id').all(userId),
-    elements: db.prepare('SELECT id,code,name,favorite,hidden,deleted_at deletedAt,created_at createdAt FROM elements WHERE user_id=? ORDER BY id').all(userId),
+    elements: db.prepare('SELECT id,code,name,favorite,hidden,catalog,deleted_at deletedAt,created_at createdAt FROM elements WHERE user_id=? ORDER BY id').all(userId),
     routines,
     trainings: trainingIds.map(row => getTraining(db, userId, row.id)).reverse(),
     trainingsTruncated: totalTrainings > trainingIds.length,

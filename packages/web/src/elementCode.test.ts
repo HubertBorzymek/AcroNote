@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeElementCode, parseElementCode, standardElementName } from './elementCode';
+import { describeElementCode, parseCatalogCode, parseElementCode, parseTumblingCode, standardElementName } from './elementCode';
 
 describe('parseElementCode', () => {
   it.each([
@@ -34,5 +34,36 @@ describe('parseElementCode', () => {
 
   it.each(['121o', '800', '13000/', 'abc/', '4o', 'oo'])('odrzuca nieprawidłowy kod %s', (code) => {
     expect(parseElementCode(code)).toBeNull();
+  });
+});
+
+describe('zapis ścieżkowy (web, ta sama logika co @acronote/shared)', () => {
+  it.each([
+    ['0o', 1, 0, 'Tył', 'Kuczna'],
+    ['.0<', 1, 0, 'Przód', 'Łamana'],
+    ['.1', 1, 0.5, 'Przód', null],
+    ['1. /', 1, 0.5, 'Tył', 'Prosta'],
+    ['0 0 /', 2, 0, 'Tył', 'Prosta'],
+    ['22o', 2, 2, 'Tył', 'Kuczna'],
+    ['0ox', 1, 0, 'Bok', 'Kuczna'],
+    ['4o', 1, 2, 'Tył', 'Kuczna'],
+    ['0000<', 4, 0, 'Tył', 'Łamana'],
+  ] as const)('czyta %s', (code, somersaults, totalTwists, direction, positionName) => {
+    expect(parseCatalogCode(code, 'tumbling')).toMatchObject({ somersaults, totalTwists, direction, positionName });
+  });
+
+  it.each(['0', '0.o', '.1.', '.0ox', '0x', '00000o', 'o', '00Y'])('odrzuca %s', (code) => {
+    expect(parseTumblingCode(code)).toBeNull();
+  });
+
+  it('nazywa elementy bez salta i opisuje salta', () => {
+    expect([['(', 'Rundak'], ['f', 'Flik'], ['H', 'Przerzut w przód'], ['x', 'Przerzut bokiem'], ['^', 'Tempo']].map(([code]) => standardElementName(code, 'tumbling'))).toEqual(['Rundak', 'Flik', 'Przerzut w przód', 'Przerzut bokiem', 'Tempo']);
+    expect(describeElementCode('(', 'tumbling')).toBe('Rundak · element bez salta');
+    expect(describeElementCode('00/', 'tumbling')).toBe('2 salta · 0 śruby · tył · prosta');
+    expect(describeElementCode('2.', 'tumbling')).toBe('1 salto · 1 śruby · tył');
+    // The same text means different things in the two notations.
+    expect(describeElementCode('o', 'tumbling')).toBeNull();
+    expect(standardElementName('o', 'trampoline')).toBe('Kuczka');
+    expect(standardElementName('o')).toBe('Kuczka');
   });
 });

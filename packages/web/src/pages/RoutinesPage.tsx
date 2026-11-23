@@ -1,10 +1,9 @@
 import { FormEvent, useMemo, useState } from 'react';
-import { standardElementName } from '../elementCode';
 import { api } from '../api';
 import { useAsync, useUnsavedChanges } from '../hooks';
 import type { Apparatus, Routine, RoutineSlot } from '../types';
 import { EmptyState, ErrorState, Icon, Loading, PageHeader, Toast } from '../components/ui';
-import { ElementFilterControls, emptyElementFilters, filterElementChoices } from '../elementFilters';
+import { catalogOf, ElementFilterControls, elementLabel, elementsOfCatalog, emptyElementFilters, filterElementChoices } from '../elementFilters';
 
 export function RoutinesPage({ setDirty }: { setDirty: (dirty: boolean) => void }) {
   const routines = useAsync(api.routines, []);
@@ -73,6 +72,10 @@ export function RoutinesPage({ setDirty }: { setDirty: (dirty: boolean) => void 
   if (routines.loading || elements.loading) return <Loading/>;
   if (routines.error || elements.error) return <ErrorState message={routines.error || elements.error} retry={() => void Promise.all([routines.reload(), elements.reload()])}/>;
   const apparatusOptions = (apparatus.data ?? []).filter((x) => !x.hidden);
+  // The routine's elements come from the notation of its apparatus.
+  const formCatalog = (apparatus.data ?? []).find((x) => x.id === apparatusId)?.catalog ?? 'trampoline';
+  const slotCatalogs = new Set(slots.map((slot) => elements.data?.find((x) => x.id === slot.elementId)).filter(Boolean).map((item) => catalogOf(item!)));
+  const pickerElements = elementsOfCatalog(elements.data ?? [], formCatalog);
   const multipleApparatus = apparatusOptions.length > 1;
   const listed = (routines.data ?? []).filter((routine) => shown === 'all' || !routine.apparatusId || routine.apparatusId === shown);
   return <div className="page">
@@ -92,8 +95,8 @@ export function RoutinesPage({ setDirty }: { setDirty: (dirty: boolean) => void 
         <label>Nazwa układu<input value={name} onChange={(e) => { setName(e.target.value); markDirty(true); }} required placeholder="np. Układ 1" autoFocus/></label>
         {(multipleApparatus || (apparatusId && !apparatusOptions.some((x) => x.id === apparatusId))) && <label>Sprzęt<select value={apparatusId} onChange={(e) => { setApparatusId(e.target.value); markDirty(true); }}>
           {apparatusId && !apparatusOptions.some((x) => x.id === apparatusId) && <option value={apparatusId} disabled>{(apparatus.data ?? []).find((x) => x.id === apparatusId)?.name ?? 'Usunięty sprzęt'}</option>}
-          {apparatusOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select><small>Układ pojawi się przy wejściach na tym sprzęcie.</small></label>}
+          {apparatusOptions.map((item) => <option key={item.id} value={item.id} disabled={slotCatalogs.size > 0 && !slotCatalogs.has(item.catalog)}>{item.name}{apparatusOptions.some((x) => x.catalog !== item.catalog) ? ` (zapis ${item.catalog === 'tumbling' ? 'ścieżkowy' : 'trampolinowy'})` : ''}</option>)}
+        </select><small>{slotCatalogs.size ? 'Układ pojawi się przy wejściach na tym sprzęcie. Sprzęt z innym zapisem wybierzesz, gdy usuniesz elementy.' : 'Układ pojawi się przy wejściach na tym sprzęcie.'}</small></label>}
         <div className="field-label"><span>Elementy układu</span><small>{slots.length} / dowolna liczba</small></div>
         <div className="slot-list">
           {slots.map((slot, index) => <div className={`slot ${duplicateIds.has(slot.elementId) ? 'duplicate' : ''}`} key={`${slot.elementId}-${index}`}>
@@ -107,7 +110,7 @@ export function RoutinesPage({ setDirty }: { setDirty: (dirty: boolean) => void 
         <div className="sheet-actions"><button type="button" className="button secondary" onClick={close}>Anuluj</button><button className="button primary" disabled={saving || slots.length === 0}>{saving ? 'Zapisywanie…' : 'Zapisz układ'}</button></div>
       </form>
     </section></div>}
-    {picker !== null && <div className="modal-backdrop above"><section className="sheet picker"><PageHeader title="Wybierz element" onBack={() => setPicker(null)}/><div className="search"><Icon name="search"/><input autoFocus placeholder="Kod lub nazwa" value={query} onChange={(e) => setQuery(e.target.value)}/></div><ElementFilterControls value={pickerFilters} onChange={setPickerFilters}/><div className="pick-list">{filterElementChoices(elements.data ?? [], query, pickerFilters).map((item) => <button key={item.id} onClick={() => selectElement(item.id)}><strong>{item.code}</strong><span>{item.name || standardElementName(item.code) || 'Bez nazwy'}</span>{item.favorite && <b>★</b>}</button>)}</div>{!filterElementChoices(elements.data ?? [], query, pickerFilters).length && <p className="picker-empty">Brak elementów pasujących do wyszukiwania i filtrów.</p>}</section></div>}
+    {picker !== null && <div className="modal-backdrop above"><section className="sheet picker"><PageHeader title="Wybierz element" onBack={() => setPicker(null)}/><div className="search"><Icon name="search"/><input autoFocus placeholder="Kod lub nazwa" value={query} onChange={(e) => setQuery(e.target.value)}/></div><ElementFilterControls value={pickerFilters} onChange={setPickerFilters} catalog={formCatalog}/><div className="pick-list">{filterElementChoices(pickerElements, query, pickerFilters).map((item) => <button key={item.id} onClick={() => selectElement(item.id)}><strong>{item.code}</strong><span>{elementLabel(item)}</span>{item.favorite && <b>★</b>}</button>)}</div>{!filterElementChoices(pickerElements, query, pickerFilters).length && <p className="picker-empty">Brak elementów pasujących do wyszukiwania i filtrów.</p>}</section></div>}
     {message && <Toast message={message} kind={message.startsWith('Nie') ? 'error' : 'success'} onClose={() => setMessage('')}/>} 
   </div>;
 }

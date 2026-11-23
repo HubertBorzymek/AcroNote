@@ -11,7 +11,7 @@ type App = Awaited<ReturnType<typeof buildApp>>;
 
 const element = (code: string, timeMs?: number) => ({ kind: 'element', code, repetitions: 1, executionTypeName: 'Siatka', ...(timeMs !== undefined && { timeMs }) });
 
-describe('sprzęty (trampolina, DMT…)', () => {
+describe('sprzęty (trampolina, DMT, ścieżka)', () => {
   let db: Db; let app: App; let athlete: string; let athleteId: number; let coach: string; let stranger: string;
   beforeEach(async () => {
     db = openDatabase(':memory:');
@@ -30,15 +30,16 @@ describe('sprzęty (trampolina, DMT…)', () => {
   const send = (method: 'POST' | 'PUT', url: string, payload: object, cookie = athlete) => app.inject({ method, url, headers: { cookie }, payload });
   const list = async (cookie = athlete) => (await get('/api/apparatus', cookie)).json() as any[];
 
-  it('nowe konto ma domyślnie Trampolinę (z czasem), a DMT bez czasu na drugiej pozycji', async () => {
-    expect(await list()).toMatchObject([{ name: 'Trampolina', catalog: 'trampoline', tracksTime: true, hidden: false }, { name: 'DMT', catalog: 'trampoline', tracksTime: false }]);
+  it('nowe konto ma domyślnie Trampolinę (z czasem), potem DMT i Ścieżkę bez czasu', async () => {
+    expect(await list()).toMatchObject([{ name: 'Trampolina', catalog: 'trampoline', tracksTime: true, hidden: false }, { name: 'DMT', catalog: 'trampoline', tracksTime: false }, { name: 'Ścieżka', catalog: 'tumbling', tracksTime: false }]);
   });
 
   it('lista jest edytowalna, a zapisu elementów nie da się zmienić po dodaniu', async () => {
     const added = await send('POST', '/api/apparatus', { name: 'Airtrack', catalog: 'trampoline', tracksTime: false });
-    expect(added.statusCode, added.body).toBe(201); expect(added.json()).toMatchObject({ name: 'Airtrack', catalog: 'trampoline', tracksTime: false, sortOrder: 2 });
+    expect(added.statusCode, added.body).toBe(201); expect(added.json()).toMatchObject({ name: 'Airtrack', catalog: 'trampoline', tracksTime: false, sortOrder: 3 });
     expect((await send('POST', '/api/apparatus', { name: 'Airtrack' })).statusCode).toBe(409);
-    expect((await send('POST', '/api/apparatus', { name: 'Ścieżka', catalog: 'tumbling' })).json().message).toMatch(/wkrótce/);
+    expect((await send('POST', '/api/apparatus', { name: 'Ścieżka 2', catalog: 'tumbling' })).json()).toMatchObject({ catalog: 'tumbling', tracksTime: false });
+    expect((await send('POST', '/api/apparatus', { name: 'Coś', catalog: 'inne' })).statusCode).toBe(400);
     const id = added.json().id;
     expect((await send('PUT', `/api/apparatus/${id}`, { name: 'Air', catalog: 'tumbling', tracksTime: true })).statusCode).toBe(400);
     expect((await send('PUT', `/api/apparatus/${id}`, { name: 'Air', sortOrder: 0, tracksTime: true })).statusCode).toBe(200);
@@ -47,8 +48,9 @@ describe('sprzęty (trampolina, DMT…)', () => {
   });
 
   it('nie pozwala ukryć ostatniego widocznego sprzętu', async () => {
-    const [trampoline, dmt] = await list();
+    const [trampoline, dmt, tumbling] = await list();
     expect((await send('PUT', `/api/apparatus/${dmt.id}`, { ...dmt, hidden: true })).statusCode).toBe(200);
+    expect((await send('PUT', `/api/apparatus/${tumbling.id}`, { ...tumbling, hidden: true })).statusCode).toBe(200);
     expect((await send('PUT', `/api/apparatus/${trampoline.id}`, { ...trampoline, hidden: true })).json().message).toMatch(/co najmniej jeden/);
   });
 
@@ -74,7 +76,7 @@ describe('sprzęty (trampolina, DMT…)', () => {
     expect((await get('/api/trainings')).json()[0].apparatusNames).toEqual(['Trampolina', 'DMT']);
     // The coach sees the apparatus too (read-only), a stranger does not.
     expect((await get(`/api/coach/athletes/${athleteId}/trainings`, coach)).json()[0].apparatusNames).toEqual(['Trampolina', 'DMT']);
-    expect((await get(`/api/coach/athletes/${athleteId}/apparatus`, coach)).json().map((item: any) => item.name)).toEqual(['Trampolina', 'Mini']);
+    expect((await get(`/api/coach/athletes/${athleteId}/apparatus`, coach)).json().map((item: any) => item.name)).toEqual(['Trampolina', 'Mini', 'Ścieżka']);
     expect((await get(`/api/coach/athletes/${athleteId}/apparatus`, stranger)).statusCode).toBe(403);
   });
 
@@ -112,13 +114,13 @@ describe('sprzęty (trampolina, DMT…)', () => {
   it('migawka zgłoszenia zawiera sprzęty, ale nadal bez oceny i komentarza', async () => {
     await send('POST', '/api/trainings', { date: '2026-11-10', rating: 9, comment: 'prywatne', entries: [{ activities: [element('40o')] }] });
     const snapshot = buildUserSnapshot(db, athleteId);
-    expect(snapshot.apparatus.map((item: any) => item.name)).toEqual(['Trampolina', 'DMT']);
+    expect(snapshot.apparatus.map((item: any) => item.name)).toEqual(['Trampolina', 'DMT', 'Ścieżka']);
     expect(snapshot.trainings[0].entries[0].apparatusName).toBe('Trampolina');
     expect(JSON.stringify(snapshot)).not.toContain('prywatne');
   });
 });
 
-describe('migracja v7: historia na trampolinie', () => {
+describe('migracje v7–v8: historia na trampolinie', () => {
   let dir: string;
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'acronote-v7-')); });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
@@ -138,9 +140,9 @@ describe('migracja v7: historia na trampolinie', () => {
 
     db = openDatabase(path);
     try {
-      expect((db.prepare('SELECT MAX(version) v FROM migrations').get() as any).v).toBe(7);
+      expect((db.prepare('SELECT MAX(version) v FROM migrations').get() as any).v).toBe(8);
       const apparatus = db.prepare('SELECT id,name,tracks_time tracksTime FROM apparatus WHERE user_id=? ORDER BY sort_order').all(userId) as any[];
-      expect(apparatus.map((item) => [item.name, item.tracksTime])).toEqual([['Trampolina', 1], ['DMT', 0]]);
+      expect(apparatus.map((item) => [item.name, item.tracksTime])).toEqual([['Trampolina', 1], ['DMT', 0], ['Ścieżka', 0]]);
       expect(db.prepare('SELECT apparatus_id id,apparatus_name name FROM training_entries WHERE id=?').get(entryId)).toEqual({ id: apparatus[0].id, name: 'Trampolina' });
       expect((db.prepare('SELECT apparatus_id id FROM routines WHERE user_id=?').get(userId) as any).id).toBe(apparatus[0].id);
       expect((db.prepare("SELECT code_snapshot code,repetitions FROM activities").get() as any)).toEqual({ code: '40o', repetitions: 3 });
@@ -148,6 +150,6 @@ describe('migracja v7: historia na trampolinie', () => {
     } finally { db.close(); }
     // Opening again changes nothing.
     db = openDatabase(path);
-    try { expect((db.prepare('SELECT COUNT(*) n FROM apparatus').get() as any).n).toBe(2); } finally { db.close(); }
+    try { expect((db.prepare('SELECT COUNT(*) n FROM apparatus').get() as any).n).toBe(3); } finally { db.close(); }
   });
 });

@@ -27,7 +27,7 @@ export interface AdminUser {
 }
 
 export interface AdminUserData {
-  elements: Array<{ id: ID; code: string; name?: string | null; deletedAt?: string | null }>;
+  elements: Array<{ id: ID; code: string; name?: string | null; catalog?: 'trampoline' | 'tumbling'; deletedAt?: string | null }>;
   routines: Array<{ id: ID; name: string; deletedAt?: string | null }>;
   trainings: Array<{ id: ID; date: string }>;
 }
@@ -38,6 +38,8 @@ export interface ElementItem {
   name?: string | null;
   favorite: boolean;
   hidden: boolean;
+  /** Notation of the element: trampoline/DMT or tumbling (missing = trampoline). */
+  catalog?: 'trampoline' | 'tumbling';
 }
 
 /** "Na czym skaczę": a user-editable list. The element notation is fixed when the apparatus is added. */

@@ -11,6 +11,7 @@ export function ApparatusSettings({ onMessage }: { onMessage: (message: string, 
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [tracksTime, setTracksTime] = useState(false);
+  const [catalog, setCatalog] = useState<Apparatus['catalog']>('trampoline');
   const [saving, setSaving] = useState(false);
   const items = list.data ?? [];
 
@@ -28,8 +29,8 @@ export function ApparatusSettings({ onMessage }: { onMessage: (message: string, 
   }
   async function add(event: FormEvent) {
     event.preventDefault(); if (!name.trim()) return; setSaving(true);
-    await run(() => api.createApparatus({ name: name.trim(), catalog: 'trampoline', tracksTime }), 'Dodano sprzęt.');
-    setSaving(false); setAdding(false); setName(''); setTracksTime(false);
+    await run(() => api.createApparatus({ name: name.trim(), catalog, tracksTime }), 'Dodano sprzęt.');
+    setSaving(false); setAdding(false); setName(''); setTracksTime(false); setCatalog('trampoline');
   }
 
   return <section className="settings-card">
@@ -37,7 +38,7 @@ export function ApparatusSettings({ onMessage }: { onMessage: (message: string, 
     <p className="settings-copy">Sprzęt wybierasz przy każdym wejściu. Pierwszy z góry jest domyślny w nowym treningu, a kolejne wejście dostaje sprzęt z poprzedniego. Statystyki liczą się osobno dla każdego sprzętu.</p>
     {adding && <form className="form-stack inset apparatus-form" onSubmit={add}>
       <label>Nazwa<input autoFocus value={name} onChange={(e) => setName(e.target.value)} required maxLength={60} placeholder="np. Trampolina 2"/></label>
-      <label>Zapis elementów<select value="trampoline" onChange={() => undefined}><option value="trampoline">Trampolinowy (trampolina, DMT)</option><option value="tumbling" disabled>Ścieżkowy — wkrótce</option></select><small>Wybierasz raz, przy dodawaniu. Później nie da się go zmienić.</small></label>
+      <label>Zapis elementów<select value={catalog} onChange={(e) => setCatalog(e.target.value as Apparatus['catalog'])}><option value="trampoline">Trampolinowy (trampolina, DMT)</option><option value="tumbling">Ścieżkowy (ścieżka)</option></select><small>Wybierasz raz, przy dodawaniu. Później nie da się go zmienić.</small></label>
       <label className="check-row"><input type="checkbox" checked={tracksTime} onChange={(e) => setTracksTime(e.target.checked)}/><span><strong>Mierzę czas</strong><small>Przy elementach na tym sprzęcie pojawi się pole czasu.</small></span></label>
       <div className="sheet-actions"><button type="button" className="button secondary" onClick={() => setAdding(false)}>Anuluj</button><button className="button primary" disabled={saving}>{saving ? 'Dodaję…' : 'Dodaj sprzęt'}</button></div>
     </form>}

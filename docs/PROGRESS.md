@@ -133,7 +133,14 @@
 - `o` (kuczka), `<` (rozkroczka), `/` (poziomka) są poprawnymi kodami elementów bez salta i śruby. Nazwa pokazuje się, gdy nie ma własnej, i działa w wyszukiwaniu. Filtry mają opcję „Element bez salta”.
 - Kod spoza notacji (np. `4o`) można dodać po potwierdzeniu „Niepoprawny kod… Czy na pewno?” (Tak/Nie) na stronie *Elementy* i w okienku wyboru elementu w treningu. Na liście ma oznaczenie „kod spoza notacji” i nie trafia do filtrów kodu.
 
-## Iteracja 2026-11-12 — sprzęty, etap 1 (gałąź `dev`, niewdrożona)
+## Iteracja 2026-11-23 — ścieżka (etap 2), wersja 0.5.0
+
+- Zapis ścieżkowy (symbole FIG): elementy ścieżkowe osobno od trampolinowych, zakładki *Trampolina / DMT* i *Ścieżka* na stronie *Elementy*, ściągawka i podpowiedzi pod kodem dla każdego zapisu, rundak/flik/przerzut w przód/przerzut bokiem/tempo z nazwami, filtry do 4 salt i kierunek „Bok”.
+- Każde konto ma sprzęt „Ścieżka”; w profilu przy dodawaniu sprzętu można wybrać zapis ścieżkowy. Wejście i układ na Ścieżce pokazują i przyjmują tylko elementy ścieżkowe.
+- Wszystkie dotychczasowe elementy są w zapisie trampolinowym (migracja v8, sprawdzona na kopii produkcji z 2026-11-23).
+- Poprawki: „0” za nazwą elementu w oknach wyboru; cotygodniowa kopia nie startowała na baterii.
+
+## Iteracja 2026-11-12 — sprzęty, etap 1 (wdrożona razem z etapem 2)
 
 - *Profil → Na czym skaczę*: lista sprzętów jak miejsca lądowania (nazwa, kolejność, ukrywanie, pomiar czasu). Zapis elementów wybiera się przy dodawaniu; na razie tylko trampolinowy, ścieżkowy oznaczony „wkrótce”. Nowe konto: Trampolina (domyślna) i DMT.
 - Wejście ma sprzęt (mały wybór w nagłówku, widoczny przy więcej niż jednym sprzęcie); kolejne wejście dostaje sprzęt poprzedniego. Nazwa sprzętu jest w migawce wejścia. Pole czasu tylko na sprzęcie z pomiarem czasu.

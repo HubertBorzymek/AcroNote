@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseElementCode } from '@acronote/shared';
+import { parseCatalogCode } from '@acronote/shared';
 import { defaultApparatus, openDatabase, resolveDatabasePath, type Db } from './db.js';
 import { SNAPSHOT_FORMAT } from './bug-reports.js';
 
@@ -27,9 +27,10 @@ export async function importSnapshot(db: Db, snapshot: any, baseName: string): P
     const fallbackApparatus = defaultApparatus(db, userId);
     for (const t of snapshot.executionTypes ?? []) types.set(t.id, Number(db.prepare('INSERT INTO execution_types(user_id,name,sort_order,hidden,deleted_at) VALUES(?,?,?,?,?)').run(userId, t.name, t.sortOrder ?? 0, t.hidden ? 1 : 0, t.deletedAt ?? null).lastInsertRowid));
     for (const e of snapshot.elements ?? []) {
-      const p = parseElementCode(e.code);
-      elements.set(e.id, Number(db.prepare('INSERT INTO elements(user_id,code,name,favorite,hidden,deleted_at,quarter_count,salto_count,total_twist_halves,direction,position_symbol) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
-        .run(userId, e.code, e.name ?? null, e.favorite ? 1 : 0, e.hidden ? 1 : 0, e.deletedAt ?? null, p?.quarterCount ?? null, p?.saltoCount ?? null, p?.totalTwistHalves ?? null, p?.direction ?? null, p?.positionSymbol ?? null).lastInsertRowid));
+      const catalog = e.catalog === 'tumbling' ? 'tumbling' : 'trampoline';
+      const p = parseCatalogCode(catalog, e.code);
+      elements.set(e.id, Number(db.prepare('INSERT INTO elements(user_id,code,name,favorite,hidden,deleted_at,quarter_count,salto_count,total_twist_halves,direction,position_symbol,catalog) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(userId, e.code, e.name ?? null, e.favorite ? 1 : 0, e.hidden ? 1 : 0, e.deletedAt ?? null, p?.quarterCount ?? null, p?.saltoCount ?? null, p?.totalTwistHalves ?? null, p?.direction ?? null, p?.positionSymbol ?? null, catalog).lastInsertRowid));
     }
     for (const r of snapshot.routines ?? []) {
       const id = Number(db.prepare('INSERT INTO routines(user_id,name,template_version,slot_count,apparatus_id,deleted_at) VALUES(?,?,?,?,?,?)').run(userId, r.name, r.templateVersion ?? 1, r.slotCount ?? 10, mapped(apparatus, r.apparatusId) ?? fallbackApparatus.id, r.deletedAt ?? null).lastInsertRowid);

@@ -69,7 +69,14 @@ export function saveTraining(db: Db, userId: number, input: TrainingInput, train
       id = Number(db.prepare('INSERT INTO trainings(user_id,training_date,rating,comment) VALUES(?,?,?,?)').run(userId, input.date, rating, comment).lastInsertRowid);
     }
     const addEntry = db.prepare('INSERT INTO training_entries(training_id,position,default_execution_type_id,default_execution_type_name,apparatus_id,apparatus_name) VALUES(?,?,?,?,?,?)');
-    const ownApparatus = db.prepare('SELECT id,name FROM apparatus WHERE id=? AND user_id=?');
+    const ownApparatus = db.prepare('SELECT id,name,catalog FROM apparatus WHERE id=? AND user_id=?');
+    const ownElementCatalog = db.prepare('SELECT catalog FROM elements WHERE id=? AND user_id=?');
+    // An element from the user's catalog must be written in the notation of the entry's apparatus.
+    const checkCatalog = (elementId: number | null | undefined, catalog: string) => {
+      if (elementId == null) return;
+      const element = ownElementCatalog.get(elementId, userId) as { catalog: string } | undefined;
+      if (element && element.catalog !== catalog) throw new Error(catalog === 'tumbling' ? 'Wejście na sprzęcie ze ścieżkowym zapisem może zawierać tylko elementy ścieżkowe.' : 'Wejście na sprzęcie z trampolinowym zapisem może zawierać tylko elementy trampolinowe.');
+    };
     const addActivity = db.prepare(`INSERT INTO activities(entry_id,position,kind,repetitions,execution_type_id,execution_type_name,
       source_element_id,code_snapshot,name_snapshot,source_routine_id,source_routine_name,source_template_version,
       range_start,range_end,is_full_range,matched_original_template,time_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
@@ -80,7 +87,7 @@ export function saveTraining(db: Db, userId: number, input: TrainingInput, train
       // The apparatus must belong to this user; its name is kept in the entry snapshot (like the landing place).
       let apparatus = defaultApparatus(db, userId);
       if (entry.apparatusId != null) {
-        const owned = ownApparatus.get(entry.apparatusId, userId) as { id: number; name: string } | undefined;
+        const owned = ownApparatus.get(entry.apparatusId, userId) as { id: number; name: string; catalog: 'trampoline' | 'tumbling' } | undefined;
         if (!owned) throw new Error('Wybrany sprzęt nie istnieje.');
         apparatus = owned;
       }
@@ -89,6 +96,8 @@ export function saveTraining(db: Db, userId: number, input: TrainingInput, train
       entry.activities.forEach((activity, activityIndex) => {
         if (!Number.isInteger(activity.repetitions) || activity.repetitions < 1) throw new Error('Liczba powtórzeń musi być dodatnią liczbą całkowitą.');
         const activityTime = timeValue(activity.timeMs);
+        if (activity.kind === 'element') checkCatalog(activity.sourceElementId, apparatus.catalog);
+        else for (const element of activity.elements ?? []) checkCatalog(element.sourceElementId, apparatus.catalog);
         const elementTimes = activity.kind === 'routine' ? (activity.elements ?? []).map(element => timeValue(element.timeMs)) : [];
         if (activity.repetitions !== 1 && (activityTime !== null || elementTimes.some(time => time !== null))) throw new Error(ONE_EXECUTION_ONLY);
         const executionName = requiredText(activity.executionTypeName ?? defaultName, 'Miejsce lądowania');
