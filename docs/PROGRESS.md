@@ -133,6 +133,16 @@
 - `o` (kuczka), `<` (rozkroczka), `/` (poziomka) są poprawnymi kodami elementów bez salta i śruby. Nazwa pokazuje się, gdy nie ma własnej, i działa w wyszukiwaniu. Filtry mają opcję „Element bez salta”.
 - Kod spoza notacji (np. `4o`) można dodać po potwierdzeniu „Niepoprawny kod… Czy na pewno?” (Tak/Nie) na stronie *Elementy* i w okienku wyboru elementu w treningu. Na liście ma oznaczenie „kod spoza notacji” i nie trafia do filtrów kodu.
 
+## Iteracja 2026-11-24 — uwagi z użytkowania (gałąź `dev`, niewdrożona)
+
+- Przytrzymanie wejścia zaznacza je; zaznaczone można usunąć albo zduplikować (kopie bez czasów, na górze).
+- Pole „Wejście nieukończone” i spokojna informacja w statystykach.
+- Ten sam kod może mieć kilka wariantów z różnym opisem; statystyki i rekordy liczą je osobno.
+- Zmiana nazwy użytkownika w profilu (z hasłem).
+- Okna wyboru bez automatycznej klawiatury; „Zapisz i kontynuuj” jako główny przycisk po prawej, krótki znikający komunikat „Zapisano.”.
+- Migracja v9 (sprawdzona na kopii produkcji z 2026-11-24).
+- Niepełne salta: przyjmowane oba zapisy (`700o` i `70o`, `510o` i `51o`); istniejące elementy bez zmian.
+
 ## Iteracja 2026-11-23 — ścieżka (etap 2), wersja 0.5.0
 
 - Zapis ścieżkowy (symbole FIG): elementy ścieżkowe osobno od trampolinowych, zakładki *Trampolina / DMT* i *Ścieżka* na stronie *Elementy*, ściągawka i podpowiedzi pod kodem dla każdego zapisu, rundak/flik/przerzut w przód/przerzut bokiem/tempo z nazwami, filtry do 4 salt i kierunek „Bok”.

@@ -140,7 +140,7 @@ describe('migracje v7–v8: historia na trampolinie', () => {
 
     db = openDatabase(path);
     try {
-      expect((db.prepare('SELECT MAX(version) v FROM migrations').get() as any).v).toBe(8);
+      expect((db.prepare('SELECT MAX(version) v FROM migrations').get() as any).v).toBe(9);
       const apparatus = db.prepare('SELECT id,name,tracks_time tracksTime FROM apparatus WHERE user_id=? ORDER BY sort_order').all(userId) as any[];
       expect(apparatus.map((item) => [item.name, item.tracksTime])).toEqual([['Trampolina', 1], ['DMT', 0], ['Ścieżka', 0]]);
       expect(db.prepare('SELECT apparatus_id id,apparatus_name name FROM training_entries WHERE id=?').get(entryId)).toEqual({ id: apparatus[0].id, name: 'Trampolina' });

@@ -32,7 +32,11 @@ describe('parseElementCode', () => {
     expect(describeElementCode('40')).toBeNull();
   });
 
-  it.each(['121o', '800', '13000/', 'abc/', '4o', 'oo'])('odrzuca nieprawidłowy kod %s', (code) => {
+  it.each([['70o', 1, 0], ['700o', 1, 0], ['51o', 1, 0.5], ['510o', 1, 0.5], ['901<', 2, 0.5], ['9001<', 2, 0.5]] as const)('niepełne salto %s (oba zapisy)', (code, somersaults, totalTwists) => {
+    expect(parseElementCode(code)).toMatchObject({ somersaults, totalTwists });
+  });
+
+  it.each(['121o', '800', '13000/', 'abc/', '4o', 'oo', '7000o'])('odrzuca nieprawidłowy kod %s', (code) => {
     expect(parseElementCode(code)).toBeNull();
   });
 });

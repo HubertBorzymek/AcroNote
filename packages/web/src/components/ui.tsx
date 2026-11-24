@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { openBugReport } from './BugReport';
 import { describeElementCode, type Catalog } from '../elementCode';
 
@@ -41,7 +41,13 @@ export function EmptyState({ icon, title, description, action }: { icon: IconNam
   return <div className="state empty"><span className="empty-icon"><Icon name={icon}/></span><h2>{title}</h2><p>{description}</p>{action}</div>;
 }
 
-export function Toast({ message, kind = 'success', onClose }: { message: string; kind?: 'success' | 'error'; onClose: () => void }) {
+/** `autoHideMs`: the message closes by itself (short confirmations like "Zapisano"). */
+export function Toast({ message, kind = 'success', onClose, autoHideMs }: { message: string; kind?: 'success' | 'error'; onClose: () => void; autoHideMs?: number }) {
+  useEffect(() => {
+    if (!autoHideMs) return;
+    const timer = setTimeout(onClose, autoHideMs);
+    return () => clearTimeout(timer);
+  }, [message, autoHideMs]);
   return <div className={`toast ${kind}`} role="status"><span>{kind === 'success' ? <Icon name="check"/> : '!'}</span><p>{message}</p><button aria-label="Zamknij" onClick={onClose}>×</button></div>;
 }
 

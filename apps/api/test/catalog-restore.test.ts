@@ -20,14 +20,16 @@ describe('ponowne dodawanie usuniętych pozycji katalogu', () => {
     const again=await app.inject({method:'POST',url:'/api/elements',headers:headers(),payload:{code:'40o',name:'Nowe'}});
     expect(again.statusCode).toBe(201);expect(again.json()).toMatchObject({id:first.id,name:'Nowe'});
     expect((await app.inject({method:'GET',url:'/api/elements',headers:headers()})).json()).toHaveLength(1);
-    expect((await app.inject({method:'POST',url:'/api/elements',headers:headers(),payload:{code:'40o'}})).statusCode).toBe(409);
+    expect((await app.inject({method:'POST',url:'/api/elements',headers:headers(),payload:{code:'40o',name:'nowe'}})).statusCode).toBe(409);
+    // Without a description it is another variant of the same code.
+    expect((await app.inject({method:'POST',url:'/api/elements',headers:headers(),payload:{code:'40o'}})).statusCode).toBe(201);
   });
 
   it('zwraca czytelny konflikt przy zmianie kodu na zajęty',async()=>{
     await app.inject({method:'POST',url:'/api/elements',headers:headers(),payload:{code:'40o'}});
     const other=(await app.inject({method:'POST',url:'/api/elements',headers:headers(),payload:{code:'41o'}})).json();
     const response=await app.inject({method:'PUT',url:`/api/elements/${other.id}`,headers:headers(),payload:{code:'40o'}});
-    expect(response.statusCode).toBe(409);expect(response.json().message).toBe('Element o tym kodzie już istnieje.');
+    expect(response.statusCode).toBe(409);expect(response.json().message).toMatch(/już istnieje/);
   });
 
   it('przywraca usunięte miejsce lądowania i odrzuca duplikat nazwy',async()=>{

@@ -63,6 +63,33 @@ export function routinesForApparatus(routines: Routine[], apparatusId: string | 
   return routines.filter((routine) => !routine.apparatusId || !apparatusId || routine.apparatusId === apparatusId);
 }
 
+/** Copies of the chosen entries, added as the newest ones, in their original order. Times are not copied: a time belongs to one jump. */
+export function duplicateEntries(entries: TrainingEntry[], keys: Set<string>, newKey: () => string): TrainingEntry[] {
+  const copies = entries.filter((entry) => keys.has(entry.clientKey!)).map((entry): TrainingEntry => ({
+    ...entry, id: undefined, clientKey: newKey(),
+    activities: entry.activities.map((activity) => ({ ...activity, id: undefined, timeMs: null, elements: activity.elements?.map((item) => ({ ...item, timeMs: null })) })),
+  }));
+  return [...entries, ...copies];
+}
+
+/** Long press (about half a second) without moving the finger; a following click is swallowed. */
+function useLongPress(onLongPress: (key: string) => void) {
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const fired = useRef(false);
+  const cancel = () => { clearTimeout(timer.current); start.current = null; };
+  return {
+    handlers: (key: string) => ({
+      onPointerDown: (event: React.PointerEvent) => { fired.current = false; start.current = { x: event.clientX, y: event.clientY }; clearTimeout(timer.current); timer.current = setTimeout(() => { fired.current = true; navigator.vibrate?.(15); onLongPress(key); }, 500); },
+      onPointerMove: (event: React.PointerEvent) => { if (start.current && Math.hypot(event.clientX - start.current.x, event.clientY - start.current.y) > 10) cancel(); },
+      onPointerUp: cancel, onPointerLeave: cancel, onPointerCancel: cancel,
+      onContextMenu: (event: React.MouseEvent) => event.preventDefault(),
+    }),
+    /** True once after a long press: the click that ends it must not also toggle the entry. */
+    consumed: () => { const value = fired.current; fired.current = false; return value; },
+  };
+}
+
 function recordsMessage(records: TimeRecord[] | undefined) {
   if (!records?.length) return undefined;
   return `Nowy rekord: ${records.map((item) => `${item.label} — ${formatTime(item.timeMs)}`).join(', ')}`;
@@ -91,6 +118,10 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
   const [editingActivity, setEditingActivity] = useState<EditingActivity | null>(null);
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [visibleEntryCount, setVisibleEntryCount] = useState(5);
+  // Selection mode (long press on an entry header): delete or duplicate several entries at once.
+  const [selection, setSelection] = useState<Set<string> | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const longPress = useLongPress((key) => setSelection((current) => new Set(current ?? []).add(key)));
   useUnsavedChanges(dirty);
 
   const markDirty = () => { setDirty(true); setGlobalDirty(true); };
@@ -105,6 +136,21 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
     setEntries([...entries, { defaultExecutionTypeId: execution.id, defaultExecutionTypeName: execution.name, apparatusId: apparatus?.id, apparatusName: apparatus?.name, activities: [], clientKey: newKey() }]);
     setVisibleEntryCount((current) => current > 5 ? current + 1 : 5);
     markDirty();
+  }
+  function toggleSelected(key: string) {
+    setSelection((current) => { const next = new Set(current ?? []); if (next.has(key)) next.delete(key); else next.add(key); return next.size ? next : null; });
+  }
+  function duplicateSelected() {
+    if (!selection) return;
+    const count = selection.size;
+    setCollapsed(new Set(entries.map((entry) => entry.clientKey!)));
+    setEntries(duplicateEntries(entries, selection, newKey)); setSelection(null); markDirty();
+    setVisibleEntryCount((current) => Math.max(5, current + count));
+    setMessage(`Zduplikowano ${count === 1 ? 'wejście' : `wejścia (${count})`} — kopie są na górze, bez czasów. Zapisz trening, aby je zachować.`);
+  }
+  function removeSelected() {
+    if (!selection) return;
+    setEntries(entries.filter((entry) => !selection.has(entry.clientKey!))); setSelection(null); setConfirmDelete(false); markDirty();
   }
   function removeEntry(index: number) {
     if (entries[index].activities.length && !confirm('Usunąć wejście wraz ze wszystkimi czynnościami?')) return;
@@ -143,7 +189,7 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
       setSavedId(saved.id); setDirty(false); setGlobalDirty(false);
       const records = recordsMessage(saved.newRecords);
       if (closeAfterSave) await onSaved(records ? `Trening został zapisany. ${records}` : undefined);
-      else setMessage(records ? `Zapisano. ${records}` : 'Zapisano. Trener widzi już aktualne wejścia — możesz kontynuować trening.');
+      else setMessage(records ? `Zapisano. ${records}` : 'Zapisano.');
       return true;
     }
     catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Nie udało się zapisać treningu. Twoje dane pozostały w formularzu.'); }
@@ -171,16 +217,17 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
     <PageHeader title={savedId ? 'Edytuj trening' : 'Nowy trening'} eyebrow={dirty ? 'Niezapisane zmiany' : savedId ? 'Zmiany widoczne dla trenera' : 'Dziennik'} onBack={back} action={<button className="button primary compact" onClick={() => void save(false)} disabled={saving}>{saving ? 'Zapisuję…' : 'Zapisz'}</button>}/>
     <section className="date-panel"><label>Data treningu<input type="date" value={date} onChange={(e) => { setDate(e.target.value); markDirty(); }}/></label><div><strong>{entries.length}</strong><span>wejść</span></div><div><strong>{total}</strong><span>elementów</span></div></section>
     <button className="add-entry" onClick={addEntry}><Icon name="plus"/><span><strong>Dodaj wejście</strong><small>Nowe wejście pojawi się na górze listy</small></span></button>
-    {!!entries.length && <div className="entry-list-summary"><div><strong>Ostatnie wejścia</strong><small>Najnowsze są na górze · dotknij nagłówka, aby zwinąć</small></div><span>{visibleIndexes.length} z {entries.length}</span></div>}
+    {!!entries.length && <div className="entry-list-summary"><div><strong>Ostatnie wejścia</strong><small>Najnowsze są na górze · dotknij nagłówka, aby zwinąć, przytrzymaj, aby zaznaczyć</small></div><span>{visibleIndexes.length} z {entries.length}</span></div>}
     <div className="entries-list">
       {visibleIndexes.map((entryIndex) => {
         const entry = entries[entryIndex]; const key = entry.clientKey!; const isCollapsed = collapsed.has(key);
         const entryElements = entry.activities.reduce((sum, activity) => sum + activityElements(activity), 0);
-        return <section className={`entry-card ${isCollapsed ? 'collapsed' : ''} ${editingActivity?.entryIndex === entryIndex ? 'is-editing' : ''}`} key={key}>
+        const isSelected = !!selection?.has(key);
+        return <section className={`entry-card ${isCollapsed ? 'collapsed' : ''} ${editingActivity?.entryIndex === entryIndex ? 'is-editing' : ''} ${isSelected ? 'selected' : ''} ${entry.unfinished ? 'unfinished' : ''}`} key={key}>
           <header>
-            <button className="entry-toggle" aria-expanded={!isCollapsed} onClick={() => toggleEntry(key)}>
-              <span className="entry-index">{entryIndex + 1}</span>
-              <div><span>Wejście {entryIndex + 1}</span><h2>{elementCountLabel(entryElements)}</h2>{isCollapsed && <small className="entry-summary">{entrySummary(entry)}</small>}</div>
+            <button className="entry-toggle" aria-expanded={!isCollapsed} aria-pressed={selection ? isSelected : undefined} {...longPress.handlers(key)} onClick={() => { if (longPress.consumed()) return; if (selection) toggleSelected(key); else toggleEntry(key); }}>
+              <span className="entry-index">{selection ? (isSelected ? <Icon name="check"/> : '') : entryIndex + 1}</span>
+              <div><span>Wejście {entryIndex + 1}{entry.unfinished && <small className="unfinished-tag">nieukończone</small>}</span><h2>{elementCountLabel(entryElements)}</h2>{isCollapsed && <small className="entry-summary">{entrySummary(entry)}</small>}</div>
             </button>
             <div className="entry-chips">
             {multipleApparatus && <label className="landing-chip apparatus-chip" title="Sprzęt tego wejścia">
@@ -206,7 +253,10 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
             </button>)}</div>
             {!entry.activities.length && <p className="entry-empty">Dodaj element lub fragment układu wykonany podczas tego wejścia.</p>}
             <div className="add-activity"><button onClick={() => setPicker({ entryIndex, type: 'element' })}><Icon name="spark"/> Element</button><button onClick={() => setPicker({ entryIndex, type: 'routine' })}><Icon name="routine"/> Układ lub fragment</button></div>
-            <button className="danger-link remove-entry" onClick={() => removeEntry(entryIndex)}>Usuń wejście</button>
+            <div className="entry-footer">
+              <label className="unfinished-toggle"><input type="checkbox" checked={!!entry.unfinished} onChange={(e) => updateEntry(entryIndex, (current) => ({ ...current, unfinished: e.target.checked }))}/><span>Wejście nieukończone</span></label>
+              <button className="danger-link remove-entry" onClick={() => removeEntry(entryIndex)}>Usuń wejście</button>
+            </div>
           </>}
         </section>;
       })}
@@ -221,7 +271,10 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
       <label><span>Komentarz <span className="optional">opcjonalnie</span></span><textarea rows={3} maxLength={2000} value={comment} onChange={(e) => { setComment(e.target.value); markDirty(); }} placeholder="np. dobrze się skakało, równe lądowania"/></label>
     </section>
     {savedId && <button className="delete-training" onClick={() => void removeTraining()}>Usuń trening</button>}
-    <div className="sticky-save"><span><strong>{entries.length}</strong> wejść · <strong>{total}</strong> elementów</span><div><button className="button secondary" onClick={() => void save(false)} disabled={saving}>{saving ? 'Zapisywanie…' : 'Zapisz i kontynuuj'}</button><button className="button primary" onClick={() => void save(true)} disabled={saving}>{saving ? 'Zapisywanie…' : 'Zapisz i zamknij'}</button></div></div>
+    {selection ? <div className="sticky-save selection-bar"><span><strong>{selection.size}</strong> zaznaczone</span><div><button className="button secondary" onClick={() => setSelection(null)}>Anuluj</button><button className="button secondary" onClick={duplicateSelected}>Duplikuj</button><button className="button danger" onClick={() => setConfirmDelete(true)}>Usuń</button></div></div>
+      /* The more frequent "save and continue" is the main button, in the bottom-right corner. */
+      : <div className="sticky-save"><span><strong>{entries.length}</strong> wejść · <strong>{total}</strong> elementów</span><div><button className="button secondary" onClick={() => void save(true)} disabled={saving}>{saving ? 'Zapisywanie…' : 'Zapisz i zamknij'}</button><button className="button primary" onClick={() => void save(false)} disabled={saving}>{saving ? 'Zapisywanie…' : 'Zapisz i kontynuuj'}</button></div></div>}
+    {confirmDelete && selection && <ConfirmDialog title={selection.size === 1 ? 'Usunąć wejście?' : `Usunąć wejścia (${selection.size})?`} confirmLabel="Tak, usuń" onCancel={() => setConfirmDelete(false)} onConfirm={removeSelected}><p>Zaznaczone wejścia znikną z tego treningu razem z ich czynnościami. Zmiana zapisze się po kliknięciu „Zapisz”.</p></ConfirmDialog>}
     {picker?.type === 'element' && <ElementPicker entryNumber={picker.entryIndex + 1} catalog={catalogOfEntry(entries[picker.entryIndex])} showCatalog={multipleApparatus} elements={elementsOfCatalog(sources.data!.elements, catalogOfEntry(entries[picker.entryIndex]))} onCreated={(element) => sources.setData({ ...sources.data!, elements: [...sources.data!.elements, element] })} onPick={(element) => addElement(picker.entryIndex, element)} onClose={() => setPicker(null)}/>}
     {picker?.type === 'routine' && <RoutinePicker entryNumber={picker.entryIndex + 1} catalog={catalogOfEntry(entries[picker.entryIndex])} apparatusName={multipleApparatus ? entries[picker.entryIndex]?.apparatusName : undefined} routines={routinesForApparatus(sources.data!.routines, entries[picker.entryIndex]?.apparatusId)} elements={sources.data!.elements} onRoutineUpdated={(updated) => sources.setData({ ...sources.data!, routines: sources.data!.routines.map((routine) => routine.id === updated.id ? updated : routine) })} onPick={(routine, start, end) => addRoutine(picker.entryIndex, routine, start, end)} onClose={() => setPicker(null)}/>}
     {editingActivity && entries[editingActivity.entryIndex]?.activities[editingActivity.activityIndex] && <ActivityEditor
@@ -239,7 +292,7 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
       onAddNextTimed={() => addNextTimed(editingActivity)}
     />}
     {showExitDialog && <div className="modal-backdrop above"><section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="exit-title"><h2 id="exit-title">Zapisać trening?</h2><p>Masz niezapisane zmiany. Możesz je zapisać, odrzucić albo zostać w formularzu.</p><div><button className="button primary" disabled={saving} onClick={() => void save()}>{saving ? 'Zapisuję…' : 'Zapisz'}</button><button className="button danger" onClick={() => { setShowExitDialog(false); setGlobalDirty(false); onBack(); }}>Odrzuć</button><button className="button secondary" onClick={() => setShowExitDialog(false)}>Zostań</button></div></section></div>}
-    {message && <Toast message={message} kind={message.startsWith('Zapisano.') ? 'success' : 'error'} onClose={() => setMessage('')}/>}
+    {message && <Toast message={message} kind={message.startsWith('Zapisano.') || message.startsWith('Zduplikowano') ? 'success' : 'error'} autoHideMs={message === 'Zapisano.' ? 3000 : message.startsWith('Zapisano.') || message.startsWith('Zduplikowano') ? 6000 : undefined} onClose={() => setMessage('')}/>}
   </div>;
 }
 
@@ -261,7 +314,7 @@ function ElementPicker({ entryNumber, catalog, showCatalog, elements, onCreated,
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Nie udało się dodać elementu.'); }
     finally { setSaving(false); }
   }
-  return <div className="modal-backdrop above"><section className="sheet picker"><PageHeader title={creating ? 'Nowy element' : 'Dodaj element'} eyebrow={`Wejście ${entryNumber}${showCatalog ? ` · ${catalogNames[catalog]}` : ''}`} onBack={creating ? () => setCreating(false) : onClose}/>{creating ? <form className="form-stack" onSubmit={create}><p className="picker-return">Po zapisaniu wrócisz do wyboru elementu w tym wejściu.</p><label>Kod elementu<input autoFocus required value={query} onChange={(e) => setQuery(e.target.value)} placeholder={catalog === 'tumbling' ? 'np. 00/' : 'np. 41o'}/></label><CodeHint code={query} catalog={catalog}/><label>Nazwa <span className="optional">opcjonalnie</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="np. Barani"/></label><label className="check-row"><input type="checkbox" checked={favorite} onChange={(e) => setFavorite(e.target.checked)}/><span><strong>Dodaj do ulubionych</strong></span></label>{error && <p className="form-error">{error}</p>}<button className="button primary full" disabled={saving}>{saving ? 'Dodaję…' : 'Dodaj i wróć'}</button>{confirmCode && <ConfirmDialog title="Niepoprawny kod" confirmLabel="Tak, dodaj" onCancel={() => setConfirmCode(false)} onConfirm={() => void create(undefined, true)}><NonStandardCodeText code={query} catalog={catalog}/></ConfirmDialog>}</form> : <><div className="search"><Icon name="search"/><input autoFocus placeholder="Wpisz kod lub nazwę" value={query} onChange={(e) => setQuery(e.target.value)}/></div><ElementFilterControls value={filters} onChange={setFilters} catalog={catalog}/><button className="button secondary full picker-create" onClick={() => setCreating(true)}><Icon name="plus"/> Dodaj nowy element{query ? ` „${query}”` : ''}</button><div className="pick-list">{list.map((item) => <button key={item.id} onClick={() => onPick(item)}><strong>{item.code}</strong><span>{elementLabel(item)}</span>{item.favorite && <b>★</b>}</button>)}</div>{!list.length && <p className="picker-empty">Nie ma takiego elementu. Zmień filtry albo dodaj go tutaj bez utraty treningu.</p>}</>}</section></div>;
+  return <div className="modal-backdrop above"><section className="sheet picker"><PageHeader title={creating ? 'Nowy element' : 'Dodaj element'} eyebrow={`Wejście ${entryNumber}${showCatalog ? ` · ${catalogNames[catalog]}` : ''}`} onBack={creating ? () => setCreating(false) : onClose}/>{creating ? <form className="form-stack" onSubmit={create}><p className="picker-return">Po zapisaniu wrócisz do wyboru elementu w tym wejściu.</p><label>Kod elementu<input autoFocus required value={query} onChange={(e) => setQuery(e.target.value)} placeholder={catalog === 'tumbling' ? 'np. 00/' : 'np. 41o'}/></label><CodeHint code={query} catalog={catalog}/><label>Nazwa <span className="optional">opcjonalnie</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="np. Barani"/></label><label className="check-row"><input type="checkbox" checked={favorite} onChange={(e) => setFavorite(e.target.checked)}/><span><strong>Dodaj do ulubionych</strong></span></label>{error && <p className="form-error">{error}</p>}<button className="button primary full" disabled={saving}>{saving ? 'Dodaję…' : 'Dodaj i wróć'}</button>{confirmCode && <ConfirmDialog title="Niepoprawny kod" confirmLabel="Tak, dodaj" onCancel={() => setConfirmCode(false)} onConfirm={() => void create(undefined, true)}><NonStandardCodeText code={query} catalog={catalog}/></ConfirmDialog>}</form> : <><div className="search"><Icon name="search"/><input placeholder="Wpisz kod lub nazwę" value={query} onChange={(e) => setQuery(e.target.value)}/></div><ElementFilterControls value={filters} onChange={setFilters} catalog={catalog}/><button className="button secondary full picker-create" onClick={() => setCreating(true)}><Icon name="plus"/> Dodaj nowy element{query ? ` „${query}”` : ''}</button><div className="pick-list">{list.map((item) => <button key={item.id} onClick={() => onPick(item)}><strong>{item.code}</strong><span>{elementLabel(item)}</span>{item.favorite && <b>★</b>}</button>)}</div>{!list.length && <p className="picker-empty">Nie ma takiego elementu. Zmień filtry albo dodaj go tutaj bez utraty treningu.</p>}</>}</section></div>;
 }
 
 function RoutinePicker({ entryNumber, catalog, apparatusName, routines, elements, onRoutineUpdated, onPick, onClose }: { entryNumber: number; catalog: Catalog; apparatusName?: string; routines: Routine[]; elements: ElementItem[]; onRoutineUpdated: (routine: Routine) => void; onPick: (routine: Routine, start: number, end: number) => void; onClose: () => void }) {
@@ -294,9 +347,9 @@ function RoutinePicker({ entryNumber, catalog, apparatusName, routines, elements
   }
   const choices = filterElementChoices(elementsOfCatalog(elements, catalog), elementQuery, filters);
   return <div className="modal-backdrop above"><section className="sheet picker">
-    {slotPicker !== null ? <><PageHeader title="Wybierz element" eyebrow={`Edycja · ${editName}`} onBack={() => setSlotPicker(null)}/><div className="search"><Icon name="search"/><input autoFocus placeholder="Kod lub nazwa" value={elementQuery} onChange={(event) => setElementQuery(event.target.value)}/></div><ElementFilterControls value={filters} onChange={setFilters} catalog={catalog}/><div className="pick-list">{choices.map((element) => <button key={element.id} onClick={() => chooseElement(element)}><strong>{element.code}</strong><span>{elementLabel(element)}</span>{element.favorite && <b>★</b>}</button>)}</div>{!choices.length && <p className="picker-empty">Brak elementów pasujących do wyszukiwania i filtrów.</p>}</>
+    {slotPicker !== null ? <><PageHeader title="Wybierz element" eyebrow={`Edycja · ${editName}`} onBack={() => setSlotPicker(null)}/><div className="search"><Icon name="search"/><input placeholder="Kod lub nazwa" value={elementQuery} onChange={(event) => setElementQuery(event.target.value)}/></div><ElementFilterControls value={filters} onChange={setFilters} catalog={catalog}/><div className="pick-list">{choices.map((element) => <button key={element.id} onClick={() => chooseElement(element)}><strong>{element.code}</strong><span>{elementLabel(element)}</span>{element.favorite && <b>★</b>}</button>)}</div>{!choices.length && <p className="picker-empty">Brak elementów pasujących do wyszukiwania i filtrów.</p>}</>
       : editing ? <><PageHeader title="Edytuj szablon" eyebrow="Zmiana nie ruszy dawnych treningów" onBack={() => setEditing(false)}/><form className="form-stack" onSubmit={saveTemplate}><label>Nazwa układu<input value={editName} onChange={(event) => setEditName(event.target.value)} required/></label><div className="field-label"><span>Elementy układu</span><small>{editSlots.length}</small></div><div className="slot-list">{editSlots.map((slot, index) => <div className="slot" key={`${slot.elementId}-${index}`}><span className="slot-number">{index + 1}</span><button type="button" className="slot-main" onClick={() => setSlotPicker(index)}><strong>{slot.code}</strong><small>{slot.name || 'Bez nazwy'}</small></button><div className="slot-actions"><button type="button" disabled={index === 0} onClick={() => moveSlot(index, -1)}>↑</button><button type="button" disabled={index === editSlots.length - 1} onClick={() => moveSlot(index, 1)}>↓</button><button type="button" onClick={() => setEditSlots(editSlots.filter((_, itemIndex) => itemIndex !== index).map((item, position) => ({ ...item, position: position + 1 })))}>×</button></div></div>)}<button type="button" className="add-slot" onClick={() => setSlotPicker(editSlots.length)}><Icon name="plus"/> Dodaj element</button></div><p className="hint">Zapis zmieni bieżący szablon i jego przyszłe użycia. Wcześniejsze treningi zachowają własne migawki.</p>{error && <p className="form-error">{error}</p>}<button className="button primary full" disabled={saving || !editSlots.length}>{saving ? 'Zapisuję…' : 'Zapisz szablon'}</button></form></>
-      : !selected ? <><PageHeader title="Dodaj układ" eyebrow={`Wejście ${entryNumber}`} onBack={onClose}/><div className="search"><Icon name="search"/><input autoFocus placeholder="Nazwa lub kod w układzie" value={query} onChange={(event) => setQuery(event.target.value)}/></div><div className="pick-list routines">{listedRoutines.map((routine) => <button key={routine.id} onClick={() => { setSelected(routine); setStart(1); setEnd(routine.slots.length); }}><strong>{routine.name}</strong><span>{routine.slots.length} elementów · {routine.slots.map((slot) => slot.code).join(' · ')}</span><i>›</i></button>)}{!listedRoutines.length && <p className="picker-empty">{!routines.length && apparatusName ? `Nie masz układów na sprzęt „${apparatusName}”. Utwórz go w zakładce Układy.` : 'Nie znaleziono układu.'}</p>}</div></>
+      : !selected ? <><PageHeader title="Dodaj układ" eyebrow={`Wejście ${entryNumber}`} onBack={onClose}/><div className="search"><Icon name="search"/><input placeholder="Nazwa lub kod w układzie" value={query} onChange={(event) => setQuery(event.target.value)}/></div><div className="pick-list routines">{listedRoutines.map((routine) => <button key={routine.id} onClick={() => { setSelected(routine); setStart(1); setEnd(routine.slots.length); }}><strong>{routine.name}</strong><span>{routine.slots.length} elementów · {routine.slots.map((slot) => slot.code).join(' · ')}</span><i>›</i></button>)}{!listedRoutines.length && <p className="picker-empty">{!routines.length && apparatusName ? `Nie masz układów na sprzęt „${apparatusName}”. Utwórz go w zakładce Układy.` : 'Nie znaleziono układu.'}</p>}</div></>
       : <><PageHeader title="Dodaj układ" eyebrow={`Wejście ${entryNumber}`} onBack={() => setSelected(undefined)}/><div className="range-picker"><div className="template-heading"><div><span className="kicker">{selected.name}</span><h2>Wybierz zakres</h2></div><button className="button secondary compact" onClick={beginEdit}>Edytuj szablon</button></div><div className="range-fields"><label>Od<select value={start} onChange={(event) => { const value = Number(event.target.value); setStart(value); setEnd(Math.max(end, value)); }}>{selected.slots.map((_, index) => <option key={index} value={index + 1}>{index + 1}</option>)}</select></label><span>—</span><label>Do<select value={end} onChange={(event) => setEnd(Number(event.target.value))}>{selected.slots.map((_, index) => index + 1 >= start && <option key={index} value={index + 1}>{index + 1}</option>)}</select></label></div><div className="routine-preview selected">{selected.slots.slice(start - 1, end).map((slot, index) => <span key={index}><small>{start + index}</small>{slot.code}</span>)}</div><button className="button primary full" onClick={() => onPick(selected, start, end)}>{start === 1 && end === selected.slots.length ? 'Dodaj cały układ' : `Dodaj fragment ${start}–${end}`}</button></div></>}
   </section></div>;
 }

@@ -16,16 +16,17 @@ CREATE TABLE IF NOT EXISTS execution_types (
   name TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0,
   deleted_at TEXT, UNIQUE(user_id, name)
 );
--- Two element catalogs (notations): the same code may exist once in each.
+-- Two element catalogs (notations). The same code may repeat with a different description
+-- (e.g. 40o from the back to the back); the API keeps code + description unique.
 CREATE TABLE IF NOT EXISTS elements (
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   code TEXT NOT NULL, name TEXT, favorite INTEGER NOT NULL DEFAULT 0,
   hidden INTEGER NOT NULL DEFAULT 0, deleted_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   quarter_count INTEGER, salto_count INTEGER, total_twist_halves INTEGER,
   direction TEXT, position_symbol TEXT,
-  catalog TEXT NOT NULL DEFAULT 'trampoline' CHECK(catalog IN ('trampoline','tumbling')),
-  UNIQUE(user_id, catalog, code)
+  catalog TEXT NOT NULL DEFAULT 'trampoline' CHECK(catalog IN ('trampoline','tumbling'))
 );
+-- idx_elements_user_code is created by migration v9 (older databases have no catalog column yet).
 CREATE TABLE IF NOT EXISTS routines (
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL, template_version INTEGER NOT NULL DEFAULT 1, slot_count INTEGER NOT NULL DEFAULT 10,
