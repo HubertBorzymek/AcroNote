@@ -18,6 +18,17 @@ const positions: Record<string, ElementPosition> = { o: 'tuck', '<': 'pike', '/'
 
 export const MAX_ELEMENT_CODE_LENGTH = 20;
 
+/**
+ * How many twist digits a quarter count takes. For partial somersaults both forms are accepted:
+ * one digit per started somersault (7 quarters = 1¾ → 700o) and the older/FIG form with whole
+ * somersaults (70o, 901<). With full somersaults both are the same. A code never matches two ways.
+ */
+export function twistDigitCounts(quarterCount: number): number[] {
+  const whole = Math.max(1, Math.floor(quarterCount / 4));
+  const started = Math.ceil(quarterCount / 4);
+  return whole === started ? [whole] : [whole, started];
+}
+
 /** Parses the complete AcroNote notation. It deliberately accepts no shorthand. */
 export function parseElementCode(value: unknown): ParsedElementCode | null {
   if (typeof value !== 'string') return null;
@@ -41,9 +52,8 @@ export function parseElementCode(value: unknown): ParsedElementCode | null {
     if (quarterText.startsWith('0')) continue;
     const quarterCount = Number(quarterText);
     if (!Number.isInteger(quarterCount) || quarterCount < 1 || quarterCount > 12) continue;
-    const saltoCount = Math.max(1, Math.floor(quarterCount / 4));
     const twistText = digits.slice(prefixLength);
-    if (twistText.length !== saltoCount) continue;
+    if (!twistDigitCounts(quarterCount).includes(twistText.length)) continue;
     candidates.push({ quarterCount, twistDigits: [...twistText].map(Number) });
   }
   if (candidates.length !== 1) return null;

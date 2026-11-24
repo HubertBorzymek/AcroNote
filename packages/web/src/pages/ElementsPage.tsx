@@ -114,7 +114,7 @@ export function ElementsPage({ setDirty }: { setDirty: (dirty: boolean) => void 
 }
 
 function TrampolineHelp() {
-  return <section className="code-help"><h2>Ściągawka: trampolina i DMT</h2><div><article><strong>1. Salta</strong><p>Pierwsza liczba mówi o ćwiartkach salta: <b>4</b> = 1 salto, <b>8</b> = 2, <b>12</b> = 3.</p></article><article><strong>2. Śruby</strong><p>Każda kolejna cyfra to pół śruby w danym salcie. <b>831</b> oznacza 1,5 śruby i potem 0,5.</p></article><article><strong>3. Pozycja</strong><p>Ostatni znak: <b>o</b> kuczna, <b>&lt;</b> łamana, <b>/</b> prosta.</p></article></div><p className="hint">Przykład: <b>800/</b> to dwa salta bez śrub w pozycji prostej. Sam znak to element bez salta: <b>o</b> kuczka, <b>&lt;</b> rozkroczka, <b>/</b> poziomka.</p></section>;
+  return <section className="code-help"><h2>Ściągawka: trampolina i DMT</h2><div><article><strong>1. Salta</strong><p>Pierwsza liczba mówi o ćwiartkach salta: <b>4</b> = 1 salto, <b>8</b> = 2, <b>12</b> = 3.</p></article><article><strong>2. Śruby</strong><p>Każda kolejna cyfra to pół śruby w danym salcie. <b>831</b> oznacza 1,5 śruby i potem 0,5.</p></article><article><strong>3. Pozycja</strong><p>Ostatni znak: <b>o</b> kuczna, <b>&lt;</b> łamana, <b>/</b> prosta.</p></article></div><p className="hint">Przykład: <b>800/</b> to dwa salta bez śrub w pozycji prostej. Przy niepełnym salcie można dać cyfrę na każde zaczęte salto albo tylko na całe: <b>700o</b> i <b>70o</b> to ten sam skok. Sam znak to element bez salta: <b>o</b> kuczka, <b>&lt;</b> rozkroczka, <b>/</b> poziomka.</p></section>;
 }
 
 function TumblingHelp() {

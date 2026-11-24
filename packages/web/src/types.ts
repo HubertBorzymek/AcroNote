@@ -115,6 +115,8 @@ export interface TrainingEntry {
   /** The apparatus of this entry; its name is part of the saved snapshot. */
   apparatusId?: ID;
   apparatusName?: string;
+  /** The athlete marked this entry as not finished (e.g. broken off). */
+  unfinished?: boolean;
   activities: Activity[];
   /** Client-only key for list rendering and the collapsed state; never sent to the API. */
   clientKey?: string;
@@ -138,7 +140,7 @@ export interface Training {
 export interface TimeRecord { key: string; kind: 'element' | 'routine'; label: string; apparatusName?: string | null; timeMs: number; previousMs: number }
 
 export interface TimeStatsItem {
-  key: string; kind: 'element' | 'routine'; label: string; count: number; apparatusId?: number | null; apparatusName?: string | null;
+  key: string; kind: 'element' | 'routine'; label: string; count: number; apparatusId?: number | null; apparatusName?: string | null; elementId?: number | null; name?: string | null;
   bestMs: number; bestDate: string; avgMs: number; lastMs: number; lastDate: string;
   recentAvgMs: number | null; earlierAvgMs: number | null; trendMs: number | null;
   series: Array<{ trainingId: number; date: string; count: number; bestMs: number; worstMs: number; avgMs: number }>;
@@ -162,11 +164,14 @@ export interface StatsPoint {
 
 export interface StatsSummary {
   entries: number;
+  /** Entries marked as unfinished (counted calmly, not as failures). */
+  unfinishedEntries: number;
   elements: number;
   trainings: number;
   fullRoutines: number;
   fragments: number;
   byCode: Array<{ code: string; count: number }>;
+  byElement: Array<{ key: string; elementId?: ID; code: string; name: string | null; count: number; landings: LandingCount[] }>;
   timeline: StatsPoint[];
   byLanding: LandingCount[];
   landingByCode: Array<{ code: string; landings: LandingCount[] }>;

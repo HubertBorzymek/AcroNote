@@ -33,9 +33,10 @@ export function parseElementCode(value: string): ParsedElementCode | null {
     if (digits.length <= prefixLength) continue;
     const quarterTurns = Number(digits.slice(0, prefixLength));
     if (quarterTurns < 1 || quarterTurns > 12) continue;
+    // Filters keep whole somersaults (1¾ = 1 salto); the twist digits may follow whole or started somersaults (70o, 700o).
     const somersaults = Math.max(1, Math.floor(quarterTurns / 4));
     const twists = digits.slice(prefixLength);
-    if (twists.length !== somersaults) continue;
+    if (twists.length !== somersaults && twists.length !== Math.ceil(quarterTurns / 4)) continue;
     const totalTwists = [...twists].reduce((sum, digit) => sum + Number(digit) / 2, 0);
     matches.push({ quarterTurns, somersaults, totalTwists, direction: Number.isInteger(totalTwists) ? 'Tył' : 'Przód', position, positionName: positionNames[position] });
   }

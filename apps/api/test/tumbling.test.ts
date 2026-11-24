@@ -118,7 +118,7 @@ describe('migracja v8: katalogi elementów', () => {
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'acronote-v8-')); });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('przebudowuje tabelę elementów: wszystko na trampolinie, te same id, unikalność w obrębie zapisu', () => {
+  it('przebudowuje tabelę elementów: wszystko na trampolinie, te same id, kod w obrębie zapisu', () => {
     const path = join(dir, 'v7.db');
     let db = openDatabase(path);
     const userId = Number(db.prepare("INSERT INTO users(username,password_hash) VALUES('stary','h')").run().lastInsertRowid);
@@ -136,7 +136,7 @@ describe('migracja v8: katalogi elementów', () => {
 
     db = openDatabase(path);
     try {
-      expect((db.prepare('SELECT MAX(version) v FROM migrations').get() as any).v).toBe(8);
+      expect((db.prepare('SELECT MAX(version) v FROM migrations').get() as any).v).toBe(9);
       expect(db.prepare('SELECT id,code,name,favorite,deleted_at deletedAt,catalog,salto_count s FROM elements ORDER BY id').all()).toEqual([
         { id: 7, code: '40o', name: 'Salto', favorite: 1, deletedAt: null, catalog: 'trampoline', s: 1 },
         { id: 9, code: '4o', name: null, favorite: 0, deletedAt: null, catalog: 'trampoline', s: null },
@@ -146,7 +146,8 @@ describe('migracja v8: katalogi elementów', () => {
       expect(db.prepare('SELECT name,catalog,tracks_time t FROM apparatus WHERE user_id=? ORDER BY sort_order').all(userId)).toEqual([
         { name: 'Trampolina', catalog: 'trampoline', t: 1 }, { name: 'DMT', catalog: 'trampoline', t: 0 }, { name: 'Ścieżka', catalog: 'tumbling', t: 0 }]);
       db.prepare("INSERT INTO elements(user_id,code,catalog,salto_count,direction) VALUES(?,'40o','tumbling',2,'back')").run(userId);
-      expect(() => db.prepare("INSERT INTO elements(user_id,code,catalog) VALUES(?,'40o','trampoline')").run(userId)).toThrow(/UNIQUE/);
+      // Since v9 the API (code + description) guards duplicates; the table keeps only an index.
+      expect((db.prepare('PRAGMA index_list(elements)').all() as any[]).map(index => [index.name, index.unique])).toEqual([['idx_elements_user_code', 0]]);
       expect((db.prepare('PRAGMA integrity_check').get() as any).integrity_check).toBe('ok');
       expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     } finally { db.close(); }

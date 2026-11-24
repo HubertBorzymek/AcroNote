@@ -29,8 +29,8 @@ describe('elementy i administracja', () => {
     expect(created.json()).toMatchObject({code:'4o',quarterCount:null,saltoCount:null,totalTwists:null,direction:null,positionSymbol:null});
     const id=created.json().id;
     expect(db.prepare('SELECT quarter_count,salto_count,total_twist_halves,direction,position_symbol FROM elements WHERE id=?').get(id)).toEqual({quarter_count:null,salto_count:null,total_twist_halves:null,direction:null,position_symbol:null});
-    // Ten sam kod drugi raz: konflikt, nie duplikat.
-    expect((await app.inject({method:'POST',url:'/api/elements',headers:auth(userCookie),payload:{code:'4o',allowNonStandardCode:true}})).statusCode).toBe(409);
+    // Ten sam kod z tym samym opisem (bez względu na wielkość liter): konflikt, nie duplikat.
+    expect((await app.inject({method:'POST',url:'/api/elements',headers:auth(userCookie),payload:{code:'4o',name:'coś',allowNonStandardCode:true}})).statusCode).toBe(409);
     // Zmiana ulubionego bez zmiany kodu nie wymaga ponownego potwierdzenia.
     expect((await app.inject({method:'PUT',url:`/api/elements/${id}`,headers:auth(userCookie),payload:{code:'4o',favorite:true}})).statusCode).toBe(200);
     // Nowy kod spoza notacji wymaga potwierdzenia, poprawny już nie, i wtedy pola się wyliczają.

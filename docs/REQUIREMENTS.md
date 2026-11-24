@@ -19,6 +19,7 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 ### Konta i profile
 
 - **ACC-01:** użytkownik może utworzyć konto za pomocą unikalnej nazwy użytkownika i hasła; e-mail nie jest wymagany.
+- **ACC-08:** użytkownik może zmienić swoją nazwę (Profil → Bezpieczeństwo) po podaniu obecnego hasła; zasady jak przy rejestracji (unikalna bez względu na wielkość liter); po zmianie loguje się nową nazwą.
 - **ACC-02:** użytkownik może się zalogować i wylogować, a sesja jest obsługiwana bezpiecznym ciasteczkiem.
 - **ACC-03:** hasło jest przechowywane wyłącznie jako bezpieczny skrót.
 - **ACC-04:** każde zapytanie do danych zawodnika jest autoryzowane po stronie serwera i ograniczone do właściwego użytkownika.
@@ -30,13 +31,13 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 
 - **EL-01:** nowy zawodnik rozpoczyna z pustą listą elementów.
 - **EL-02:** element zawiera kod, opcjonalną nazwę, oznaczenie ulubionego oraz stan aktywny/ukryty.
-- **EL-03:** kod identyfikuje element na liście użytkownika; lista nie jest globalna.
+- **EL-03:** element jest na liście użytkownika (lista nie jest globalna). Ten sam kod może wystąpić kilka razy w jednym zapisie, jeśli różni się opcjonalnym opisem (np. `40o` i `40o` „z pleców na plecy”); kod z takim samym opisem (bez względu na wielkość liter, brak opisu też się liczy) jest konfliktem. Statystyki, rekordy i lądowania liczą warianty osobno (według elementu), a „liczba wykonań kodu” razem (od 2026-11-24).
 - **EL-04:** użytkownik może tworzyć i edytować elementy oraz wyszukiwać po kodzie lub nazwie.
 - **EL-05:** użytkownik może filtrować ulubione oraz ukrywać i przywracać elementy.
 - **EL-06:** usunięcie lub ukrycie elementu nie usuwa jego historycznych wykonań ani nie zmienia statystyk.
 - **EL-07:** element utworzony podczas edycji wejścia trafia na stałą listę użytkownika i może zostać od razu wybrany.
 - **EL-08:** aplikacja waliduje i interpretuje kod wyłącznie na potrzeby filtrów; nie tworzy globalnego katalogu elementów ani nie dopisuje nazwy automatycznie.
-- **EL-09:** kod kończy się `o`, `<` albo `/`; zawiera liczbę ćwiartek od 1 do 12 oraz dokładnie `max(1, floor(ćwiartki / 4))` cyfr opisujących półobroty śrub. Sam znak jest poprawnym kodem elementu bez salta i śruby (0 salt, 0 śrub, bez kierunku; od 2026-11-11): `o` kuczka, `<` rozkroczka, `/` poziomka. Te nazwy aplikacja pokazuje (i wyszukuje), gdy użytkownik nie nadał własnej; nie zapisuje ich.
+- **EL-09:** kod kończy się `o`, `<` albo `/`; zawiera liczbę ćwiartek od 1 do 12 oraz dokładnie `max(1, floor(ćwiartki / 4))` cyfr opisujących półobroty śrub. Sam znak jest poprawnym kodem elementu bez salta i śruby (0 salt, 0 śrub, bez kierunku; od 2026-11-11): `o` kuczka, `<` rozkroczka, `/` poziomka. Te nazwy aplikacja pokazuje (i wyszukuje), gdy użytkownik nie nadał własnej; nie zapisuje ich. Przy niepełnym salcie (liczba ćwiartek niepodzielna przez 4) przyjmowane są oba zapisy: cyfra na każde zaczęte salto (`700o`, `510o`, `9001<`) albo tylko na całe salta, jak dotąd i jak w tabeli FIG (`70o`, `51o`, `901<`); oba czytają się tak samo w filtrach (1¾ = 1 salto). Żaden ciąg cyfr nie pasuje na dwa sposoby (sprawdzone testem na wszystkich ciągach do 6 cyfr).
 - **EL-10:** filtry obejmują liczbę salt, sumę śrub, kierunek wyliczony z parzystości sumy półobrotów oraz pozycję końcową.
 - **EL-11:** te same filtry są dostępne na głównej liście oraz podczas wyboru istniejącego elementu do układu i wejścia treningowego.
 - **EL-12:** kod spoza notacji (np. `4o`, `40`) można zapisać po potwierdzeniu w oknie „Niepoprawny kod” (Tak/Nie). API przyjmuje go tylko z jawnym `allowNonStandardCode` (albo gdy kod zapisanego elementu się nie zmienia), zapisuje go bez wyliczonych pól, więc filtry salt, śrub, kierunku i pozycji go pomijają. Maksymalnie 20 znaków, bez znaków sterujących.
@@ -67,6 +68,9 @@ Dokument rozróżnia wymagania bieżącego produktu od kierunków rozwoju. Fakty
 - **TRN-12:** czas wykonania jest opcjonalny i dotyczy jednego wykonania (×1), z dokładnością do 1 ms (maks. 10 min). Można go wpisać dla pojedynczego elementu, całego układu albo fragmentu oraz dla każdego elementu w układzie. Pozycję ×N z czasem trzeba najpierw rozdzielić na N pozycji ×1. Czas jest częścią migawki treningu.
 - **TRN-13:** trening może mieć ocenę 1–10 i komentarz. Widzi je wyłącznie zawodnik: API nie zwraca ich trenerowi, administratorowi ani w migawce zgłoszenia, a zapis wykonany przez administratora ich nie zmienia.
 - **TRN-14:** wejście zwija się do jednej linii ze streszczeniem; domyślne miejsce lądowania wejścia jest małym wyborem w jego nagłówku.
+- **TRN-15:** wejścia zaznacza się przytrzymaniem nagłówka (ok. 0,5 s); w trybie zaznaczania dotknięcie zaznacza kolejne, a pasek na dole pozwala je usunąć (z potwierdzeniem) albo zduplikować. Kopie trafiają na górę jako najnowsze wejścia, z tym samym sprzętem, lądowaniem i elementami, bez czasów.
+- **TRN-16:** wejście można oznaczyć jako nieukończone (pole wyboru w wejściu). Oznaczenie jest spokojne (szaroniebieskie, przerywane, bez czerwieni); statystyki pokazują „w tym N nieukończone”. Elementy z takiego wejścia liczą się normalnie.
+- **TRN-17:** okna wyboru elementu i układu nie zaznaczają pola wyszukiwania (klawiatura pojawia się dopiero po stuknięciu). Główny przycisk zapisu to „Zapisz i kontynuuj” (po prawej); po nim pojawia się „Zapisano.”, które znika po ok. 3 s.
 - **TRN-11:** edytor pokazuje najnowsze wejścia na górze i umieszcza tam przycisk dodawania. Domyślnie widocznych jest pięć ostatnich wejść; starsze można odsłaniać po pięć, pokazać wszystkie, zwijać po pięć lub wrócić do samych pięciu ostatnich.
 
 ### Miejsca lądowania

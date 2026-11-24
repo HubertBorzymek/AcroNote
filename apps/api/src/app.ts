@@ -144,6 +144,17 @@ export async function buildApp(options: AppOptions = {}) {
     db.prepare('DELETE FROM sessions WHERE user_id=? AND id<>?').run(request.userId, request.session.id);
     return { ok: true };
   });
+  // The username is the login, so changing it needs the current password. Uniqueness: as at registration.
+  app.put('/api/auth/username', { ...auth, config: { rateLimit: { max: 10, timeWindow: '15 minutes' } } }, async (request, reply) => {
+    const body = request.body as any; const username = usernameText(body?.username); const password = text(body?.password, 'Hasło');
+    const user = db.prepare('SELECT password_hash FROM users WHERE id=?').get(request.userId) as any;
+    if (!(await bcrypt.compare(password, user.password_hash))) return reply.status(403).send({ message: 'Hasło jest nieprawidłowe.' });
+    const taken = db.prepare('SELECT 1 FROM users WHERE username_key=? AND id<>?').get(usernameKey(username), request.userId);
+    if (taken) return reply.status(409).send({ message: 'Ta nazwa użytkownika jest już zajęta.' });
+    try { db.prepare('UPDATE users SET username=? WHERE id=?').run(username, request.userId); }
+    catch { return reply.status(409).send({ message: 'Ta nazwa użytkownika jest już zajęta.' }); }
+    return publicUser(db.prepare('SELECT id,username,athlete_enabled,coach_enabled,role FROM users WHERE id=?').get(request.userId));
+  });
   app.put('/api/profile', auth, async request => {
     const body=request.body as any; db.prepare('UPDATE users SET athlete_enabled=?,coach_enabled=? WHERE id=?').run(bool(body.athleteEnabled),bool(body.coachEnabled),request.userId);
     return publicUser(db.prepare('SELECT id,username,athlete_enabled,coach_enabled,role FROM users WHERE id=?').get(request.userId));
@@ -208,12 +219,16 @@ export async function buildApp(options: AppOptions = {}) {
     return db.prepare(`SELECT id,code,name,favorite,hidden,quarter_count quarterCount,salto_count saltoCount,total_twist_halves/2.0 totalTwists,direction,position_symbol positionSymbol,catalog FROM elements WHERE ${conditions.join(' AND ')} ORDER BY favorite DESC,code`).all(...values);
   });
   app.post('/api/elements', auth, async (request,reply) => {
-    const b=request.body as any; const catalog=elementCatalog(b?.catalog); const {code,parsed}=checkElementCode(b?.code,b?.allowNonStandardCode===true,catalog); const f=elementCodeFields(parsed); let id:number;
-    // A soft-deleted element still owns its code (UNIQUE(user_id,catalog,code)), so re-adding the code revives that row.
-    const deleted=db.prepare('SELECT id FROM elements WHERE user_id=? AND catalog=? AND code=? AND deleted_at IS NOT NULL').get(request.userId,catalog,code) as {id:number}|undefined;
-    if(deleted){id=deleted.id;db.prepare('UPDATE elements SET deleted_at=NULL,name=?,favorite=?,hidden=?,quarter_count=?,salto_count=?,total_twist_halves=?,direction=?,position_symbol=? WHERE id=?').run(b.name?.trim()||null,bool(b.favorite),bool(b.hidden),...f,id);}
-    else try{id=Number(db.prepare('INSERT INTO elements(user_id,code,name,favorite,hidden,quarter_count,salto_count,total_twist_halves,direction,position_symbol,catalog) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(request.userId,code,b.name?.trim()||null,bool(b.favorite),bool(b.hidden),...f,catalog).lastInsertRowid);}catch{return reply.status(409).send({message:'Element o tym kodzie już istnieje.'});}
-    return reply.status(201).send({id,code,name:b.name?.trim()||null,favorite:!!b.favorite,hidden:!!b.hidden,quarterCount:parsed?.quarterCount??null,saltoCount:parsed?.saltoCount??null,totalTwists:parsed?.totalTwists??null,direction:parsed?.direction??null,positionSymbol:parsed?.positionSymbol??null,catalog});
+    const b=request.body as any; const catalog=elementCatalog(b?.catalog); const {code,parsed}=checkElementCode(b?.code,b?.allowNonStandardCode===true,catalog); const f=elementCodeFields(parsed); const name=elementName(b?.name); let id:number;
+    // The same code may repeat with another description; code + description must differ. A soft-deleted twin is revived.
+    const same=sameElements(db,request.userId,catalog,code,name);
+    if(same.some(row=>!row.deleted_at))return reply.status(409).send({message:duplicateElementMessage(name)});
+    // Revive the deleted twin; with no active variant of this code, a deleted element with another description too (as before).
+    const withCode=db.prepare('SELECT id,deleted_at FROM elements WHERE user_id=? AND catalog=? AND code=? ORDER BY id').all(request.userId,catalog,code) as {id:number;deleted_at:string|null}[];
+    const deleted=same[0]??(withCode.every(row=>row.deleted_at)?withCode[0]:undefined);
+    if(deleted){id=deleted.id;db.prepare('UPDATE elements SET deleted_at=NULL,name=?,favorite=?,hidden=?,quarter_count=?,salto_count=?,total_twist_halves=?,direction=?,position_symbol=? WHERE id=?').run(name,bool(b.favorite),bool(b.hidden),...f,id);}
+    else id=Number(db.prepare('INSERT INTO elements(user_id,code,name,favorite,hidden,quarter_count,salto_count,total_twist_halves,direction,position_symbol,catalog) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(request.userId,code,name,bool(b.favorite),bool(b.hidden),...f,catalog).lastInsertRowid);
+    return reply.status(201).send({id,code,name,favorite:!!b.favorite,hidden:!!b.hidden,quarterCount:parsed?.quarterCount??null,saltoCount:parsed?.saltoCount??null,totalTwists:parsed?.totalTwists??null,direction:parsed?.direction??null,positionSymbol:parsed?.positionSymbol??null,catalog});
   });
   app.put('/api/elements/:id', auth, async (request,reply) => {
     const b=request.body as any; const id=Number((request.params as any).id);
@@ -221,8 +236,9 @@ export async function buildApp(options: AppOptions = {}) {
     if(b?.catalog!==undefined&&b.catalog!==current.catalog)return reply.status(400).send({message:'Elementu nie można przenieść do innego zapisu. Dodaj go w drugim zapisie jako nowy element.'});
     // Keeping an already saved non-standard code (e.g. toggling favourite) needs no new confirmation.
     const {code,parsed}=checkElementCode(b?.code,b?.allowNonStandardCode===true||(typeof b?.code==='string'&&b.code.trim()===current.code),current.catalog);
-    const clash=db.prepare('SELECT deleted_at FROM elements WHERE user_id=? AND catalog=? AND code=? AND id<>?').get(request.userId,current.catalog,code,id) as {deleted_at:string|null}|undefined; if(clash)return reply.status(409).send({message:clash.deleted_at?'Element o tym kodzie został wcześniej usunięty. Dodaj go jako nowy element, aby go przywrócić.':'Element o tym kodzie już istnieje.'});
-    db.prepare('UPDATE elements SET code=?,name=?,favorite=?,hidden=?,quarter_count=?,salto_count=?,total_twist_halves=?,direction=?,position_symbol=? WHERE id=? AND user_id=? AND deleted_at IS NULL').run(code,b.name?.trim()||null,bool(b.favorite),bool(b.hidden),...elementCodeFields(parsed),id,request.userId); return {ok:true};
+    const name=elementName(b?.name);
+    if(sameElements(db,request.userId,current.catalog,code,name).some(row=>row.id!==id&&!row.deleted_at))return reply.status(409).send({message:duplicateElementMessage(name)});
+    db.prepare('UPDATE elements SET code=?,name=?,favorite=?,hidden=?,quarter_count=?,salto_count=?,total_twist_halves=?,direction=?,position_symbol=? WHERE id=? AND user_id=? AND deleted_at IS NULL').run(code,name,bool(b.favorite),bool(b.hidden),...elementCodeFields(parsed),id,request.userId); return {ok:true};
   });
   app.get('/api/elements/:id/usage', auth, async request => elementUsage(db,request.userId,Number((request.params as any).id)));
   app.delete('/api/elements/:id', auth, async request => {
@@ -437,3 +453,8 @@ function apparatusQuery(db:Db,userId:number,value:unknown):number|undefined|null
 const APPARATUS_NAMES_COLUMN = `
     (SELECT json_group_array(apparatus_name) FROM (SELECT apparatus_name FROM training_entries te WHERE te.training_id=t.id AND apparatus_name IS NOT NULL GROUP BY apparatus_name ORDER BY MIN(position))) apparatusNames,`;
 function withApparatusNames(row:any){return {...row,apparatusNames:row.apparatusNames?JSON.parse(row.apparatusNames):[]};}
+function elementName(value:unknown){if(value==null)return null;if(typeof value!=='string')throw new Error('Opis elementu jest nieprawidłowy.');const name=value.trim();if(name.length>80)throw new Error('Opis elementu może mieć najwyżej 80 znaków.');return name||null;}
+const nameKey=(name:string|null)=>(name??'').toLocaleLowerCase('pl');
+/** Elements with this code and the same description (case-insensitive; "no description" is a description too). Active first. */
+function sameElements(db:Db,userId:number,catalog:ElementCatalog,code:string,name:string|null){return (db.prepare('SELECT id,name,deleted_at FROM elements WHERE user_id=? AND catalog=? AND code=? ORDER BY deleted_at IS NOT NULL,id').all(userId,catalog,code) as {id:number;name:string|null;deleted_at:string|null}[]).filter(row=>nameKey(row.name)===nameKey(name));}
+function duplicateElementMessage(name:string|null){return name?'Element o tym kodzie i opisie już istnieje. Wpisz inny opis, aby je rozróżnić.':'Element o tym kodzie bez opisu już istnieje. Dodaj opis (np. „z pleców na plecy”), aby je rozróżnić.';}

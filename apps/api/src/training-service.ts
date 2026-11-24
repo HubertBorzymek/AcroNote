@@ -10,7 +10,7 @@ type Activity = {
   timeMs?: number | null;
 };
 export type TrainingInput = {
-  date: string; entries: { defaultExecutionTypeId?: number | null; defaultExecutionTypeName?: string; apparatusId?: number | null; apparatusName?: string; activities: Activity[] }[];
+  date: string; entries: { defaultExecutionTypeId?: number | null; defaultExecutionTypeName?: string; apparatusId?: number | null; apparatusName?: string; unfinished?: boolean; activities: Activity[] }[];
   /** Private to the athlete: never returned to coaches or administrators. Omitted = keep the stored value. */
   rating?: number | null; comment?: string | null;
 };
@@ -68,7 +68,7 @@ export function saveTraining(db: Db, userId: number, input: TrainingInput, train
     } else {
       id = Number(db.prepare('INSERT INTO trainings(user_id,training_date,rating,comment) VALUES(?,?,?,?)').run(userId, input.date, rating, comment).lastInsertRowid);
     }
-    const addEntry = db.prepare('INSERT INTO training_entries(training_id,position,default_execution_type_id,default_execution_type_name,apparatus_id,apparatus_name) VALUES(?,?,?,?,?,?)');
+    const addEntry = db.prepare('INSERT INTO training_entries(training_id,position,default_execution_type_id,default_execution_type_name,apparatus_id,apparatus_name,unfinished) VALUES(?,?,?,?,?,?,?)');
     const ownApparatus = db.prepare('SELECT id,name,catalog FROM apparatus WHERE id=? AND user_id=?');
     const ownElementCatalog = db.prepare('SELECT catalog FROM elements WHERE id=? AND user_id=?');
     // An element from the user's catalog must be written in the notation of the entry's apparatus.
@@ -92,7 +92,7 @@ export function saveTraining(db: Db, userId: number, input: TrainingInput, train
         apparatus = owned;
       }
       const apparatusName = typeof entry.apparatusName === 'string' && entry.apparatusName.trim() && entry.apparatusId != null ? entry.apparatusName.trim() : apparatus.name;
-      const entryId = Number(addEntry.run(id, entryIndex, entry.defaultExecutionTypeId ?? null, defaultName, apparatus.id, apparatusName).lastInsertRowid);
+      const entryId = Number(addEntry.run(id, entryIndex, entry.defaultExecutionTypeId ?? null, defaultName, apparatus.id, apparatusName, entry.unfinished ? 1 : 0).lastInsertRowid);
       entry.activities.forEach((activity, activityIndex) => {
         if (!Number.isInteger(activity.repetitions) || activity.repetitions < 1) throw new Error('Liczba powtórzeń musi być dodatnią liczbą całkowitą.');
         const activityTime = timeValue(activity.timeMs);
@@ -147,7 +147,8 @@ function matchesCurrentSnapshot(db: Db, userId: number, activity: Activity): boo
 export function getTraining(db: Db, userId: number, id: number, access: TrainingAccess = {}) {
   const training = db.prepare(`SELECT id,training_date date,created_at createdAt,updated_at updatedAt${access.includePrivate ? ',rating,comment' : ''} FROM trainings WHERE id=? AND user_id=?`).get(id, userId) as any;
   if (!training) return null;
-  training.entries = db.prepare('SELECT id,position,default_execution_type_id defaultExecutionTypeId,default_execution_type_name defaultExecutionTypeName,apparatus_id apparatusId,apparatus_name apparatusName FROM training_entries WHERE training_id=? ORDER BY position').all(id) as any[];
+  training.entries = db.prepare('SELECT id,position,default_execution_type_id defaultExecutionTypeId,default_execution_type_name defaultExecutionTypeName,apparatus_id apparatusId,apparatus_name apparatusName,unfinished FROM training_entries WHERE training_id=? ORDER BY position').all(id) as any[];
+  for (const entry of training.entries) entry.unfinished = Boolean(entry.unfinished);
   for (const entry of training.entries) {
     entry.activities = db.prepare(`SELECT id,position,kind,repetitions,execution_type_id executionTypeId,execution_type_name executionTypeName,
       source_element_id sourceElementId,code_snapshot code,name_snapshot name,source_routine_id sourceRoutineId,
@@ -172,10 +173,18 @@ export function trainingSummary(db: Db, userId: number, from?: string, to?: stri
     ? `SELECT t.id,t.training_date date,COUNT(DISTINCT te.id) entries FROM trainings t LEFT JOIN training_entries te ON te.training_id=t.id WHERE ${where} GROUP BY t.id ORDER BY t.training_date`
     : `SELECT t.id,t.training_date date,COUNT(DISTINCT te.id) entries FROM trainings t JOIN training_entries te ON te.training_id=t.id WHERE ${where}${onApparatus} GROUP BY t.id ORDER BY t.training_date`).all(...values, ...apparatusValues) as any[];
   const activityRows = db.prepare(`SELECT a.id,a.kind,a.repetitions,a.is_full_range,a.matched_original_template,a.source_routine_name,
-    a.source_element_id,a.code_snapshot,a.execution_type_name FROM trainings t JOIN training_entries te ON te.training_id=t.id JOIN activities a ON a.entry_id=te.id WHERE ${where}${onApparatus}`).all(...values, ...apparatusValues) as any[];
+    a.source_element_id,a.code_snapshot,a.name_snapshot,a.execution_type_name FROM trainings t JOIN training_entries te ON te.training_id=t.id JOIN activities a ON a.entry_id=te.id WHERE ${where}${onApparatus}`).all(...values, ...apparatusValues) as any[];
   const ids = activityRows.map(row => row.id);
-  const snapshotRows = ids.length ? db.prepare(`SELECT ae.activity_id,ae.source_element_id,ae.code_snapshot code,ae.execution_type_name,a.repetitions FROM activity_elements ae JOIN activities a ON a.id=ae.activity_id WHERE ae.activity_id IN (${ids.map(()=>'?').join(',')})`).all(...ids) as any[] : [];
+  const snapshotRows = ids.length ? db.prepare(`SELECT ae.activity_id,ae.source_element_id,ae.code_snapshot code,ae.name_snapshot name,ae.execution_type_name,a.repetitions FROM activity_elements ae JOIN activities a ON a.id=ae.activity_id WHERE ae.activity_id IN (${ids.map(()=>'?').join(',')})`).all(...ids) as any[] : [];
   const byCode: Record<string, number> = {};
+  // Per element (its id), so variants with the same code (e.g. 40o from the back) stay apart; snapshots without an id: per code.
+  const byElement = new Map<string, { key: string; elementId: number | null; code: string; name: string | null; count: number; landings: Map<string, number> }>();
+  const addElement = (sourceId: number | null, code: string, name: string | null, landing: string, repetitions: number) => {
+    const key = sourceId != null ? `e${sourceId}` : `c${code}`;
+    const item = byElement.get(key) ?? { key, elementId: sourceId ?? null, code, name, count: 0, landings: new Map<string, number>() };
+    item.count += repetitions; item.landings.set(landing, (item.landings.get(landing) ?? 0) + repetitions);
+    byElement.set(key, item);
+  };
   const landingTotals = new Map<string, number>();
   const landingCodes = new Map<string, Map<string, number>>();
   const addLanding = (code: string, name: string, repetitions: number) => {
@@ -186,10 +195,12 @@ export function trainingSummary(db: Db, userId: number, from?: string, to?: stri
   };
   for (const row of activityRows) if (row.kind === 'element') {
     byCode[row.code_snapshot] = (byCode[row.code_snapshot] ?? 0) + row.repetitions;
+    addElement(row.source_element_id, row.code_snapshot, row.name_snapshot, row.execution_type_name, row.repetitions);
     if(elementId===undefined||row.source_element_id===elementId)addLanding(row.code_snapshot, row.execution_type_name, row.repetitions);
   }
   for (const row of snapshotRows) {
     byCode[row.code] = (byCode[row.code] ?? 0) + row.repetitions;
+    addElement(row.source_element_id, row.code, row.name, row.execution_type_name, row.repetitions);
     if(elementId===undefined||row.source_element_id===elementId)addLanding(row.code, row.execution_type_name, row.repetitions);
   }
   let totalElements = Object.values(byCode).reduce((sum, count) => sum + count, 0);
@@ -207,7 +218,13 @@ export function trainingSummary(db: Db, userId: number, from?: string, to?: stri
     const element=db.prepare('SELECT code FROM elements WHERE id=? AND user_id=?').get(elementId,userId) as {code:string}|undefined;
     for(const code of Object.keys(byCode))delete byCode[code];
     if(element)byCode[element.code]=totalElements;
+    for(const key of [...byElement.keys()])if(key!==`e${elementId}`)byElement.delete(key);
+    const only=byElement.get(`e${elementId}`); if(only)only.count=totalElements;
   }
+  // Current names for elements that still exist (a renamed element keeps one row); the snapshot name otherwise.
+  const currentNames = new Map((db.prepare('SELECT id,code,name FROM elements WHERE user_id=?').all(userId) as { id: number; code: string; name: string | null }[]).map(row => [row.id, row]));
+  for (const item of byElement.values()) if (item.elementId != null && currentNames.has(item.elementId)) { const current = currentNames.get(item.elementId)!; item.code = current.code; item.name = current.name; }
+  const unfinishedEntries = Number((db.prepare(`SELECT COUNT(*) n FROM trainings t JOIN training_entries te ON te.training_id=t.id WHERE ${where}${onApparatus} AND te.unfinished=1`).get(...values, ...apparatusValues) as { n: number }).n);
   const timelineByDate = new Map<string, { date: string; entries: number; totalElements: number }>();
   for (const training of trainings) {
     const point = timelineByDate.get(training.date) ?? { date: training.date, entries: 0, totalElements: 0 };
@@ -216,7 +233,8 @@ export function trainingSummary(db: Db, userId: number, from?: string, to?: stri
     timelineByDate.set(training.date, point);
   }
   return {
-    trainings: trainings.length, entries: trainings.reduce((sum,row)=>sum+row.entries,0), totalElements, byCode,
+    trainings: trainings.length, entries: trainings.reduce((sum,row)=>sum+row.entries,0), unfinishedEntries, totalElements, byCode,
+    byElement: [...byElement.values()].sort((a,b)=>b.count-a.count||a.code.localeCompare(b.code)).map(({landings,...item})=>({...item,landings:[...landings.entries()].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name,'pl'))})),
     byLanding: [...landingTotals.entries()].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name,'pl')),
     landingByCode: [...landingCodes.entries()].map(([code,landings])=>({code,landings:[...landings.entries()].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name,'pl'))})).sort((a,b)=>a.code.localeCompare(b.code)),
     fullRoutines: activityRows.filter(row=>row.kind==='routine' && row.is_full_range).reduce((sum,row)=>sum+row.repetitions,0),

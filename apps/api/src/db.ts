@@ -130,6 +130,28 @@ function migrate(db: Db): void {
     }
     db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(8)').run();
   })();
+
+  // v9: the same code may repeat with a different (optional) description, so the UNIQUE constraint
+  // goes (again a rebuild, ids kept; the API checks code + description). Entries can be marked unfinished.
+  db.transaction(() => {
+    const uniqueOnElements = (db.prepare('PRAGMA index_list(elements)').all() as { unique: number; origin: string }[]).some(index => index.unique && index.origin === 'u');
+    if (uniqueOnElements) {
+      db.exec(`CREATE TABLE elements_v9 (
+        id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code TEXT NOT NULL, name TEXT, favorite INTEGER NOT NULL DEFAULT 0,
+        hidden INTEGER NOT NULL DEFAULT 0, deleted_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        quarter_count INTEGER, salto_count INTEGER, total_twist_halves INTEGER,
+        direction TEXT, position_symbol TEXT,
+        catalog TEXT NOT NULL DEFAULT 'trampoline' CHECK(catalog IN ('trampoline','tumbling')));
+        INSERT INTO elements_v9(id,user_id,code,name,favorite,hidden,deleted_at,created_at,quarter_count,salto_count,total_twist_halves,direction,position_symbol,catalog)
+          SELECT id,user_id,code,name,favorite,hidden,deleted_at,created_at,quarter_count,salto_count,total_twist_halves,direction,position_symbol,catalog FROM elements;
+        DROP TABLE elements;
+        ALTER TABLE elements_v9 RENAME TO elements;`);
+    }
+    db.exec('CREATE INDEX IF NOT EXISTS idx_elements_user_code ON elements(user_id, catalog, code)');
+    if (!columns('training_entries').has('unfinished')) db.exec('ALTER TABLE training_entries ADD COLUMN unfinished INTEGER NOT NULL DEFAULT 0');
+    db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(9)').run();
+  })();
 }
 
 /** "Ścieżka" with the tumbling notation, unless the user already has an apparatus of that name. */

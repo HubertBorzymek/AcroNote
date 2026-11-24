@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { entrySummary, hasTimes, isWaitingForTime, nextEntryApparatus, nextTimedCopy, routinesForApparatus, splitRepetitions } from './pages/TrainingEditor';
+import { duplicateEntries, entrySummary, hasTimes, isWaitingForTime, nextEntryApparatus, nextTimedCopy, routinesForApparatus, splitRepetitions } from './pages/TrainingEditor';
 import { statsApparatusChoice } from './pages/StatsPage';
 import type { Activity, Apparatus, Routine } from './types';
 
@@ -63,5 +63,25 @@ describe('sprzęt w wejściach i statystykach', () => {
     expect(statsApparatusChoice(apparatus, 'all')).toBe('all');
     expect(statsApparatusChoice(apparatus, '3')).toBe('1');
     expect(statsApparatusChoice([apparatus[0]], '2')).toBe('all');
+  });
+});
+
+describe('duplikowanie zaznaczonych wejść', () => {
+  it('kopiuje zaznaczone wejścia na koniec (na górę listy), bez id i bez czasów', () => {
+    const entries = [
+      { id: '1', clientKey: 'a', defaultExecutionTypeName: 'Siatka', apparatusId: '2', apparatusName: 'DMT', unfinished: true, activities: [{ ...element, id: '9', repetitions: 1, timeMs: 1234 }] },
+      { id: '2', clientKey: 'b', defaultExecutionTypeName: 'Materac', activities: [{ id: '10', type: 'routine' as const, repetitions: 1, routineName: 'U', executionTypeName: 'Siatka', timeMs: 5000, elements: [{ code: '40o', executionTypeName: 'Siatka', timeMs: 900 }] }] },
+      { id: '3', clientKey: 'c', defaultExecutionTypeName: 'Siatka', activities: [] },
+    ];
+    let n = 0;
+    const result = duplicateEntries(entries, new Set(['a', 'b']), () => `nowy-${++n}`);
+    expect(result).toHaveLength(5);
+    expect(result.slice(0, 3)).toEqual(entries);
+    const [copyA, copyB] = result.slice(3);
+    expect(copyA).toMatchObject({ id: undefined, clientKey: 'nowy-1', apparatusId: '2', apparatusName: 'DMT', unfinished: true, defaultExecutionTypeName: 'Siatka' });
+    expect(copyA.activities[0]).toMatchObject({ id: undefined, elementCode: '40o', timeMs: null });
+    expect(copyB.activities[0]).toMatchObject({ timeMs: null, elements: [{ code: '40o', timeMs: null }] });
+    // The originals keep their times.
+    expect(entries[0].activities[0].timeMs).toBe(1234);
   });
 });
