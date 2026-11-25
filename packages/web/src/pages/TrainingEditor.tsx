@@ -214,7 +214,7 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
   const apparatusOf = (entry: TrainingEntry) => sources.data!.apparatus.find((x) => x.id === entry.apparatusId);
   const catalogOfEntry = (entry: TrainingEntry | undefined): Catalog => (entry && apparatusOf(entry)?.catalog) ?? 'trampoline';
   return <div className="page editor-page">
-    <PageHeader title={savedId ? 'Edytuj trening' : 'Nowy trening'} eyebrow={dirty ? 'Niezapisane zmiany' : savedId ? 'Zmiany widoczne dla trenera' : 'Dziennik'} onBack={back} action={<button className="button primary compact" onClick={() => void save(false)} disabled={saving}>{saving ? 'Zapisuję…' : 'Zapisz'}</button>}/>
+    <PageHeader title={savedId ? 'Edytuj trening' : 'Nowy trening'} eyebrow={dirty ? 'Niezapisane zmiany' : savedId ? 'Zmiany widoczne dla trenera' : 'Dziennik'} onBack={back}/>
     <section className="date-panel"><label>Data treningu<input type="date" value={date} onChange={(e) => { setDate(e.target.value); markDirty(); }}/></label><div><strong>{entries.length}</strong><span>wejść</span></div><div><strong>{total}</strong><span>elementów</span></div></section>
     <button className="add-entry" onClick={addEntry}><Icon name="plus"/><span><strong>Dodaj wejście</strong><small>Nowe wejście pojawi się na górze listy</small></span></button>
     {!!entries.length && <div className="entry-list-summary"><div><strong>Ostatnie wejścia</strong><small>Najnowsze są na górze · dotknij nagłówka, aby zwinąć, przytrzymaj, aby zaznaczyć</small></div><span>{visibleIndexes.length} z {entries.length}</span></div>}

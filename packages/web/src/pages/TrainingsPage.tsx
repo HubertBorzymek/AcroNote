@@ -4,13 +4,14 @@ import { useAsync } from '../hooks';
 import type { Training } from '../types';
 import { EmptyState, ErrorState, Icon, Loading, PageHeader, Toast } from '../components/ui';
 import { TrainingEditor } from './TrainingEditor';
+import { completedText } from '../completion';
 
 function summarize(training: Training) {
   let elements = 0;
   for (const entry of training.entries) for (const activity of entry.activities) {
     elements += activity.type === 'element' ? activity.repetitions : (activity.elements?.length ?? 0) * activity.repetitions;
   }
-  return { entries: training.entries.length, elements };
+  return { entries: training.entries.length, elements, unfinished: training.entries.filter((entry) => entry.unfinished).length };
 }
 
 export function TrainingsPage({ setDirty }: { setDirty: (dirty: boolean) => void }) {
@@ -33,7 +34,7 @@ export function TrainingsPage({ setDirty }: { setDirty: (dirty: boolean) => void
     {!grouped.length ? <EmptyState icon="journal" title="Zacznij prowadzić dziennik" description="Dotknij „Nowy”, a każde wejście i wykonany element trafią do Twojej historii."/>
       : <section className="timeline"><h2>Historia treningów</h2>{grouped.map(([date, trainings]) => <div className="day-group" key={date}>
         <div className="day-heading"><time>{new Intl.DateTimeFormat('pl-PL', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${date}T12:00:00`))}</time><span>{trainings.length} {trainings.length === 1 ? 'trening' : 'treningi'}</span></div>
-        {trainings.map((training, index) => { const summary = training.summary ?? summarize(training); return <button className="training-card" key={training.id} onClick={() => { void api.training(training.id).then(setEditing).catch((reason) => setMessage(reason instanceof Error ? reason.message : 'Nie udało się pobrać treningu.')); }}><span className="training-index">{index + 1}</span><div><strong>Trening {index + 1}</strong><small>{summary.entries} wejść · {summary.elements} wykonań elementów{showApparatus && training.apparatusNames?.length ? ` · ${training.apparatusNames.join(', ')}` : ''}</small></div>{training.rating != null && <span className="rating-badge" aria-label={`Ocena ${training.rating} na 10`}>{training.rating}/10</span>}<span className="chevron">›</span></button>; })}
+        {trainings.map((training, index) => { const summary = training.summary ?? summarize(training); return <button className="training-card" key={training.id} onClick={() => { void api.training(training.id).then(setEditing).catch((reason) => setMessage(reason instanceof Error ? reason.message : 'Nie udało się pobrać treningu.')); }}><span className="training-index">{index + 1}</span><div><strong>Trening {index + 1}</strong><small>{summary.entries} wejść · {summary.elements} wykonań elementów{completedText(summary.entries, summary.unfinished ?? 0) ? ` · ${completedText(summary.entries, summary.unfinished ?? 0)}` : ''}{showApparatus && training.apparatusNames?.length ? ` · ${training.apparatusNames.join(', ')}` : ''}</small></div>{training.rating != null && <span className="rating-badge" aria-label={`Ocena ${training.rating} na 10`}>{training.rating}/10</span>}<span className="chevron">›</span></button>; })}
       </div>)}</section>}
     {message && <Toast message={message} onClose={() => setMessage('')}/>}
   </div>;
