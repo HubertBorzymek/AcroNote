@@ -63,6 +63,27 @@ describe('warianty kodu, nieukończone wejścia i zmiana nazwy użytkownika', ()
     expect(saved.json().entries.map((entry: any) => entry.unfinished)).toEqual([true, false, true]);
     expect((await get('/api/stats/summary')).json()).toMatchObject({ entries: 3, unfinishedEntries: 2, totalElements: 5 });
     expect((await get(`/api/stats/summary?apparatusId=${trampoline.id}`)).json()).toMatchObject({ entries: 2, unfinishedEntries: 1 });
+    // "Tylko ukończone": unfinished entries are left out entirely.
+    expect((await get('/api/stats/summary?finished=1')).json()).toMatchObject({ entries: 1, unfinishedEntries: 0, totalElements: 1, byCode: { '41o': 1 } });
+    expect((await get(`/api/stats/summary?apparatusId=${dmt.id}&finished=1`)).json()).toMatchObject({ entries: 0, trainings: 0, totalElements: 0 });
+  });
+
+  it('skuteczność: ostatni element nieukończonego wejścia to jedna nieudana próba; licznik ukończonych na treningu', async () => {
+    const salto = (await send('POST', '/api/elements', { code: '40o' })).json();
+    const barani = (await send('POST', '/api/elements', { code: '41o' })).json();
+    const el = (item: any, repetitions = 1) => ({ kind: 'element', sourceElementId: item.id, code: item.code, repetitions, executionTypeName: 'Siatka' });
+    const routine = { kind: 'routine', sourceRoutineName: 'U', rangeStart: 1, rangeEnd: 2, isFullRange: true, repetitions: 1, executionTypeName: 'Siatka',
+      elements: [{ sourceElementId: salto.id, code: '40o', position: 1 }, { sourceElementId: barani.id, code: '41o', position: 2 }] };
+    await send('POST', '/api/trainings', { date: '2026-11-20', entries: [
+      { unfinished: true, activities: [el(barani), el(salto, 3)] },   // the last 40o did not work out
+      { unfinished: true, activities: [routine] },                    // the routine broke off on its last element, 41o
+      { activities: [el(salto, 2), el(barani, 2)] },
+    ] });
+    const byElement = (await get('/api/stats/summary')).json().byElement;
+    expect(byElement.map((item: any) => [item.code, item.count, item.failed])).toEqual([['40o', 6, 1], ['41o', 4, 1]]);
+    expect((await get(`/api/stats/summary?elementId=${salto.id}`)).json().byElement).toMatchObject([{ count: 6, failed: 1 }]);
+    expect((await get('/api/stats/summary?finished=1')).json().byElement.map((item: any) => item.failed)).toEqual([0, 0]);
+    expect((await get('/api/trainings')).json()[0]).toMatchObject({ entriesCount: 3, unfinishedCount: 2 });
   });
 
   it('zmiana nazwy wymaga hasła, pilnuje unikalności i działa przy logowaniu', async () => {

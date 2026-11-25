@@ -150,6 +150,8 @@ export interface TimeStats { recentDays: number; items: TimeStatsItem[] }
 
 export interface TrainingSummary {
   entries: number;
+  /** Entries marked unfinished (training lists); shown positively as "ukończone X z Y". */
+  unfinished?: number;
   elements: number;
   fullRoutines: number;
   fragments: number;
@@ -171,7 +173,8 @@ export interface StatsSummary {
   fullRoutines: number;
   fragments: number;
   byCode: Array<{ code: string; count: number }>;
-  byElement: Array<{ key: string; elementId?: ID; code: string; name: string | null; count: number; landings: LandingCount[] }>;
+  /** `failed`: the last recorded element of an unfinished entry (one attempt that did not work out). */
+  byElement: Array<{ key: string; elementId?: ID; code: string; name: string | null; count: number; failed: number; landings: LandingCount[] }>;
   timeline: StatsPoint[];
   byLanding: LandingCount[];
   landingByCode: Array<{ code: string; landings: LandingCount[] }>;

@@ -8,12 +8,13 @@ type Measurement = { key: string; kind: 'element' | 'routine'; label: string; el
 
 const RECENT_DAYS = 30;
 
-function measurements(db: Db, userId: number, from?: string, to?: string, trainingId?: number, apparatusId?: number): Measurement[] {
+function measurements(db: Db, userId: number, from?: string, to?: string, trainingId?: number, apparatusId?: number, finishedOnly = false): Measurement[] {
   const conditions = ['t.user_id=?']; const values: unknown[] = [userId];
   if (from) { conditions.push('t.training_date>=?'); values.push(from); }
   if (to) { conditions.push('t.training_date<=?'); values.push(to); }
   if (trainingId !== undefined) { conditions.push('t.id=?'); values.push(trainingId); }
   if (apparatusId !== undefined) { conditions.push('te.apparatus_id=?'); values.push(apparatusId); }
+  if (finishedOnly) conditions.push('te.unfinished=0');
   const where = conditions.join(' AND ');
   const rows = db.prepare(`
     SELECT 'element' kind,a.code_snapshot code,NULL routine,NULL rangeStart,NULL rangeEnd,0 isFull,t.id trainingId,t.training_date date,a.time_ms timeMs,te.apparatus_id apparatusId,te.apparatus_name apparatusName,a.source_element_id elementId,a.name_snapshot name
@@ -39,10 +40,10 @@ function measurements(db: Db, userId: number, from?: string, to?: string, traini
 
 const average = (values: number[]) => values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
 
-export function timeStats(db: Db, userId: number, from?: string, to?: string, today = new Date(), apparatusId?: number) {
+export function timeStats(db: Db, userId: number, from?: string, to?: string, today = new Date(), apparatusId?: number, finishedOnly = false) {
   const recentFrom = new Date(today.getTime() - RECENT_DAYS * 86_400_000).toISOString().slice(0, 10);
   const groups = new Map<string, Measurement[]>();
-  for (const item of measurements(db, userId, from, to, undefined, apparatusId)) groups.set(item.key, [...(groups.get(item.key) ?? []), item]);
+  for (const item of measurements(db, userId, from, to, undefined, apparatusId, finishedOnly)) groups.set(item.key, [...(groups.get(item.key) ?? []), item]);
   const items = [...groups.entries()].map(([key, list]) => {
     const best = list.reduce((top, item) => item.timeMs > top.timeMs || (item.timeMs === top.timeMs && item.date < top.date) ? item : top);
     const sorted = [...list].sort((a, b) => a.date.localeCompare(b.date) || a.trainingId - b.trainingId);

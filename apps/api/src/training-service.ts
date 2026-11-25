@@ -162,14 +162,16 @@ export function getTraining(db: Db, userId: number, id: number, access: Training
 }
 
 /** `apparatusId` limits everything to entries on that apparatus (statistics are kept per apparatus). */
-export function trainingSummary(db: Db, userId: number, from?: string, to?: string, elementId?: number, apparatusId?: number) {
+/** `finishedOnly` leaves out entries marked unfinished. */
+export function trainingSummary(db: Db, userId: number, from?: string, to?: string, elementId?: number, apparatusId?: number, finishedOnly = false) {
   const conditions = ['t.user_id=?']; const values: unknown[] = [userId];
   if (from) { conditions.push('t.training_date>=?'); values.push(from); }
   if (to) { conditions.push('t.training_date<=?'); values.push(to); }
   const where = conditions.join(' AND ');
-  const onApparatus = apparatusId === undefined ? '' : ' AND te.apparatus_id=?';
+  // Entry filter used by every query below (all of them alias the entries as `te`).
+  const onApparatus = (apparatusId === undefined ? '' : ' AND te.apparatus_id=?') + (finishedOnly ? ' AND te.unfinished=0' : '');
   const apparatusValues = apparatusId === undefined ? [] : [apparatusId];
-  const trainings = db.prepare(apparatusId === undefined
+  const trainings = db.prepare(!onApparatus
     ? `SELECT t.id,t.training_date date,COUNT(DISTINCT te.id) entries FROM trainings t LEFT JOIN training_entries te ON te.training_id=t.id WHERE ${where} GROUP BY t.id ORDER BY t.training_date`
     : `SELECT t.id,t.training_date date,COUNT(DISTINCT te.id) entries FROM trainings t JOIN training_entries te ON te.training_id=t.id WHERE ${where}${onApparatus} GROUP BY t.id ORDER BY t.training_date`).all(...values, ...apparatusValues) as any[];
   const activityRows = db.prepare(`SELECT a.id,a.kind,a.repetitions,a.is_full_range,a.matched_original_template,a.source_routine_name,
@@ -178,10 +180,10 @@ export function trainingSummary(db: Db, userId: number, from?: string, to?: stri
   const snapshotRows = ids.length ? db.prepare(`SELECT ae.activity_id,ae.source_element_id,ae.code_snapshot code,ae.name_snapshot name,ae.execution_type_name,a.repetitions FROM activity_elements ae JOIN activities a ON a.id=ae.activity_id WHERE ae.activity_id IN (${ids.map(()=>'?').join(',')})`).all(...ids) as any[] : [];
   const byCode: Record<string, number> = {};
   // Per element (its id), so variants with the same code (e.g. 40o from the back) stay apart; snapshots without an id: per code.
-  const byElement = new Map<string, { key: string; elementId: number | null; code: string; name: string | null; count: number; landings: Map<string, number> }>();
+  const byElement = new Map<string, { key: string; elementId: number | null; code: string; name: string | null; count: number; failed: number; landings: Map<string, number> }>();
   const addElement = (sourceId: number | null, code: string, name: string | null, landing: string, repetitions: number) => {
     const key = sourceId != null ? `e${sourceId}` : `c${code}`;
-    const item = byElement.get(key) ?? { key, elementId: sourceId ?? null, code, name, count: 0, landings: new Map<string, number>() };
+    const item = byElement.get(key) ?? { key, elementId: sourceId ?? null, code, name, count: 0, failed: 0, landings: new Map<string, number>() };
     item.count += repetitions; item.landings.set(landing, (item.landings.get(landing) ?? 0) + repetitions);
     byElement.set(key, item);
   };
@@ -212,6 +214,17 @@ export function trainingSummary(db: Db, userId: number, from?: string, to?: stri
     const nested=elementId===undefined?routineIds.reduce((sum,r)=>sum+(db.prepare('SELECT COUNT(*) count FROM activity_elements WHERE activity_id=?').get(r.id) as any).count*r.repetitions,0):
       Number((db.prepare(`SELECT COALESCE(SUM(a.repetitions),0) count FROM training_entries te JOIN activities a ON a.entry_id=te.id JOIN activity_elements ae ON ae.activity_id=a.id WHERE te.training_id=?${onApparatus} AND ae.source_element_id=?`).get(training.id,...apparatusValues,elementId) as any).count);
     training.totalElements=direct+nested;
+  }
+  // In an unfinished entry the last recorded element is the one that did not work out: one failed attempt
+  // (the last activity; in a routine, its last element). Shown positively as "udane X z Y".
+  const lastOfUnfinished = db.prepare(`SELECT a.id,a.kind,a.source_element_id sourceId,a.code_snapshot code FROM trainings t JOIN training_entries te ON te.training_id=t.id
+    JOIN activities a ON a.entry_id=te.id WHERE ${where}${onApparatus} AND te.unfinished=1 AND a.position=(SELECT MAX(position) FROM activities x WHERE x.entry_id=te.id)`).all(...values, ...apparatusValues) as { id: number; kind: string; sourceId: number | null; code: string | null }[];
+  const lastRoutineElement = db.prepare('SELECT source_element_id sourceId,code_snapshot code FROM activity_elements WHERE activity_id=? ORDER BY position DESC LIMIT 1');
+  for (const row of lastOfUnfinished) {
+    const last = row.kind === 'element' ? row : lastRoutineElement.get(row.id) as { sourceId: number | null; code: string } | undefined;
+    if (!last?.code) continue;
+    const item = byElement.get(last.sourceId != null ? `e${last.sourceId}` : `c${last.code}`);
+    if (item) item.failed += 1;
   }
   if(elementId!==undefined){
     totalElements=trainings.reduce((sum,row)=>sum+row.totalElements,0);

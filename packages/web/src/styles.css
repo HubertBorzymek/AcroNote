@@ -183,7 +183,7 @@ a.button{text-decoration:none;display:inline-flex;align-items:center;justify-con
 :root[data-theme='dark'] .code-flag,:root[data-theme='dark'] .hint.warn{background:#3a2f17;color:#f1cf8a}
 .apparatus-settings>div{flex-wrap:wrap}.apparatus-settings strong small{display:block;font-weight:500;font-size:.66rem;color:var(--muted);margin-top:2px}.apparatus-form{margin-top:12px}.apparatus-form small{display:block;font-size:.68rem;color:var(--muted);margin-top:4px;font-weight:400}
 @media(max-width:560px){.apparatus-settings strong{flex-basis:100%}.apparatus-settings>div>span{display:none}}
-.entry-chips{display:flex;align-items:center;gap:6px;flex:none}.apparatus-chip select{font-weight:700}.apparatus-tag{display:inline-block;margin-left:6px;font-size:.62rem;font-weight:700;color:var(--green);background:var(--soft);border-radius:6px;padding:2px 6px;vertical-align:middle}.apparatus-switch{margin-bottom:8px}.apparatus-switch button.active{background:var(--green);border-color:var(--green);color:#fff}
+.entry-chips{display:flex;align-items:center;gap:6px;flex:none}.apparatus-chip select{font-weight:700}.apparatus-tag{display:inline-block;margin-left:6px;font-size:.62rem;font-weight:700;color:var(--green);background:var(--soft);border-radius:6px;padding:2px 6px;vertical-align:middle}.apparatus-switch{margin-bottom:18px;padding-bottom:2px}.apparatus-switch button.active{background:var(--green);border-color:var(--green);color:#fff}
 @media(max-width:560px){.entry-chips{flex-direction:column;align-items:flex-end;gap:4px}.entry-chips .landing-chip select{height:30px;max-width:112px}.entry-chips .apparatus-chip select{max-width:132px}}
 .form-stack label>small{display:block;font-size:.68rem;color:var(--muted);margin-top:4px;font-weight:400}
 .catalog-switch{margin-bottom:12px}.catalog-switch button.active{background:var(--green);border-color:var(--green);color:#fff}.catalog-heading{font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 8px}
@@ -207,3 +207,13 @@ a.button{text-decoration:none;display:inline-flex;align-items:center;justify-con
 .variant-name{font-weight:500;font-size:.72em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rank-row strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rank-row{grid-template-columns:24px minmax(70px,44%) 1fr 42px}
+/* Horizontally scrolling chip rows: no visible scrollbar (it looked like a divider on phones). */
+.filter-row{scrollbar-width:none}.filter-row::-webkit-scrollbar{display:none}
+.finished-only{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:.8rem;color:var(--muted);cursor:pointer}.finished-only input{width:18px;height:18px;accent-color:var(--green)}
+.stats-element-filter>label:first-child{display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex:1}.stats-element-filter>label:first-child select{flex:1}
+@media(max-width:759px){.stats-element-filter>label:first-child{flex-direction:column;align-items:stretch;gap:8px}}
+.stats-element-filter .finished-only{margin-top:0;font-weight:500;white-space:nowrap}
+@media(max-width:759px){.stats-element-filter .finished-only{margin-top:4px}}
+/* A clear gap between the apparatus and the period choice. */
+.apparatus-switch+.filter-row.period{margin-top:4px}
+.ranking.reliable .rank-row{grid-template-columns:24px minmax(70px,44%) 1fr 42px}.ranking.reliable .reliable-detail{grid-column:2/-1;margin-top:-4px;font-size:.68rem;color:var(--muted)}.ranking.reliable header small{display:block;font-size:.68rem;color:var(--muted);margin-top:4px}
