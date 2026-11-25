@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { duplicateEntries, entrySummary, hasTimes, isWaitingForTime, nextEntryApparatus, nextTimedCopy, routinesForApparatus, splitRepetitions } from './pages/TrainingEditor';
+import { duplicateActivities, duplicateEntries, moveActivity, removeActivities, setLanding, setRepetitions, entrySummary, hasTimes, isWaitingForTime, nextEntryApparatus, nextTimedCopy, routinesForApparatus, splitRepetitions } from './pages/TrainingEditor';
 import { statsApparatusChoice } from './pages/StatsPage';
 import type { Activity, Apparatus, Routine } from './types';
 
@@ -83,5 +83,51 @@ describe('duplikowanie zaznaczonych wejść', () => {
     expect(copyB.activities[0]).toMatchObject({ timeMs: null, elements: [{ code: '40o', timeMs: null }] });
     // The originals keep their times.
     expect(entries[0].activities[0].timeMs).toBe(1234);
+  });
+});
+
+describe('zaznaczone pozycje w jednym wejściu', () => {
+  const activities: Activity[] = [
+    { ...element, id: 'a', repetitions: 2 },
+    { ...element, id: 'b', repetitions: 1, elementCode: '41o', timeMs: 1234 },
+    { ...routine, id: 'c', timeMs: null, elements: [{ code: '41o', executionTypeName: 'Siatka' }, { code: '800o', executionTypeName: 'Materac' }] },
+    { ...element, id: 'd', repetitions: 3, elementCode: '800<' },
+  ];
+
+  it('ustawia liczbę wykonań i pomija pozycje z czasem', () => {
+    const result = setRepetitions(activities, new Set([0, 1, 2]), 4);
+    expect(result.skipped).toBe(1);
+    expect(result.activities.map((item) => item.repetitions)).toEqual([4, 1, 4, 3]);
+    expect(result.activities[1]).toBe(activities[1]);
+    expect(result.activities[3]).toBe(activities[3]);
+    // A time in one routine element is also a single execution.
+    expect(setRepetitions([routine], new Set([0]), 3).skipped).toBe(1);
+  });
+
+  it('ustawia lądowanie pozycji i każdego elementu układu', () => {
+    const result = setLanding(activities, new Set([2, 3]), { id: 'mat', name: 'Materac' });
+    expect(result[2]).toMatchObject({ executionTypeId: 'mat', executionTypeName: 'Materac' });
+    expect(result[2].elements?.map((item) => item.executionTypeName)).toEqual(['Materac', 'Materac']);
+    expect(result[3]).toMatchObject({ executionTypeId: 'mat', executionTypeName: 'Materac' });
+    expect(result[0]).toBe(activities[0]);
+    // The original snapshot objects are untouched.
+    expect(activities[2].elements?.[0].executionTypeName).toBe('Siatka');
+  });
+
+  it('duplikuje zaznaczone na koniec wejścia, bez id i czasów', () => {
+    const result = duplicateActivities(activities, new Set([1, 0]));
+    expect(result.map((item) => item.elementCode ?? item.routineName)).toEqual(['40o', '41o', 'Układ A', '800<', '40o', '41o']);
+    expect(result.slice(4).every((item) => item.id === undefined && item.timeMs === null)).toBe(true);
+    expect(result[4].repetitions).toBe(2);
+    expect(activities[1].timeMs).toBe(1234);
+  });
+
+  it('usuwa zaznaczone i przestawia kolejność', () => {
+    expect(removeActivities(activities, new Set([0, 2])).map((item) => item.id)).toEqual(['b', 'd']);
+    expect(moveActivity(activities, 3, 0).map((item) => item.id)).toEqual(['d', 'a', 'b', 'c']);
+    expect(moveActivity(activities, 0, 2).map((item) => item.id)).toEqual(['b', 'c', 'a', 'd']);
+    expect(moveActivity(activities, 1, 1)).toBe(activities);
+    expect(moveActivity(activities, -1, 2)).toBe(activities);
+    expect(moveActivity(activities, 0, 9)).toBe(activities);
   });
 });

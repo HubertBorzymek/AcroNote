@@ -1,4 +1,7 @@
-import { FormEvent, useMemo, useRef, useState } from 'react';
+import { FormEvent, useMemo, useRef, useState, type ReactNode } from 'react';
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent, type Modifier } from '@dnd-kit/core';
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { api } from '../api';
 import { today, useAsync, useUnsavedChanges } from '../hooks';
 import type { Activity, Apparatus, ElementItem, ExecutionType, Routine, TimeRecord, Training, TrainingEntry } from '../types';
@@ -72,6 +75,44 @@ export function duplicateEntries(entries: TrainingEntry[], keys: Set<string>, ne
   return [...entries, ...copies];
 }
 
+/** Several positions of one entry get the same number of executions. A position with a time is one execution, so it is skipped. */
+export function setRepetitions(activities: Activity[], indexes: Set<number>, repetitions: number) {
+  let skipped = 0;
+  const next = activities.map((activity, index) => {
+    if (!indexes.has(index)) return activity;
+    if (hasTimes(activity)) { skipped += 1; return activity; }
+    return activity.repetitions === repetitions ? activity : { ...activity, repetitions };
+  });
+  return { activities: next, skipped };
+}
+
+/** The same landing place for several positions; in a routine also for each of its elements. */
+export function setLanding(activities: Activity[], indexes: Set<number>, landing: Pick<ExecutionType, 'id' | 'name'>): Activity[] {
+  return activities.map((activity, index) => indexes.has(index) ? {
+    ...activity, executionTypeId: landing.id, executionTypeName: landing.name,
+    elements: activity.elements?.map((item) => ({ ...item, executionTypeId: landing.id, executionTypeName: landing.name })),
+  } : activity);
+}
+
+/** Copies of the chosen positions go to the end of the entry (the latest jumps), in their order, without ids or times. */
+export function duplicateActivities(activities: Activity[], indexes: Set<number>): Activity[] {
+  const copies = activities.filter((_, index) => indexes.has(index)).map((activity) => ({ ...activity, id: undefined, timeMs: null, elements: activity.elements?.map((item) => ({ ...item, timeMs: null })) }));
+  return [...activities, ...copies];
+}
+
+export function removeActivities(activities: Activity[], indexes: Set<number>): Activity[] {
+  return activities.filter((_, index) => !indexes.has(index));
+}
+
+/** Drag and drop inside one entry: the position at `from` lands at `to`, the rest keeps its order. */
+export function moveActivity(activities: Activity[], from: number, to: number): Activity[] {
+  if (from === to || from < 0 || to < 0 || from >= activities.length || to >= activities.length) return activities;
+  const next = [...activities];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved!);
+  return next;
+}
+
 /** Long press (about half a second) without moving the finger; a following click is swallowed. */
 function useLongPress(onLongPress: (key: string) => void) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -88,6 +129,35 @@ function useLongPress(onLongPress: (key: string) => void) {
     /** True once after a long press: the click that ends it must not also toggle the entry. */
     consumed: () => { const value = fired.current; fired.current = false; return value; },
   };
+}
+
+/** "1 pozycję", "3 pozycje", "5 pozycji" (as the object of a sentence). */
+function positionsLabel(count: number) {
+  const lastTwoDigits = count % 100; const lastDigit = count % 10;
+  if (count === 1) return '1 pozycję';
+  if (lastDigit >= 2 && lastDigit <= 4 && !(lastTwoDigits >= 12 && lastTwoDigits <= 14)) return `${count} pozycje`;
+  return `${count} pozycji`;
+}
+
+/** Positions move only up and down, inside their own entry. */
+const verticalOnly: Modifier = ({ transform }) => ({ ...transform, x: 0 });
+const dragAccessibility = {
+  screenReaderInstructions: { draggable: 'Aby przenieść pozycję, naciśnij spację lub Enter. Strzałkami w górę i w dół wybierzesz nowe miejsce, spacją lub Enterem je zatwierdzisz, a klawiszem Escape anulujesz.' },
+  announcements: {
+    onDragStart: () => 'Podniesiono pozycję.',
+    onDragOver: ({ over }: { over: unknown }) => over ? 'Pozycja nad nowym miejscem.' : 'Pozycja poza listą.',
+    onDragEnd: ({ over }: { over: unknown }) => over ? 'Pozycja przeniesiona.' : 'Pozycja wróciła na swoje miejsce.',
+    onDragCancel: () => 'Przenoszenie anulowane.',
+  },
+};
+
+/** One row of an entry: the position itself and, when the order can change, a handle to drag it by. */
+function SortableActivity({ id, draggable, children }: { id: string; draggable: boolean; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: !draggable, attributes: { roleDescription: 'pozycja do przeniesienia' } });
+  return <div ref={setNodeRef} className={`activity-row ${isDragging ? 'dragging' : ''}`} style={{ transform: CSS.Translate.toString(transform), transition }}>
+    {children}
+    {draggable && <button type="button" ref={setActivatorNodeRef} className="drag-handle" aria-label="Przeciągnij, aby zmienić kolejność" {...attributes} {...listeners}><Icon name="grip"/></button>}
+  </div>;
 }
 
 function recordsMessage(records: TimeRecord[] | undefined) {
@@ -121,13 +191,25 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
   // Selection mode (long press on an entry header): delete or duplicate several entries at once.
   const [selection, setSelection] = useState<Set<string> | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const longPress = useLongPress((key) => setSelection((current) => new Set(current ?? []).add(key)));
+  const longPress = useLongPress((key) => { setActivitySelection(null); setSelection((current) => new Set(current ?? []).add(key)); });
+  // Selection of positions inside one entry (long press on a position): executions, landing, duplicate, delete.
+  const [activitySelection, setActivitySelection] = useState<{ entryKey: string; indexes: Set<number> } | null>(null);
+  const [bulk, setBulk] = useState<{ kind: 'repetitions'; value: number } | { kind: 'landing'; id: string } | { kind: 'delete' } | null>(null);
+  const activityLongPress = useLongPress((key) => {
+    const separator = key.lastIndexOf('|'); const entryKey = key.slice(0, separator); const index = Number(key.slice(separator + 1));
+    setSelection(null);
+    setActivitySelection((current) => current?.entryKey === entryKey ? { entryKey, indexes: new Set(current.indexes).add(index) } : { entryKey, indexes: new Set([index]) });
+  });
+  // Stable ids for drag and drop. An edited position is a new object and gets a new id, which is harmless.
+  const activityKeys = useRef(new WeakMap<Activity, string>());
+  const activityKey = (activity: Activity) => { let key = activityKeys.current.get(activity); if (!key) { key = `activity-${++keyCounter.current}`; activityKeys.current.set(activity, key); } return key; };
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   useUnsavedChanges(dirty);
 
   const markDirty = () => { setDirty(true); setGlobalDirty(true); };
   function back() { if (dirty) return setShowExitDialog(true); setGlobalDirty(false); onBack(); }
   function updateEntry(index: number, update: (entry: TrainingEntry) => TrainingEntry) { setEntries((current) => current.map((entry, i) => i === index ? update(entry) : entry)); markDirty(); }
-  function toggleEntry(key: string) { setCollapsed((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; }); }
+  function toggleEntry(key: string) { if (activitySelection?.entryKey === key) setActivitySelection(null); setCollapsed((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; }); }
   function addEntry() {
     const execution = sources.data?.executionTypes[0] ?? fallbackExecutionTypes[0];
     // Previous entries fold away, so on a phone only the entry being filled in is open.
@@ -151,6 +233,39 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
   function removeSelected() {
     if (!selection) return;
     setEntries(entries.filter((entry) => !selection.has(entry.clientKey!))); setSelection(null); setConfirmDelete(false); markDirty();
+  }
+  const selectedEntryIndex = activitySelection ? entries.findIndex((entry) => entry.clientKey === activitySelection.entryKey) : -1;
+  function toggleActivitySelected(index: number) {
+    setActivitySelection((current) => { if (!current) return current; const indexes = new Set(current.indexes); if (indexes.has(index)) indexes.delete(index); else indexes.add(index); return indexes.size ? { ...current, indexes } : null; });
+  }
+  function applyBulk() {
+    if (!bulk || !activitySelection || selectedEntryIndex < 0) return;
+    const { indexes } = activitySelection; const activities = entries[selectedEntryIndex].activities;
+    if (bulk.kind === 'repetitions') {
+      const result = setRepetitions(activities, indexes, bulk.value);
+      updateEntry(selectedEntryIndex, (entry) => ({ ...entry, activities: result.activities }));
+      if (result.skipped) setMessage(`Pominięto ${positionsLabel(result.skipped)} z czasem — pozycja z czasem to jedno wykonanie.`);
+    } else if (bulk.kind === 'landing') {
+      const type = sources.data?.executionTypes.find((item) => item.id === bulk.id); if (!type) return;
+      updateEntry(selectedEntryIndex, (entry) => ({ ...entry, activities: setLanding(entry.activities, indexes, type) }));
+    } else {
+      updateEntry(selectedEntryIndex, (entry) => ({ ...entry, activities: removeActivities(entry.activities, indexes) }));
+      setActivitySelection(null);
+    }
+    setBulk(null);
+  }
+  function duplicateSelectedActivities() {
+    if (!activitySelection || selectedEntryIndex < 0) return;
+    const count = activitySelection.indexes.size;
+    updateEntry(selectedEntryIndex, (entry) => ({ ...entry, activities: duplicateActivities(entry.activities, activitySelection.indexes) }));
+    setActivitySelection(null);
+    setMessage(`Zduplikowano ${positionsLabel(count)} — kopie są na końcu wejścia, bez czasów. Zapisz trening, aby je zachować.`);
+  }
+  function reorderActivities(entryIndex: number, { active, over }: DragEndEvent) {
+    if (!over || active.id === over.id) return;
+    const ids = entries[entryIndex].activities.map(activityKey);
+    const from = ids.indexOf(String(active.id)); const to = ids.indexOf(String(over.id));
+    updateEntry(entryIndex, (entry) => ({ ...entry, activities: moveActivity(entry.activities, from, to) }));
   }
   function removeEntry(index: number) {
     if (entries[index].activities.length && !confirm('Usunąć wejście wraz ze wszystkimi czynnościami?')) return;
@@ -217,7 +332,7 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
     <PageHeader title={savedId ? 'Edytuj trening' : 'Nowy trening'} eyebrow={dirty ? 'Niezapisane zmiany' : savedId ? 'Zmiany widoczne dla trenera' : 'Dziennik'} onBack={back}/>
     <section className="date-panel"><label>Data treningu<input type="date" value={date} onChange={(e) => { setDate(e.target.value); markDirty(); }}/></label><div><strong>{entries.length}</strong><span>wejść</span></div><div><strong>{total}</strong><span>elementów</span></div></section>
     <button className="add-entry" onClick={addEntry}><Icon name="plus"/><span><strong>Dodaj wejście</strong><small>Nowe wejście pojawi się na górze listy</small></span></button>
-    {!!entries.length && <div className="entry-list-summary"><div><strong>Ostatnie wejścia</strong><small>Najnowsze są na górze · dotknij nagłówka, aby zwinąć, przytrzymaj, aby zaznaczyć</small></div><span>{visibleIndexes.length} z {entries.length}</span></div>}
+    {!!entries.length && <div className="entry-list-summary"><div><strong>Ostatnie wejścia</strong><small>Najnowsze na górze · przytrzymaj wejście lub pozycję, aby zaznaczyć · uchwyt po prawej zmienia kolejność</small></div><span>{visibleIndexes.length} z {entries.length}</span></div>}
     <div className="entries-list">
       {visibleIndexes.map((entryIndex) => {
         const entry = entries[entryIndex]; const key = entry.clientKey!; const isCollapsed = collapsed.has(key);
@@ -248,9 +363,16 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
             <button className="icon-button collapse-button" aria-label={isCollapsed ? `Rozwiń wejście ${entryIndex + 1}` : `Zwiń wejście ${entryIndex + 1}`} aria-expanded={!isCollapsed} onClick={() => toggleEntry(key)}><Icon name="chevron"/></button>
           </header>
           {!isCollapsed && <>
-            <div className="activity-list">{entry.activities.map((activity, activityIndex) => <button className="activity" key={activity.id ?? activityIndex} onClick={() => setEditingActivity({ entryIndex, activityIndex })}>
-              <span className={`activity-kind ${activity.type}`}>{activity.type === 'element' ? 'E' : 'U'}</span><div><strong>{activity.type === 'element' ? activity.elementCode : activity.routineName}</strong><small>{activity.type === 'routine' ? `${activity.isFullRoutine ? 'Cały układ' : `Elementy ${activity.rangeStart}–${activity.rangeEnd}`} · ${activity.elements?.map((x) => x.code).join(' · ')}` : activity.elementName || 'Pojedynczy element'}<br/>{activity.executionTypeName}{activity.type === 'routine' && activity.elements?.some((item) => item.timeMs != null) ? ' · czasy elementów' : ''}</small></div>{activity.timeMs != null && <span className="time-badge"><Icon name="clock"/>{formatTime(activity.timeMs)}</span>}<b>{activity.repetitions}×</b><span className="chevron">›</span>
-            </button>)}</div>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[verticalOnly]} accessibility={dragAccessibility} onDragEnd={(event) => reorderActivities(entryIndex, event)}>
+            <SortableContext items={entry.activities.map(activityKey)} strategy={verticalListSortingStrategy}>
+            <div className="activity-list">{entry.activities.map((activity, activityIndex) => {
+              const selectingHere = activitySelection?.entryKey === key; const picked = selectingHere && activitySelection!.indexes.has(activityIndex);
+              return <SortableActivity key={activityKey(activity)} id={activityKey(activity)} draggable={entry.activities.length > 1 && !selectingHere}><button className={`activity ${picked ? 'selected' : ''}`} aria-pressed={selectingHere ? picked : undefined} {...activityLongPress.handlers(`${key}|${activityIndex}`)} onClick={() => { if (activityLongPress.consumed()) return; if (activitySelection) { if (selectingHere) toggleActivitySelected(activityIndex); return; } setEditingActivity({ entryIndex, activityIndex }); }}>
+              <span className={`activity-kind ${activity.type}`}>{picked ? <Icon name="check"/> : activity.type === 'element' ? 'E' : 'U'}</span><div><strong>{activity.type === 'element' ? activity.elementCode : activity.routineName}</strong><small>{activity.type === 'routine' ? `${activity.isFullRoutine ? 'Cały układ' : `Elementy ${activity.rangeStart}–${activity.rangeEnd}`} · ${activity.elements?.map((x) => x.code).join(' · ')}` : activity.elementName || 'Pojedynczy element'}<br/>{activity.executionTypeName}{activity.type === 'routine' && activity.elements?.some((item) => item.timeMs != null) ? ' · czasy elementów' : ''}</small></div>{activity.timeMs != null && <span className="time-badge"><Icon name="clock"/>{formatTime(activity.timeMs)}</span>}<b>{activity.repetitions}×</b>{!selectingHere && <span className="chevron">›</span>}
+            </button></SortableActivity>;
+            })}</div>
+            </SortableContext>
+            </DndContext>
             {!entry.activities.length && <p className="entry-empty">Dodaj element lub fragment układu wykonany podczas tego wejścia.</p>}
             <div className="add-activity"><button onClick={() => setPicker({ entryIndex, type: 'element' })}><Icon name="spark"/> Element</button><button onClick={() => setPicker({ entryIndex, type: 'routine' })}><Icon name="routine"/> Układ lub fragment</button></div>
             <div className="entry-footer">
@@ -271,10 +393,27 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
       <label><span>Komentarz <span className="optional">opcjonalnie</span></span><textarea rows={3} maxLength={2000} value={comment} onChange={(e) => { setComment(e.target.value); markDirty(); }} placeholder="np. dobrze się skakało, równe lądowania"/></label>
     </section>
     {savedId && <button className="delete-training" onClick={() => void removeTraining()}>Usuń trening</button>}
-    {selection ? <div className="sticky-save selection-bar"><span><strong>{selection.size}</strong> zaznaczone</span><div><button className="button secondary" onClick={() => setSelection(null)}>Anuluj</button><button className="button secondary" onClick={duplicateSelected}>Duplikuj</button><button className="button danger" onClick={() => setConfirmDelete(true)}>Usuń</button></div></div>
+    {activitySelection && selectedEntryIndex >= 0 ? (() => {
+      const selected = entries[selectedEntryIndex].activities.filter((_, index) => activitySelection.indexes.has(index));
+      const untimed = selected.find((activity) => !hasTimes(activity));
+      return <div className="sticky-save selection-bar activity-selection"><span><strong>{activitySelection.indexes.size}</strong> zaznaczone · wejście {selectedEntryIndex + 1}</span><div>
+        <button className="button secondary" onClick={() => setActivitySelection(null)}>Anuluj</button>
+        <button className="button secondary" disabled={!untimed} title={untimed ? undefined : 'Pozycje z czasem to pojedyncze wykonania'} onClick={() => untimed && setBulk({ kind: 'repetitions', value: untimed.repetitions })}>Wykonania</button>
+        <button className="button secondary" onClick={() => setBulk({ kind: 'landing', id: landingOptions.find((type) => type.id === selected[0]?.executionTypeId)?.id ?? landingOptions[0]?.id ?? '' })}>Lądowanie</button>
+        <button className="button secondary" onClick={duplicateSelectedActivities}>Duplikuj</button>
+        <button className="button danger" onClick={() => setBulk({ kind: 'delete' })}>Usuń</button>
+      </div></div>;
+    })()
+    : selection ? <div className="sticky-save selection-bar"><span><strong>{selection.size}</strong> zaznaczone</span><div><button className="button secondary" onClick={() => setSelection(null)}>Anuluj</button><button className="button secondary" onClick={duplicateSelected}>Duplikuj</button><button className="button danger" onClick={() => setConfirmDelete(true)}>Usuń</button></div></div>
       /* The more frequent "save and continue" is the main button, in the bottom-right corner. */
       : <div className="sticky-save"><span><strong>{entries.length}</strong> wejść · <strong>{total}</strong> elementów</span><div><button className="button secondary" onClick={() => void save(true)} disabled={saving}>{saving ? 'Zapisywanie…' : 'Zapisz i zamknij'}</button><button className="button primary" onClick={() => void save(false)} disabled={saving}>{saving ? 'Zapisywanie…' : 'Zapisz i kontynuuj'}</button></div></div>}
     {confirmDelete && selection && <ConfirmDialog title={selection.size === 1 ? 'Usunąć wejście?' : `Usunąć wejścia (${selection.size})?`} confirmLabel="Tak, usuń" onCancel={() => setConfirmDelete(false)} onConfirm={removeSelected}><p>Zaznaczone wejścia znikną z tego treningu razem z ich czynnościami. Zmiana zapisze się po kliknięciu „Zapisz”.</p></ConfirmDialog>}
+    {bulk && activitySelection && (() => {
+      const count = activitySelection.indexes.size;
+      if (bulk.kind === 'delete') return <ConfirmDialog title={count === 1 ? 'Usunąć pozycję?' : `Usunąć ${positionsLabel(count)}?`} confirmLabel="Tak, usuń" onCancel={() => setBulk(null)} onConfirm={applyBulk}><p>Zaznaczone pozycje znikną z wejścia {selectedEntryIndex + 1}. Zmiana zapisze się po kliknięciu „Zapisz”.</p></ConfirmDialog>;
+      if (bulk.kind === 'repetitions') return <ConfirmDialog title="Liczba wykonań" confirmLabel="Ustaw" cancelLabel="Anuluj" onCancel={() => setBulk(null)} onConfirm={applyBulk}><p>Dla zaznaczonych pozycji ({count}). Pozycje z czasem zostaną bez zmian.</p><Counter value={bulk.value} label="Liczba wykonań zaznaczonych pozycji" onChange={(value) => setBulk({ kind: 'repetitions', value })}/></ConfirmDialog>;
+      return <ConfirmDialog title="Miejsce lądowania" confirmLabel="Ustaw" cancelLabel="Anuluj" onCancel={() => setBulk(null)} onConfirm={applyBulk}><p>Dla zaznaczonych pozycji ({count}), w układach także dla każdego elementu.</p><label className="bulk-landing"><span className="sr-only">Miejsce lądowania</span><select value={bulk.id} onChange={(event) => setBulk({ kind: 'landing', id: event.target.value })}>{landingOptions.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label></ConfirmDialog>;
+    })()}
     {picker?.type === 'element' && <ElementPicker entryNumber={picker.entryIndex + 1} catalog={catalogOfEntry(entries[picker.entryIndex])} showCatalog={multipleApparatus} elements={elementsOfCatalog(sources.data!.elements, catalogOfEntry(entries[picker.entryIndex]))} onCreated={(element) => sources.setData({ ...sources.data!, elements: [...sources.data!.elements, element] })} onPick={(element) => addElement(picker.entryIndex, element)} onClose={() => setPicker(null)}/>}
     {picker?.type === 'routine' && <RoutinePicker entryNumber={picker.entryIndex + 1} catalog={catalogOfEntry(entries[picker.entryIndex])} apparatusName={multipleApparatus ? entries[picker.entryIndex]?.apparatusName : undefined} routines={routinesForApparatus(sources.data!.routines, entries[picker.entryIndex]?.apparatusId)} elements={sources.data!.elements} onRoutineUpdated={(updated) => sources.setData({ ...sources.data!, routines: sources.data!.routines.map((routine) => routine.id === updated.id ? updated : routine) })} onPick={(routine, start, end) => addRoutine(picker.entryIndex, routine, start, end)} onClose={() => setPicker(null)}/>}
     {editingActivity && entries[editingActivity.entryIndex]?.activities[editingActivity.activityIndex] && <ActivityEditor
@@ -292,7 +431,7 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
       onAddNextTimed={() => addNextTimed(editingActivity)}
     />}
     {showExitDialog && <div className="modal-backdrop above"><section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="exit-title"><h2 id="exit-title">Zapisać trening?</h2><p>Masz niezapisane zmiany. Możesz je zapisać, odrzucić albo zostać w formularzu.</p><div><button className="button primary" disabled={saving} onClick={() => void save()}>{saving ? 'Zapisuję…' : 'Zapisz'}</button><button className="button danger" onClick={() => { setShowExitDialog(false); setGlobalDirty(false); onBack(); }}>Odrzuć</button><button className="button secondary" onClick={() => setShowExitDialog(false)}>Zostań</button></div></section></div>}
-    {message && <Toast message={message} kind={message.startsWith('Zapisano.') || message.startsWith('Zduplikowano') ? 'success' : 'error'} autoHideMs={message === 'Zapisano.' ? 3000 : message.startsWith('Zapisano.') || message.startsWith('Zduplikowano') ? 6000 : undefined} onClose={() => setMessage('')}/>}
+    {message && (() => { const calm = ['Zapisano.', 'Zduplikowano', 'Pominięto'].some((prefix) => message.startsWith(prefix)); return <Toast message={message} kind={calm ? 'success' : 'error'} autoHideMs={message === 'Zapisano.' ? 3000 : calm ? 6000 : undefined} onClose={() => setMessage('')}/>; })()}
   </div>;
 }
 

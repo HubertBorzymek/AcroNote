@@ -4,11 +4,16 @@
 
 ## Stan bieżący
 
-**Aktualizacja:** 2026-11-11
+**Aktualizacja:** 2026-11-26
 
-**Etap:** produkcja (`main`) działa na Fly.io; gałąź `dev` zawiera scalenie z `main` i nowe funkcje (iteracja 2026-11-11), jeszcze niewdrożone
+**Etap:** produkcja działa na Fly.io w wersji 0.6.1 (baza v9). Na `dev` (niezacommitowane) wersja 0.7.0: zaznaczanie pozycji w wejściu i przeciąganie, bez zmian w bazie.
 
-**Weryfikacja `dev`:** 109 testów automatycznych (API 73, web 36), kontrola typów, build, audyt 0, migracja v1–v3 → v6 na bazie utworzonej kodem z `main`, testy przeglądarkowe desktop/mobile na odizolowanej bazie. Niezweryfikowane: migracja na kopii prawdziwej bazy produkcyjnej, skrypty kopii na produkcji, obraz Docker po zmianach (sprawdzi CI), działanie na prawdziwym iPhonie.
+**Weryfikacja 0.7.0:** 243 testy automatyczne (API 160, web 83), kontrola typów, build, audyt 0, test przeglądarkowy 375×812 i desktop na izolowanej bazie. Niezweryfikowane: przeciąganie palcem na prawdziwym iPhonie.
+
+## Wersja 0.7.0 — pozycje w wejściu (niewdrożona)
+
+- Przytrzymanie pozycji w wejściu zaznacza ją; pasek pozwala ustawić liczbę wykonań (pomija pozycje z czasem), miejsce lądowania (w układzie także elementom), zduplikować na koniec wejścia (bez czasów) i usunąć.
+- Uchwyt po prawej stronie pozycji zmienia kolejność przeciąganiem w obrębie wejścia (biblioteka `@dnd-kit`, także klawiatura).
 
 ## Zrealizowany zakres
 

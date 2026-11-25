@@ -359,3 +359,31 @@ Poprawki po 0.6.0 (uwagi ze zrzutów z telefonu): w statystykach wyraźny odstę
 Skuteczność (decyzja użytkownika: tak dla ukończonych wejść na trening i skuteczności elementu, nie dla serii): `trainingSummary.byElement[].failed` — w każdym nieukończonym wejściu ostatnia czynność (w układzie jego ostatni element) to jedna nieudana próba; listy treningów mają `unfinishedCount`. Web (`completion.ts`, tylko pozytywne ujęcie): karta treningu „ukończone X z Y”, karta Wejścia „ukończone X z Y (Z%)”, wybrany element „udane X z Y (Z%)”, sekcja „Najpewniejsze elementy” (min. 3 próby, od najlepszego, widoczna tylko gdy są nieukończone wejścia; brak listy najsłabszych). Testy: `variants-unfinished.test.ts`, `completion.test.ts`. Przeglądarka 375×812: karty „ukończone 2 z 3”, statystyki „ukończone 6 z 8 (75%)”, element „udane 8 z 9 (89%)”, lista najpewniejszych.
 
 Wersja 0.6.1 (`package.json`): poprawki po 0.6.0 i skuteczność; bez zmian w bazie. Wdrożenie na prośbę użytkownika („Yes, deploy”).
+
+## Iteracja 2026-11-25/26 — uwagi z treningu, wersja 0.7.0
+
+Stan wyjściowy: `dev` = `main` = produkcja `0.6.1+06e461d` (PR #6).
+
+Notatki użytkownika z treningu: zaznaczanie wielu elementów w wejściu i zbiorcza edycja (wykonania, lądowanie, kopiowanie, usuwanie); zmiana kolejności przeciąganiem; „nieukończony” ma dotyczyć elementu, nie wejścia; na ścieżce w jednym wejściu (od usiąścia do usiąścia) skacze się kilka połączeń kończonych zeskokiem.
+
+### Ustalenia (z użytkownikiem)
+
+- Zbiorcza zmiana wykonań pomija pozycje z czasem. Przeciąganie tylko w obrębie wejścia.
+- Etap 0.7.0: zaznaczanie i przeciąganie (bez zmian w bazie). Etap 0.8.0: połączenia i nieukończony element, jedna migracja v10.
+- Ustalenia do 0.8.0 (niezaczęte):
+  - **Nieukończony element:** pole wyboru na pozycji zamiast na wejściu; przy ×N rozdzielenie jak przy czasie; kopie (duplikowanie) nie przejmują oznaczenia, jak czasów. Statystyki bez zmian w ujęciu (wejście jest nieukończone, gdy ma nieukończoną pozycję). Migracja: nieukończone wejście → nieukończona jego ostatnia pozycja (w układzie ostatni element), czyli dokładnie to, co liczą dziś statystyki; ostatnia pozycja ×N rozdzielona na ×(N−1) i ×1.
+  - W układzie/połączeniu nieukończony może być element w środku: zapis przechodzi, element dostaje żółte ostrzeżenie (jak kod spoza notacji); o reszcie decyduje użytkownik.
+  - **Połączenie** (nazwa ustalona): nowy rodzaj czynności — przebudowa tabeli `activities` (CHECK `kind`), żeby połączenia nie liczyły się jako fragmenty układów. Tworzone z zaznaczenia („Połącz”), „Rozłącz”, przeciąganie elementów w środku, „Zapisz jako układ”. Wiele połączeń w jednym wejściu, każde z własną liczbą wykonań. Na wszystkich sprzętach (zasady zależą tylko od kategorii sprzętu: trampolinowa/ścieżkowa).
+  - **Lądowanie w połączeniu i układzie:** wszystkie elementy poza ostatnim automatycznie na „Ścieżka” (sprzęt ścieżkowy) albo „Siatka” (trampolina, DMT); ostatni na dowolne miejsce. Aplikacja ustawia to sama przy tworzeniu/zmianie, ale da się ręcznie zmienić; zwykły ponowny zapis nie zmienia dawnych migawek.
+  - Miejsca „Siatka” i „Ścieżka” nie dają się usunąć ani przemianować (każde konto musi mieć „Ścieżka” — dodać w migracji). „Zeskok” nie jest dodawany automatycznie.
+
+### Zrobione (0.7.0)
+
+- `TrainingEditor.tsx`: czyste funkcje `setRepetitions` (zwraca liczbę pominiętych z czasem), `setLanding` (pozycja + elementy układu), `duplicateActivities` (na koniec wejścia, bez id i czasów), `removeActivities`, `moveActivity`. Zaznaczenie pozycji `{entryKey, indexes}` z osobnym `useLongPress`; zaznaczenie wejść i pozycji wykluczają się; zwinięcie wejścia kończy zaznaczanie. Okna „Liczba wykonań” i „Miejsce lądowania” na `ConfirmDialog`.
+- Przeciąganie: `@dnd-kit/core` 6.3.1, `@dnd-kit/sortable` 10.0.0, `@dnd-kit/utilities` 3.2.2 (devDependencies frontendu). `DndContext` na wejście, ruch tylko w pionie, uchwyt `drag-handle` z `touch-action:none` (przytrzymanie wiersza dalej zaznacza), polskie komunikaty dla czytników ekranu. Stabilne id pozycji w `WeakMap` (nic nie trafia do API). W trybie zaznaczania uchwyty ukryte, bo zaznaczenie trzyma indeksy.
+- Ikona `grip`. Krótsza podpowiedź nad listą wejść; licznik „5 z 5” nie łamie się.
+- Wersja 0.7.0 (`package.json`, `package-lock.json`).
+
+Weryfikacja: `npm test` 243/243 (API 160, web 83; nowe testy w `trainingEditor.test.ts`), `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate` (0), `git diff --check`. Przeglądarka (zbudowana aplikacja na porcie 3011, baza tymczasowa w scratchpadzie, konto demo; 800 px i 375×812, motyw ciemny i jasny): przeciąganie zmienia kolejność; przytrzymanie zaznacza, dotknięcie dokłada, w trakcie brak uchwytów i okna edycji; „Wykonania” 2→3 z komunikatem „Pominięto 1 pozycję z czasem…”; „Lądowanie” Materac na układzie zmienia wszystkie 5 elementów; „Duplikuj” dodaje kopie na końcu bez czasu; „Usuń 2 pozycje?” z potwierdzeniem; „Zapisz i kontynuuj” zapisuje nową kolejność, czas i lądowania (sprawdzone przez API). Poprawione przy tym: licznik w oknie dialogowym rozjeżdżał się (reguła `.confirm-dialog>div`).
+
+Niezweryfikowane: przeciąganie palcem na prawdziwym iPhonie (emulacja w Chromium używa zdarzeń myszy). Niezacommitowane.

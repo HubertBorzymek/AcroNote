@@ -217,3 +217,20 @@ a.button{text-decoration:none;display:inline-flex;align-items:center;justify-con
 /* A clear gap between the apparatus and the period choice. */
 .apparatus-switch+.filter-row.period{margin-top:4px}
 .ranking.reliable .rank-row{grid-template-columns:24px minmax(70px,44%) 1fr 42px}.ranking.reliable .reliable-detail{grid-column:2/-1;margin-top:-4px;font-size:.68rem;color:var(--muted)}.ranking.reliable header small{display:block;font-size:.68rem;color:var(--muted);margin-top:4px}
+/* Positions inside an entry: long press selects them, the handle on the right drags them. */
+.activity{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+.activity.selected{border-color:var(--green);box-shadow:0 0 0 2px var(--green)}
+.activity.selected .activity-kind{background:var(--green);color:#fff}
+.activity-row{display:flex;align-items:stretch;gap:6px;position:relative}
+.activity-row>.activity{flex:1;min-width:0}
+.activity-row.dragging{z-index:5}
+.activity-row.dragging>.activity{border-color:var(--green);box-shadow:0 10px 24px rgba(21,62,50,.18)}
+.drag-handle{flex:none;width:38px;border:1px solid #e7ebe7;border-radius:12px;background:#fbfcfa;color:#8f9b93;display:grid;place-items:center;cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;padding:0}
+.drag-handle:active,.activity-row.dragging .drag-handle{cursor:grabbing;color:var(--green);border-color:var(--green)}
+.drag-handle .icon{width:20px;height:20px}
+:root[data-theme='dark'] .drag-handle{background:var(--subtle);border-color:var(--line)}
+.activity-selection>div{flex-wrap:wrap;justify-content:flex-end}
+.bulk-landing{display:block;margin:4px 0 14px}.bulk-landing select{width:100%;height:48px;border:1px solid var(--line);border-radius:12px;background:var(--paper,#fff);color:var(--ink);padding:0 12px}
+.confirm-dialog>.counter{grid-template-columns:52px 1fr 52px;gap:0;margin:4px 0 14px}
+@media(max-width:560px){.activity-selection{flex-direction:column;align-items:stretch;gap:6px}.activity-selection>div .button{flex:1 1 30%;min-width:0}}
+.entry-list-summary>span{white-space:nowrap;flex:none}
