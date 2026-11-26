@@ -48,19 +48,22 @@ CREATE TABLE IF NOT EXISTS training_entries (
   position INTEGER NOT NULL, default_execution_type_id INTEGER,
   default_execution_type_name TEXT NOT NULL
 );
+-- kind: a single element, a routine (template) execution, or a combo ("Połączenie": elements joined
+-- in the editor, without a template). Routine and combo elements are kept in activity_elements.
+-- unfinished: the element did not work out (single elements; routine/combo elements carry their own flag).
 CREATE TABLE IF NOT EXISTS activities (
   id INTEGER PRIMARY KEY, entry_id INTEGER NOT NULL REFERENCES training_entries(id) ON DELETE CASCADE,
-  position INTEGER NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('element','routine')),
+  position INTEGER NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('element','routine','combo')),
   repetitions INTEGER NOT NULL CHECK(repetitions > 0), execution_type_id INTEGER,
   execution_type_name TEXT NOT NULL, source_element_id INTEGER, code_snapshot TEXT, name_snapshot TEXT,
   source_routine_id INTEGER, source_routine_name TEXT, source_template_version INTEGER,
   range_start INTEGER, range_end INTEGER, is_full_range INTEGER NOT NULL DEFAULT 0,
-  matched_original_template INTEGER NOT NULL DEFAULT 0
+  matched_original_template INTEGER NOT NULL DEFAULT 0, time_ms INTEGER, unfinished INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS activity_elements (
   id INTEGER PRIMARY KEY, activity_id INTEGER NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
   position INTEGER NOT NULL, source_element_id INTEGER, code_snapshot TEXT NOT NULL, name_snapshot TEXT,
-  execution_type_id INTEGER, execution_type_name TEXT NOT NULL
+  execution_type_id INTEGER, execution_type_name TEXT NOT NULL, time_ms INTEGER, unfinished INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS coach_links (
   id INTEGER PRIMARY KEY, athlete_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -387,3 +387,38 @@ Notatki użytkownika z treningu: zaznaczanie wielu elementów w wejściu i zbior
 Weryfikacja: `npm test` 243/243 (API 160, web 83; nowe testy w `trainingEditor.test.ts`), `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate` (0), `git diff --check`. Przeglądarka (zbudowana aplikacja na porcie 3011, baza tymczasowa w scratchpadzie, konto demo; 800 px i 375×812, motyw ciemny i jasny): przeciąganie zmienia kolejność; przytrzymanie zaznacza, dotknięcie dokłada, w trakcie brak uchwytów i okna edycji; „Wykonania” 2→3 z komunikatem „Pominięto 1 pozycję z czasem…”; „Lądowanie” Materac na układzie zmienia wszystkie 5 elementów; „Duplikuj” dodaje kopie na końcu bez czasu; „Usuń 2 pozycje?” z potwierdzeniem; „Zapisz i kontynuuj” zapisuje nową kolejność, czas i lądowania (sprawdzone przez API). Poprawione przy tym: licznik w oknie dialogowym rozjeżdżał się (reguła `.confirm-dialog>div`).
 
 Niezweryfikowane: przeciąganie palcem na prawdziwym iPhonie (emulacja w Chromium używa zdarzeń myszy). Niezacommitowane.
+
+## Iteracja 2026-11-26 — połączenia i nieukończony element, wersja 0.8.0
+
+0.7.0 zacommitowane na `dev` (3f2b5c1, bez pusha). Dalsze ustalenia użytkownika: elementy pośrednie ustawiane automatycznie, ale do zmiany ręcznie; „Zeskok” nie jest dodawany; „Siatki” i „Ścieżki” nie da się usunąć ani przemianować; połączenia działają na wszystkich sprzętach tak samo jak na ścieżce (zasady zależą tylko od kategorii sprzętu).
+
+### Baza (migracja v10, `migrateV10` w `db.ts`)
+
+- `activities` przebudowana: `kind IN ('element','routine','combo')`, nowa kolumna `unfinished`, `time_ms` w definicji; te same id. Przebudowa przy `foreign_keys = OFF` (poza transakcją, bo pragma w transakcji nie działa), w transakcji z `PRAGMA foreign_key_check`; bez tego `DROP TABLE activities` skasowałby kaskadowo `activity_elements`. Warunek: definicja tabeli nie zawiera `'combo'` (nowe bazy mają ją od razu z `schema.ts`).
+- `activity_elements.unfinished`; indeksy `idx_activities_entry`, `idx_activity_elements_activity`.
+- Dane (tylko przy pierwszym przejściu v10): w każdym wejściu z `unfinished=1` ostatnia pozycja: element ×1 → oznaczony; element ×N → ×(N−1) i nowa pozycja ×1 oznaczona; układ ×1 → oznaczony jego ostatni element; układ ×N → ×(N−1) i kopia ×1 (z kopią elementów, bez czasów) z oznaczonym ostatnim elementem. Wejście bez pozycji traci znacznik. Dokładnie to liczyły dotąd statystyki jako nieudaną próbę, więc liczby się nie zmieniają.
+- `ensureFixedLandings`: każde konto ma „Siatka” i „Ścieżka” (brakujące dodane, usunięte przywrócone jako ukryte). `seedExecutionTypes` daje nowym kontom także „Ścieżka”.
+
+### API
+
+- `saveTraining`: rodzaj `combo` (elementy jak w układzie, bez szablonu, zakresu i dopasowania), nieznany rodzaj → 400; `unfinished` przy elemencie i przy elementach układu/połączenia, tylko ×1 (400 przy ×N); `training_entries.unfinished` wyliczane z elementów (znacznik wysłany dla wejścia jest ignorowany). Sprawdzenie zapisu elementów sprzętu obejmuje połączenia.
+- `getTraining` zwraca `unfinished` (bool) dla czynności i elementów, elementy także dla połączeń.
+- `trainingSummary`: `failed` z oznaczonych elementów (zamiast „ostatniej pozycji nieukończonego wejścia”), elementy połączeń w sumach, nowe pole `combos`; połączenia nie wchodzą do `fullRoutines`/`fragments`.
+- `time-stats`: rodzaj `combo`, klucz i etykieta to kody w kolejności (np. `41o 800o`), osobno na sprzęt.
+- `execution-types`: pole `fixed`; zmiana nazwy i usunięcie „Siatka”/„Ścieżka” → 400 (ukrywanie dozwolone); trener dostaje tę samą listę (tylko odczyt).
+- `import-report`: czasy i znaczniki nieukończenia czynności i elementów; starsze zgłoszenia ze znacznikiem wejścia zachowują go.
+
+### Web
+
+- `TrainingEditor.tsx`: `intermediateLanding`, `applyLandingRule` (dodanie układu, zmiana zakresu, połączenie, przestawienie elementów), `combineActivities` („Połącz” na pasku zaznaczenia; wyłączone dla układów), `splitCombo` („Rozłącz na pojedyncze”), `splitOffUnfinished` (×N → ×(N−1) + ×1), `comboSlots` + „Zapisz jako układ” (`api.createRoutine`, wykonanie staje się pełnym wykonaniem nowego układu), `isSingleExecution` (czas lub nieukończony: licznik zablokowany, pomijane przy zbiorczych wykonaniach), `entryHasUnfinished`, `unfinishedInMiddle` (żółte ostrzeżenie). Zbiorcze lądowanie w układzie/połączeniu zmienia tylko ostatni element. Duplikaty i „kolejne wykonanie na czas” bez znaczników.
+- Wiersz połączenia: litera „P”, kody jako złączone kafelki, „ostatni: …”; znaczniki „nieukończony” / „nieukończony element”. Okno edycji: „Lądowanie ostatniego elementu”, „nie wyszedł” przy każdym elemencie, uchwyty w połączeniu. Usunięte pole „Wejście nieukończone”.
+- Profil: „Stała nazwa” zamiast „Zmień nazwę” dla Siatki i Ścieżki; statystyki: „· N połączeń” i litera „P” w rekordach czasu; widok trenera pokazuje połączenia i nieukończone elementy.
+
+### Weryfikacja
+
+`npm test` 252/252 (API 165 w 14 plikach, w tym nowy `combos.test.ts`; web 87), `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate` (0). Migracja v10 w teście: baza w kształcie v9 z sześcioma przypadkami (×1, ×N, układ ×1 i ×N, wejście ukończone, wejście puste), usuniętą Siatką i bez Ścieżki — te same id, elementy układów nienaruszone, statystyki jak przed migracją (13 elementów, 2+2 nieudane próby), `integrity_check` ok, `foreign_key_check` pusty, klucze obce z powrotem włączone, ponowne otwarcie bez zmian.
+Przeglądarka (375×812, zbudowana aplikacja, kopia testowej bazy v9 z trzema nieukończonymi wejściami zmigrowana przy starcie): `41< ×2` → `×1` + `×1 nieukończony`, ostatni element układu oznaczony, `831o` z czasem oznaczony, Ścieżka dodana; wejście na Ścieżce: `(`, `F`, `00/` → „Połącz” → połączenie z pośrednimi na Ścieżce i ostatnim na Siatce (domyślne lądowanie wejścia); zmiana ostatniego na Materac, „nie wyszedł” przy F z żółtym ostrzeżeniem i zablokowanym licznikiem, przeciągnięcie elementu na koniec (lądowanie Materac przechodzi na nowy ostatni); „Zapisz jako układ” → układ „Przebieg testowy” na Ścieżce; F ×3 → „Nieukończony” → pytanie → ×2 + ×1; „Połącz” różnych liczb wykonań → ×1 z komunikatem; „Rozłącz”; zapis i odczyt przez API zgodny; profil z „Stała nazwa”. Poprawione przy tym: komunikaty o połączeniu pokazywały się jako błąd (czerwony).
+
+Niezweryfikowane: **migracja v10 na kopii prawdziwej bazy produkcyjnej** (na tym komputerze nie ma `flyctl` ani kopii w `Dokumenty\AcroNote-kopie`; przed wdrożeniem uruchomić `scripts\pobierz-kopie.bat` i sprawdzić migrację na kopii), przeciąganie palcem na iPhonie, widok trenera w przeglądarce (sprawdzony tylko testami API).
+
+Wersja 0.8.0. Niezacommitowane.

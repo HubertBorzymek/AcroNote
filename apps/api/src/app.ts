@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
-import { defaultApparatus, openDatabase, seedExecutionTypes, usernameKey, type Db } from './db.js';
+import { defaultApparatus, FIXED_LANDINGS, openDatabase, seedExecutionTypes, usernameKey, type Db } from './db.js';
 import { clearTwoStep, hashToken, PASSWORD_MIN_LENGTH, registerAccountRoutes } from './accounts.js';
 import { getTraining, saveTraining, trainingSummary, type TrainingInput } from './training-service.js';
 import { newTimeRecords, timeStats } from './time-stats.js';
@@ -160,7 +160,10 @@ export async function buildApp(options: AppOptions = {}) {
     return publicUser(db.prepare('SELECT id,username,athlete_enabled,coach_enabled,role FROM users WHERE id=?').get(request.userId));
   });
 
-  app.get('/api/execution-types', auth, async request => db.prepare(`SELECT id,name,sort_order sortOrder,hidden FROM execution_types WHERE user_id=? AND deleted_at IS NULL ORDER BY sort_order,id`).all(request.userId));
+  // "Siatka" and "Ścieżka" are fixed: elements before the last one in a routine or combo land there, so they cannot be renamed or deleted (hiding is fine).
+  const fixedLanding = (name: string) => (FIXED_LANDINGS as readonly string[]).includes(name);
+  const listExecutionTypes = (userId: number) => (db.prepare(`SELECT id,name,sort_order sortOrder,hidden FROM execution_types WHERE user_id=? AND deleted_at IS NULL ORDER BY sort_order,id`).all(userId) as {id:number;name:string;sortOrder:number;hidden:number}[]).map(row => ({ ...row, fixed: fixedLanding(row.name) }));
+  app.get('/api/execution-types', auth, async request => listExecutionTypes(request.userId));
   app.post('/api/execution-types', auth, async (request, reply) => {
     const body=request.body as any; const name=text(body?.name,'Nazwa miejsca lądowania');
     const order=(db.prepare('SELECT COALESCE(MAX(sort_order),-1)+1 n FROM execution_types WHERE user_id=?').get(request.userId) as any).n;
@@ -172,7 +175,10 @@ export async function buildApp(options: AppOptions = {}) {
     return reply.status(201).send({id,name,sortOrder:order,hidden:false});
   });
   app.put('/api/execution-types/:id', auth, async (request,reply) => {
-    const body=request.body as any; const clash=db.prepare('SELECT deleted_at FROM execution_types WHERE user_id=? AND name=? AND id<>?').get(request.userId,text(body?.name,'Nazwa miejsca lądowania'),Number((request.params as any).id)) as {deleted_at:string|null}|undefined;
+    const body=request.body as any;
+    const current=db.prepare('SELECT name FROM execution_types WHERE id=? AND user_id=? AND deleted_at IS NULL').get(Number((request.params as any).id),request.userId) as {name:string}|undefined;
+    if(current&&fixedLanding(current.name)&&text(body?.name,'Nazwa miejsca lądowania')!==current.name)return reply.status(400).send({message:`Nazwy miejsca „${current.name}” nie można zmienić — lądują tam elementy przed ostatnim w układach i połączeniach.`});
+    const clash=db.prepare('SELECT deleted_at FROM execution_types WHERE user_id=? AND name=? AND id<>?').get(request.userId,text(body?.name,'Nazwa miejsca lądowania'),Number((request.params as any).id)) as {deleted_at:string|null}|undefined;
     if(clash)return reply.status(409).send({message:clash.deleted_at?'Miejsce lądowania o tej nazwie zostało wcześniej usunięte. Dodaj je ponownie, aby je przywrócić.':'Miejsce lądowania o tej nazwie już istnieje.'}); const info=db.prepare('UPDATE execution_types SET name=?,sort_order=?,hidden=? WHERE id=? AND user_id=? AND deleted_at IS NULL').run(text(body.name,'Nazwa miejsca lądowania'),Number(body.sortOrder??0),bool(body.hidden),Number((request.params as any).id),request.userId);
     if (!info.changes) throw new Error('Nie znaleziono miejsca lądowania.'); return {ok:true};
   });
@@ -203,7 +209,11 @@ export async function buildApp(options: AppOptions = {}) {
     db.prepare('UPDATE apparatus SET name=?,sort_order=?,hidden=?,tracks_time=? WHERE id=? AND user_id=?').run(name,Number(body?.sortOrder??0),hidden,bool(body?.tracksTime),id,request.userId);
     return {ok:true};
   });
-  app.delete('/api/execution-types/:id', auth, async request => { db.prepare("UPDATE execution_types SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?").run(Number((request.params as any).id),request.userId); return {ok:true}; });
+  app.delete('/api/execution-types/:id', auth, async (request,reply) => {
+    const current=db.prepare('SELECT name FROM execution_types WHERE id=? AND user_id=?').get(Number((request.params as any).id),request.userId) as {name:string}|undefined;
+    if(current&&fixedLanding(current.name))return reply.status(400).send({message:`Miejsca „${current.name}” nie można usunąć — lądują tam elementy przed ostatnim w układach i połączeniach. Możesz je ukryć.`});
+    db.prepare("UPDATE execution_types SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?").run(Number((request.params as any).id),request.userId); return {ok:true};
+  });
 
   app.get('/api/elements', auth, async request => {
     const q=request.query as any; const conditions=['user_id=?','deleted_at IS NULL']; const values:any[]=[request.userId];
@@ -372,7 +382,7 @@ export async function buildApp(options: AppOptions = {}) {
   app.delete('/api/athlete/coaches/:coachId', auth, async request => { const coachId=Number((request.params as any).coachId);const info=db.prepare('DELETE FROM coach_links WHERE athlete_id=? AND coach_id=?').run(request.userId,coachId);if(!info.changes)throw new Error('Nie znaleziono połączenia.');return{ok:true}; });
   app.get('/api/coach/athletes/:athleteId', auth, async (request,reply) => {const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);return db.prepare('SELECT id,username FROM users WHERE id=?').get(athleteId);});
   app.get('/api/coach/athletes/:athleteId/elements', auth, async (request,reply) => {const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);return listElements(db,athleteId);});
-  app.get('/api/coach/athletes/:athleteId/execution-types', auth, async (request,reply) => {const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);return db.prepare('SELECT id,name,sort_order sortOrder,hidden FROM execution_types WHERE user_id=? AND deleted_at IS NULL ORDER BY sort_order,id').all(athleteId);});
+  app.get('/api/coach/athletes/:athleteId/execution-types', auth, async (request,reply) => {const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);return listExecutionTypes(athleteId);});
   app.get('/api/coach/athletes/:athleteId/apparatus', auth, async (request,reply) => {const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);return listApparatus(db,athleteId);});
   app.get('/api/coach/athletes/:athleteId/routines', auth, async (request,reply) => {const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply);return listRoutines(db,athleteId);});
   app.get('/api/coach/athletes/:athleteId/trainings', auth, async (request,reply) => { const athleteId=Number((request.params as any).athleteId);if(!hasCoachAccess(db,athleteId,request.userId))return coachDenied(reply); const q=request.query as any;const conditions=['t.user_id=?'];const values:any[]=[athleteId];if(q.from){conditions.push('t.training_date>=?');values.push(q.from)}if(q.to){conditions.push('t.training_date<=?');values.push(q.to)}return listTrainings(db,conditions,values); });

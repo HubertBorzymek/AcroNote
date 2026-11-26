@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { duplicateActivities, duplicateEntries, moveActivity, removeActivities, setLanding, setRepetitions, entrySummary, hasTimes, isWaitingForTime, nextEntryApparatus, nextTimedCopy, routinesForApparatus, splitRepetitions } from './pages/TrainingEditor';
+import { applyLandingRule, combineActivities, comboSlots, entryHasUnfinished, intermediateLanding, isSingleExecution, splitCombo, splitOffUnfinished, unfinishedInMiddle, duplicateActivities, duplicateEntries, moveActivity, removeActivities, setLanding, setRepetitions, entrySummary, hasTimes, isWaitingForTime, nextEntryApparatus, nextTimedCopy, routinesForApparatus, splitRepetitions } from './pages/TrainingEditor';
 import { statsApparatusChoice } from './pages/StatsPage';
 import type { Activity, Apparatus, Routine } from './types';
 
@@ -78,7 +78,8 @@ describe('duplikowanie zaznaczonych wejść', () => {
     expect(result).toHaveLength(5);
     expect(result.slice(0, 3)).toEqual(entries);
     const [copyA, copyB] = result.slice(3);
-    expect(copyA).toMatchObject({ id: undefined, clientKey: 'nowy-1', apparatusId: '2', apparatusName: 'DMT', unfinished: true, defaultExecutionTypeName: 'Siatka' });
+    // Unfinished marks belong to one jump, like times: copies start clean.
+    expect(copyA).toMatchObject({ id: undefined, clientKey: 'nowy-1', apparatusId: '2', apparatusName: 'DMT', unfinished: undefined, defaultExecutionTypeName: 'Siatka' });
     expect(copyA.activities[0]).toMatchObject({ id: undefined, elementCode: '40o', timeMs: null });
     expect(copyB.activities[0]).toMatchObject({ timeMs: null, elements: [{ code: '40o', timeMs: null }] });
     // The originals keep their times.
@@ -104,10 +105,10 @@ describe('zaznaczone pozycje w jednym wejściu', () => {
     expect(setRepetitions([routine], new Set([0]), 3).skipped).toBe(1);
   });
 
-  it('ustawia lądowanie pozycji i każdego elementu układu', () => {
+  it('ustawia lądowanie pozycji, a w układzie — ostatniego elementu', () => {
     const result = setLanding(activities, new Set([2, 3]), { id: 'mat', name: 'Materac' });
     expect(result[2]).toMatchObject({ executionTypeId: 'mat', executionTypeName: 'Materac' });
-    expect(result[2].elements?.map((item) => item.executionTypeName)).toEqual(['Materac', 'Materac']);
+    expect(result[2].elements?.map((item) => item.executionTypeName)).toEqual(['Siatka', 'Materac']);
     expect(result[3]).toMatchObject({ executionTypeId: 'mat', executionTypeName: 'Materac' });
     expect(result[0]).toBe(activities[0]);
     // The original snapshot objects are untouched.
@@ -129,5 +130,65 @@ describe('zaznaczone pozycje w jednym wejściu', () => {
     expect(moveActivity(activities, 1, 1)).toBe(activities);
     expect(moveActivity(activities, -1, 2)).toBe(activities);
     expect(moveActivity(activities, 0, 9)).toBe(activities);
+  });
+});
+
+describe('połączenia i nieukończone elementy', () => {
+  const net = { id: 'net', name: 'Siatka' }; const track = { id: 'track', name: 'Ścieżka' }; const off = { id: 'off', name: 'Zeskok' };
+  const single = (code: string, extra: Partial<Activity> = {}): Activity => ({ type: 'element', repetitions: 1, elementId: code, elementCode: code, executionTypeId: off.id, executionTypeName: off.name, ...extra });
+
+  it('elementy przed ostatnim lądują na Siatce (trampolina, DMT) albo Ścieżce; ostatni na wybranym miejscu', () => {
+    expect(intermediateLanding([net, off, track], 'tumbling')).toBe(track);
+    expect(intermediateLanding([net, off, track], 'trampoline')).toBe(net);
+    expect(intermediateLanding([off], 'trampoline')).toBeUndefined();
+    const elements = [{ code: '(', executionTypeName: 'Zeskok' }, { code: 'F', executionTypeName: 'Zeskok' }, { code: '00/', executionTypeName: 'Siatka' }];
+    expect(applyLandingRule(elements, off, track).map((item) => item.executionTypeName)).toEqual(['Ścieżka', 'Ścieżka', 'Zeskok']);
+    // Without the intermediate place nothing but the last one changes.
+    expect(applyLandingRule(elements, off, undefined).map((item) => item.executionTypeName)).toEqual(['Zeskok', 'Zeskok', 'Zeskok']);
+  });
+
+  it('łączy zaznaczone pozycje w połączenie w miejscu pierwszej; ostatni element zachowuje swoje lądowanie', () => {
+    const activities = [single('('), single('X'), single('F', { unfinished: true }), single('00/', { timeMs: 1200 })];
+    const result = combineActivities(activities, new Set([3, 0, 2]), track)!;
+    expect(result.repetitionsReset).toBe(false);
+    expect(result.activities.map((item) => item.type)).toEqual(['combo', 'element']);
+    const combo = result.activities[0]!;
+    expect(combo).toMatchObject({ type: 'combo', repetitions: 1, executionTypeName: 'Zeskok', timeMs: null });
+    expect(combo.elements?.map((item) => [item.code, item.executionTypeName, !!item.unfinished, item.timeMs ?? null])).toEqual([['(', 'Ścieżka', false, null], ['F', 'Ścieżka', true, null], ['00/', 'Zeskok', false, 1200]]);
+    expect(result.activities[1]!.elementCode).toBe('X');
+    // A combo joins further positions element by element; routines cannot be joined.
+    const bigger = combineActivities([combo, single('2.', { repetitions: 3 })], new Set([0, 1]), track)!;
+    expect(bigger.repetitionsReset).toBe(true);
+    expect(bigger.activities[0]!.elements?.map((item) => item.code)).toEqual(['(', 'F', '00/', '2.']);
+    expect(combineActivities([single('('), routine], new Set([0, 1]), track)).toBeNull();
+    expect(combineActivities([single('(')], new Set([0]), track)).toBeNull();
+    // The same number of executions is kept.
+    expect(combineActivities([single('(', { repetitions: 3 }), single('F', { repetitions: 3 })], new Set([0, 1]), track)!.activities[0]!.repetitions).toBe(3);
+  });
+
+  it('rozłącza połączenie na pojedyncze pozycje i tworzy z niego sloty układu', () => {
+    const combo = combineActivities([single('('), single('F'), single('00/', { timeMs: 900 })], new Set([0, 1, 2]), track)!.activities[0]!;
+    const parts = splitCombo(combo);
+    expect(parts.map((item) => [item.type, item.elementCode, item.executionTypeName, item.timeMs])).toEqual([['element', '(', 'Ścieżka', null], ['element', 'F', 'Ścieżka', null], ['element', '00/', 'Zeskok', 900]]);
+    expect(splitCombo({ ...combo, repetitions: 2 }).every((item) => item.repetitions === 2 && item.timeMs === null)).toBe(true);
+    expect(comboSlots(combo)).toEqual([{ elementId: '(', code: '(', name: undefined, position: 1 }, { elementId: 'F', code: 'F', name: undefined, position: 2 }, { elementId: '00/', code: '00/', name: undefined, position: 3 }].map((slot) => ({ ...slot, name: null })));
+  });
+
+  it('nieukończone przy ×N oddziela jedno wykonanie; wejście jest nieukończone przez swój element', () => {
+    const [rest, failed] = splitOffUnfinished(single('40o', { repetitions: 5, id: '9' }));
+    expect(rest).toMatchObject({ id: '9', repetitions: 4 }); expect(failed).toMatchObject({ id: undefined, repetitions: 1, unfinished: true });
+    const [routineRest, routineFailed] = splitOffUnfinished({ ...routine, repetitions: 2, timeMs: null, elements: [{ code: '41o', executionTypeName: 'Siatka' }, { code: '800o', executionTypeName: 'Materac' }] });
+    expect(routineRest!.repetitions).toBe(1); expect(routineFailed).toMatchObject({ repetitions: 1, unfinished: false });
+    expect(splitOffUnfinished(single('40o'))).toHaveLength(1);
+    expect(isSingleExecution(single('40o', { unfinished: true }))).toBe(true);
+    expect(isSingleExecution({ ...routine, timeMs: null, elements: [{ code: '41o', executionTypeName: 'Siatka', unfinished: true }] })).toBe(true);
+    expect(entryHasUnfinished({ defaultExecutionTypeName: 'Siatka', activities: [single('40o'), single('41o', { unfinished: true })] })).toBe(true);
+    expect(entryHasUnfinished({ defaultExecutionTypeName: 'Siatka', unfinished: true, activities: [single('40o')] })).toBe(false);
+    const middle = { ...routine, elements: [{ code: '41o', executionTypeName: 'Siatka', unfinished: true }, { code: '800o', executionTypeName: 'Materac' }] };
+    expect(unfinishedInMiddle(middle)).toBe(true);
+    expect(unfinishedInMiddle({ ...middle, elements: [{ code: '41o', executionTypeName: 'Siatka' }, { code: '800o', executionTypeName: 'Materac', unfinished: true }] })).toBe(false);
+    // Duplicates and bulk changes leave unfinished positions as they are.
+    expect(duplicateActivities([single('40o', { unfinished: true })], new Set([0]))[1]!.unfinished).toBe(false);
+    expect(setRepetitions([single('40o', { unfinished: true })], new Set([0]), 3).skipped).toBe(1);
   });
 });

@@ -39,8 +39,8 @@ describe('ponowne dodawanie usuniętych pozycji katalogu', () => {
     await app.inject({method:'DELETE',url:`/api/execution-types/${mat.id}`,headers:headers()});
     const again=await app.inject({method:'POST',url:'/api/execution-types',headers:headers(),payload:{name:'Materac'}});
     expect(again.statusCode).toBe(201);expect(again.json().id).toBe(mat.id);
-    const siatka=types.find(type=>type.name==='Siatka')!;
-    const rename=await app.inject({method:'PUT',url:`/api/execution-types/${siatka.id}`,headers:headers(),payload:{name:'Materac'}});
+    const foam=types.find(type=>type.name==='Gąbki')!;
+    const rename=await app.inject({method:'PUT',url:`/api/execution-types/${foam.id}`,headers:headers(),payload:{name:'Materac'}});
     expect(rename.statusCode).toBe(409);
   });
 

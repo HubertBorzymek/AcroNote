@@ -4,7 +4,7 @@ import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalList
 import { CSS } from '@dnd-kit/utilities';
 import { api } from '../api';
 import { today, useAsync, useUnsavedChanges } from '../hooks';
-import type { Activity, Apparatus, ElementItem, ExecutionType, Routine, TimeRecord, Training, TrainingEntry } from '../types';
+import type { Activity, ActivityElement, Apparatus, ElementItem, ExecutionType, Routine, RoutineSlot, TimeRecord, Training, TrainingEntry } from '../types';
 import { CodeHint, ConfirmDialog, Counter, ErrorState, Icon, Loading, NonStandardCodeText, PageHeader, Toast } from '../components/ui';
 import { catalogNames, parseCatalogCode, type Catalog } from '../elementCode';
 import { ElementFilterControls, elementLabel, elementsOfCatalog, emptyElementFilters, filterElementChoices } from '../elementFilters';
@@ -28,24 +28,85 @@ export function newestEntryIndexes(total: number, visibleCount: number) {
 
 const activityElements = (activity: Activity) => activity.type === 'element' ? activity.repetitions : (activity.elements?.length ?? 0) * activity.repetitions;
 export const hasTimes = (activity: Activity) => activity.timeMs != null || !!activity.elements?.some((item) => item.timeMs != null);
+/** The position, or one of its elements, did not work out. */
+export const hasUnfinished = (activity: Activity) => !!activity.unfinished || !!activity.elements?.some((item) => item.unfinished);
+/** A time or an unfinished element belongs to one execution: such a position stays ×1. */
+export const isSingleExecution = (activity: Activity) => hasTimes(activity) || hasUnfinished(activity);
+/** An entry is unfinished when one of its elements is. */
+export const entryHasUnfinished = (entry: TrainingEntry) => entry.activities.some(hasUnfinished);
+/** An unfinished element before the last one of a routine or combo: allowed, but worth a calm warning. */
+export const unfinishedInMiddle = (activity: Activity) => !!activity.elements?.slice(0, -1).some((item) => item.unfinished);
+const activityCodes = (activity: Activity) => activity.elements?.map((item) => item.code).join(' ') ?? '';
+/** A copy without times or unfinished marks (those belong to one jump). */
+const freshCopy = (activity: Activity): Activity => ({ ...activity, id: undefined, timeMs: null, unfinished: false, elements: activity.elements?.map((item) => ({ ...item, timeMs: null, unfinished: false })) });
+
+/** Elements before the last one in a routine or combo land on the net (trampoline, DMT) or the track (tumbling). */
+export function intermediateLanding(executionTypes: ExecutionType[], catalog: Catalog) {
+  const name = catalog === 'tumbling' ? 'Ścieżka' : 'Siatka';
+  return executionTypes.find((type) => type.name === name);
+}
+
+/** All elements but the last get the intermediate landing; the last one gets the chosen landing. */
+export function applyLandingRule<T extends { executionTypeId?: string; executionTypeName: string }>(elements: T[], last: Pick<ExecutionType, 'id' | 'name'>, middle: Pick<ExecutionType, 'id' | 'name'> | undefined): T[] {
+  return elements.map((item, index) => index === elements.length - 1 ? { ...item, executionTypeId: last.id, executionTypeName: last.name }
+    : middle ? { ...item, executionTypeId: middle.id, executionTypeName: middle.name } : item);
+}
+
+/**
+ * Joins the chosen single elements (and combos) into one combo ("Połączenie") at the place of the first one.
+ * The same number of executions is kept; when they differ the combo is ×1. Routines cannot be joined.
+ */
+export function combineActivities(activities: Activity[], indexes: Set<number>, middle: Pick<ExecutionType, 'id' | 'name'> | undefined) {
+  const chosen = activities.filter((_, index) => indexes.has(index));
+  if (chosen.length < 2 || chosen.some((activity) => activity.type === 'routine')) return null;
+  const sameRepetitions = chosen.every((activity) => activity.repetitions === chosen[0]!.repetitions);
+  const elements = chosen.flatMap((activity): ActivityElement[] => activity.type === 'combo' ? (activity.elements ?? []) : [{
+    elementId: activity.elementId, code: activity.elementCode ?? '—', name: activity.elementName, executionTypeId: activity.executionTypeId, executionTypeName: activity.executionTypeName, timeMs: activity.timeMs ?? null, unfinished: !!activity.unfinished,
+  }]);
+  const lastElement = elements[elements.length - 1]!;
+  const last = { id: lastElement.executionTypeId ?? '', name: lastElement.executionTypeName };
+  const combo: Activity = { type: 'combo', repetitions: sameRepetitions ? chosen[0]!.repetitions : 1, executionTypeId: lastElement.executionTypeId, executionTypeName: lastElement.executionTypeName, timeMs: null, elements: applyLandingRule(elements, last, middle) };
+  const first = Math.min(...indexes);
+  const next = activities.flatMap((activity, index) => index === first ? [combo] : indexes.has(index) ? [] : [activity]);
+  return { activities: next, repetitionsReset: !sameRepetitions };
+}
+
+/** "Rozłącz": every element of the combo becomes a single position with the same number of executions. */
+export function splitCombo(activity: Activity): Activity[] {
+  return (activity.elements ?? []).map((item) => ({ type: 'element', repetitions: activity.repetitions, elementId: item.elementId, elementCode: item.code, elementName: item.name,
+    executionTypeId: item.executionTypeId, executionTypeName: item.executionTypeName, timeMs: activity.repetitions === 1 ? item.timeMs ?? null : null, unfinished: activity.repetitions === 1 && !!item.unfinished }));
+}
+
+/** "40o ×5" with the last one unfinished becomes ×4 and a separate ×1 (a single element is marked right away). */
+export function splitOffUnfinished(activity: Activity): Activity[] {
+  if (activity.repetitions < 2) return [activity];
+  const failed = { ...freshCopy(activity), repetitions: 1 };
+  return [{ ...activity, repetitions: activity.repetitions - 1 }, activity.type === 'element' ? { ...failed, unfinished: true } : failed];
+}
+
+/** Routine slots for "Zapisz jako układ". */
+export function comboSlots(activity: Activity): RoutineSlot[] {
+  return (activity.elements ?? []).map((item, index) => ({ elementId: item.elementId ?? '', code: item.code, name: item.name ?? null, position: index + 1 }));
+}
 
 /** One line for a collapsed entry, e.g. "40o ×10 · 41o 1,234 s · Układ A". */
 export function entrySummary(entry: TrainingEntry) {
   if (!entry.activities.length) return 'Brak czynności';
   return entry.activities.map((activity) => {
-    const name = activity.type === 'element' ? activity.elementCode ?? '' : `${activity.routineName ?? 'Układ'}${activity.isFullRoutine ? '' : ` ${activity.rangeStart}–${activity.rangeEnd}`}`;
+    const name = activity.type === 'element' ? activity.elementCode ?? '' : activity.type === 'combo' ? activityCodes(activity) : `${activity.routineName ?? 'Układ'}${activity.isFullRoutine ? '' : ` ${activity.rangeStart}–${activity.rangeEnd}`}`;
     return `${name}${activity.repetitions > 1 ? ` ×${activity.repetitions}` : ''}${activity.timeMs != null ? ` ${formatTime(activity.timeMs)}` : ''}`;
   }).join(' · ');
 }
 
 /** A copy for the next measured execution: always ×1 and without times. */
 export function nextTimedCopy(activity: Activity): Activity {
-  return { ...activity, id: undefined, repetitions: 1, timeMs: null, elements: activity.elements?.map((item) => ({ ...item, timeMs: null })) };
+  return { ...freshCopy(activity), repetitions: 1 };
 }
 
 /** The same element or routine range, ×1 and still without any time. */
 export function isWaitingForTime(candidate: Activity | undefined, current: Activity) {
   if (!candidate || candidate.repetitions !== 1 || hasTimes(candidate) || candidate.type !== current.type) return false;
+  if (current.type === 'combo') return activityCodes(candidate) === activityCodes(current);
   return current.type === 'element' ? candidate.elementCode === current.elementCode : candidate.routineId === current.routineId && candidate.rangeStart === current.rangeStart && candidate.rangeEnd === current.rangeEnd;
 }
 
@@ -66,37 +127,37 @@ export function routinesForApparatus(routines: Routine[], apparatusId: string | 
   return routines.filter((routine) => !routine.apparatusId || !apparatusId || routine.apparatusId === apparatusId);
 }
 
-/** Copies of the chosen entries, added as the newest ones, in their original order. Times are not copied: a time belongs to one jump. */
+/** Copies of the chosen entries, added as the newest ones, in their original order. Times and unfinished marks are not copied: they belong to one jump. */
 export function duplicateEntries(entries: TrainingEntry[], keys: Set<string>, newKey: () => string): TrainingEntry[] {
   const copies = entries.filter((entry) => keys.has(entry.clientKey!)).map((entry): TrainingEntry => ({
-    ...entry, id: undefined, clientKey: newKey(),
-    activities: entry.activities.map((activity) => ({ ...activity, id: undefined, timeMs: null, elements: activity.elements?.map((item) => ({ ...item, timeMs: null })) })),
+    ...entry, id: undefined, clientKey: newKey(), unfinished: undefined,
+    activities: entry.activities.map(freshCopy),
   }));
   return [...entries, ...copies];
 }
 
-/** Several positions of one entry get the same number of executions. A position with a time is one execution, so it is skipped. */
+/** Several positions of one entry get the same number of executions. A position with a time or an unfinished element is one execution, so it is skipped. */
 export function setRepetitions(activities: Activity[], indexes: Set<number>, repetitions: number) {
   let skipped = 0;
   const next = activities.map((activity, index) => {
     if (!indexes.has(index)) return activity;
-    if (hasTimes(activity)) { skipped += 1; return activity; }
+    if (isSingleExecution(activity)) { skipped += 1; return activity; }
     return activity.repetitions === repetitions ? activity : { ...activity, repetitions };
   });
   return { activities: next, skipped };
 }
 
-/** The same landing place for several positions; in a routine also for each of its elements. */
+/** The same landing place for several positions; in a routine or combo it is the landing of the last element. */
 export function setLanding(activities: Activity[], indexes: Set<number>, landing: Pick<ExecutionType, 'id' | 'name'>): Activity[] {
   return activities.map((activity, index) => indexes.has(index) ? {
     ...activity, executionTypeId: landing.id, executionTypeName: landing.name,
-    elements: activity.elements?.map((item) => ({ ...item, executionTypeId: landing.id, executionTypeName: landing.name })),
+    elements: activity.elements?.map((item, itemIndex) => itemIndex === activity.elements!.length - 1 ? { ...item, executionTypeId: landing.id, executionTypeName: landing.name } : item),
   } : activity);
 }
 
-/** Copies of the chosen positions go to the end of the entry (the latest jumps), in their order, without ids or times. */
+/** Copies of the chosen positions go to the end of the entry (the latest jumps), in their order, without ids, times or unfinished marks. */
 export function duplicateActivities(activities: Activity[], indexes: Set<number>): Activity[] {
-  const copies = activities.filter((_, index) => indexes.has(index)).map((activity) => ({ ...activity, id: undefined, timeMs: null, elements: activity.elements?.map((item) => ({ ...item, timeMs: null })) }));
+  const copies = activities.filter((_, index) => indexes.has(index)).map(freshCopy);
   return [...activities, ...copies];
 }
 
@@ -105,7 +166,7 @@ export function removeActivities(activities: Activity[], indexes: Set<number>): 
 }
 
 /** Drag and drop inside one entry: the position at `from` lands at `to`, the rest keeps its order. */
-export function moveActivity(activities: Activity[], from: number, to: number): Activity[] {
+export function moveActivity<T>(activities: T[], from: number, to: number): T[] {
   if (from === to || from < 0 || to < 0 || from >= activities.length || to >= activities.length) return activities;
   const next = [...activities];
   const [moved] = next.splice(from, 1);
@@ -244,7 +305,7 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
     if (bulk.kind === 'repetitions') {
       const result = setRepetitions(activities, indexes, bulk.value);
       updateEntry(selectedEntryIndex, (entry) => ({ ...entry, activities: result.activities }));
-      if (result.skipped) setMessage(`Pominięto ${positionsLabel(result.skipped)} z czasem — pozycja z czasem to jedno wykonanie.`);
+      if (result.skipped) setMessage(`Pominięto ${positionsLabel(result.skipped)} z czasem lub nieukończonym elementem — to pojedyncze wykonania.`);
     } else if (bulk.kind === 'landing') {
       const type = sources.data?.executionTypes.find((item) => item.id === bulk.id); if (!type) return;
       updateEntry(selectedEntryIndex, (entry) => ({ ...entry, activities: setLanding(entry.activities, indexes, type) }));
@@ -260,6 +321,39 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
     updateEntry(selectedEntryIndex, (entry) => ({ ...entry, activities: duplicateActivities(entry.activities, activitySelection.indexes) }));
     setActivitySelection(null);
     setMessage(`Zduplikowano ${positionsLabel(count)} — kopie są na końcu wejścia, bez czasów. Zapisz trening, aby je zachować.`);
+  }
+  const catalogFor = (entry: TrainingEntry | undefined): Catalog => (entry && sources.data?.apparatus.find((x) => x.id === entry.apparatusId)?.catalog) ?? 'trampoline';
+  const middleFor = (entry: TrainingEntry | undefined) => intermediateLanding(sources.data?.executionTypes ?? [], catalogFor(entry));
+  function combineSelected() {
+    if (!activitySelection || selectedEntryIndex < 0) return;
+    const entry = entries[selectedEntryIndex];
+    const result = combineActivities(entry.activities, activitySelection.indexes, middleFor(entry));
+    if (!result) return;
+    updateEntry(selectedEntryIndex, (current) => ({ ...current, activities: result.activities }));
+    setActivitySelection(null);
+    setMessage(`Połączono ${positionsLabel(activitySelection.indexes.size)} w jedno połączenie.${result.repetitionsReset ? ' Pozycje miały różną liczbę wykonań, więc połączenie ma ×1.' : ''}`);
+  }
+  const replaceActivity = (entryIndex: number, activityIndex: number, replacement: Activity[]) => updateEntry(entryIndex, (entry) => ({ ...entry, activities: entry.activities.flatMap((item, i) => i === activityIndex ? replacement : [item]) }));
+  function splitUnfinished({ entryIndex, activityIndex }: EditingActivity, elementIndex?: number) {
+    const [rest, failed] = splitOffUnfinished(entries[entryIndex].activities[activityIndex]);
+    const marked = elementIndex === undefined ? failed! : { ...failed!, elements: failed!.elements?.map((item, i) => i === elementIndex ? { ...item, unfinished: true } : item) };
+    replaceActivity(entryIndex, activityIndex, [rest!, marked]);
+    setEditingActivity({ entryIndex, activityIndex: activityIndex + 1, seq: Date.now() });
+  }
+  function splitComboAt({ entryIndex, activityIndex }: EditingActivity) {
+    const activity = entries[entryIndex].activities[activityIndex];
+    replaceActivity(entryIndex, activityIndex, splitCombo(activity));
+    setEditingActivity(null);
+    setMessage(`Rozłączono połączenie na ${positionsLabel(activity.elements?.length ?? 0)}.${activity.timeMs != null ? ' Czas całego połączenia został usunięty.' : ''}`);
+  }
+  async function saveComboAsRoutine({ entryIndex, activityIndex }: EditingActivity, name: string) {
+    const entry = entries[entryIndex]; const activity = entry.activities[activityIndex];
+    const routine = await api.createRoutine({ name, slots: comboSlots(activity), apparatusId: entry.apparatusId });
+    sources.setData({ ...sources.data!, routines: [...sources.data!.routines, routine] });
+    // The execution becomes a full execution of the new routine (same elements, landings and times).
+    replaceActivity(entryIndex, activityIndex, [{ ...activity, type: 'routine', routineId: routine.id, routineName: routine.name, sourceTemplateVersion: routine.templateVersion, rangeStart: 1, rangeEnd: activity.elements?.length ?? 0, isFullRoutine: true }]);
+    setEditingActivity(null);
+    setMessage(`Zapisano układ „${routine.name}”. To wykonanie jest teraz układem.`);
   }
   function reorderActivities(entryIndex: number, { active, over }: DragEndEvent) {
     if (!over || active.id === over.id) return;
@@ -279,8 +373,10 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
   function addRoutine(entryIndex: number, routine: Routine, start: number, end: number) {
     const entry = entries[entryIndex];
     const selected = routine.slots.slice(start - 1, end);
+    // Elements before the last one land on the net/track; the last one on the entry's landing.
+    const elements = selected.map((slot) => { const current = sources.data?.elements.find((item) => item.id === slot.elementId); return { elementId: slot.elementId, code: slot.code ?? current?.code ?? '—', name: slot.name ?? current?.name, executionTypeId: entry.defaultExecutionTypeId, executionTypeName: entry.defaultExecutionTypeName }; });
     const activity: Activity = { type: 'routine', repetitions: 1, routineId: routine.id, routineName: routine.name, sourceTemplateVersion: routine.templateVersion, rangeStart: start, rangeEnd: end, isFullRoutine: start === 1 && end === routine.slots.length, executionTypeId: entry.defaultExecutionTypeId, executionTypeName: entry.defaultExecutionTypeName,
-      elements: selected.map((slot) => { const current = sources.data?.elements.find((item) => item.id === slot.elementId); return { elementId: slot.elementId, code: slot.code ?? current?.code ?? '—', name: slot.name ?? current?.name, executionTypeId: entry.defaultExecutionTypeId, executionTypeName: entry.defaultExecutionTypeName }; }) };
+      elements: applyLandingRule(elements, { id: entry.defaultExecutionTypeId ?? '', name: entry.defaultExecutionTypeName }, middleFor(entry)) };
     updateEntry(entryIndex, (current) => ({ ...current, activities: [...current.activities, activity] })); setPicker(null);
   }
   function splitActivity({ entryIndex, activityIndex }: EditingActivity) {
@@ -338,11 +434,11 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
         const entry = entries[entryIndex]; const key = entry.clientKey!; const isCollapsed = collapsed.has(key);
         const entryElements = entry.activities.reduce((sum, activity) => sum + activityElements(activity), 0);
         const isSelected = !!selection?.has(key);
-        return <section className={`entry-card ${isCollapsed ? 'collapsed' : ''} ${editingActivity?.entryIndex === entryIndex ? 'is-editing' : ''} ${isSelected ? 'selected' : ''} ${entry.unfinished ? 'unfinished' : ''}`} key={key}>
+        return <section className={`entry-card ${isCollapsed ? 'collapsed' : ''} ${editingActivity?.entryIndex === entryIndex ? 'is-editing' : ''} ${isSelected ? 'selected' : ''} ${entryHasUnfinished(entry) ? 'unfinished' : ''}`} key={key}>
           <header>
             <button className="entry-toggle" aria-expanded={!isCollapsed} aria-pressed={selection ? isSelected : undefined} {...longPress.handlers(key)} onClick={() => { if (longPress.consumed()) return; if (selection) toggleSelected(key); else toggleEntry(key); }}>
               <span className="entry-index">{selection ? (isSelected ? <Icon name="check"/> : '') : entryIndex + 1}</span>
-              <div><span>Wejście {entryIndex + 1}{entry.unfinished && <small className="unfinished-tag">nieukończone</small>}</span><h2>{elementCountLabel(entryElements)}</h2>{isCollapsed && <small className="entry-summary">{entrySummary(entry)}</small>}</div>
+              <div><span>Wejście {entryIndex + 1}{entryHasUnfinished(entry) && <small className="unfinished-tag">nieukończone</small>}</span><h2>{elementCountLabel(entryElements)}</h2>{isCollapsed && <small className="entry-summary">{entrySummary(entry)}</small>}</div>
             </button>
             <div className="entry-chips">
             {multipleApparatus && <label className="landing-chip apparatus-chip" title="Sprzęt tego wejścia">
@@ -368,7 +464,7 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
             <div className="activity-list">{entry.activities.map((activity, activityIndex) => {
               const selectingHere = activitySelection?.entryKey === key; const picked = selectingHere && activitySelection!.indexes.has(activityIndex);
               return <SortableActivity key={activityKey(activity)} id={activityKey(activity)} draggable={entry.activities.length > 1 && !selectingHere}><button className={`activity ${picked ? 'selected' : ''}`} aria-pressed={selectingHere ? picked : undefined} {...activityLongPress.handlers(`${key}|${activityIndex}`)} onClick={() => { if (activityLongPress.consumed()) return; if (activitySelection) { if (selectingHere) toggleActivitySelected(activityIndex); return; } setEditingActivity({ entryIndex, activityIndex }); }}>
-              <span className={`activity-kind ${activity.type}`}>{picked ? <Icon name="check"/> : activity.type === 'element' ? 'E' : 'U'}</span><div><strong>{activity.type === 'element' ? activity.elementCode : activity.routineName}</strong><small>{activity.type === 'routine' ? `${activity.isFullRoutine ? 'Cały układ' : `Elementy ${activity.rangeStart}–${activity.rangeEnd}`} · ${activity.elements?.map((x) => x.code).join(' · ')}` : activity.elementName || 'Pojedynczy element'}<br/>{activity.executionTypeName}{activity.type === 'routine' && activity.elements?.some((item) => item.timeMs != null) ? ' · czasy elementów' : ''}</small></div>{activity.timeMs != null && <span className="time-badge"><Icon name="clock"/>{formatTime(activity.timeMs)}</span>}<b>{activity.repetitions}×</b>{!selectingHere && <span className="chevron">›</span>}
+              <ActivitySummary activity={activity} picked={picked}/>{!selectingHere && <span className="chevron">›</span>}
             </button></SortableActivity>;
             })}</div>
             </SortableContext>
@@ -376,7 +472,6 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
             {!entry.activities.length && <p className="entry-empty">Dodaj element lub fragment układu wykonany podczas tego wejścia.</p>}
             <div className="add-activity"><button onClick={() => setPicker({ entryIndex, type: 'element' })}><Icon name="spark"/> Element</button><button onClick={() => setPicker({ entryIndex, type: 'routine' })}><Icon name="routine"/> Układ lub fragment</button></div>
             <div className="entry-footer">
-              <label className="unfinished-toggle"><input type="checkbox" checked={!!entry.unfinished} onChange={(e) => updateEntry(entryIndex, (current) => ({ ...current, unfinished: e.target.checked }))}/><span>Wejście nieukończone</span></label>
               <button className="danger-link remove-entry" onClick={() => removeEntry(entryIndex)}>Usuń wejście</button>
             </div>
           </>}
@@ -395,11 +490,12 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
     {savedId && <button className="delete-training" onClick={() => void removeTraining()}>Usuń trening</button>}
     {activitySelection && selectedEntryIndex >= 0 ? (() => {
       const selected = entries[selectedEntryIndex].activities.filter((_, index) => activitySelection.indexes.has(index));
-      const untimed = selected.find((activity) => !hasTimes(activity));
+      const untimed = selected.find((activity) => !isSingleExecution(activity));
       return <div className="sticky-save selection-bar activity-selection"><span><strong>{activitySelection.indexes.size}</strong> zaznaczone · wejście {selectedEntryIndex + 1}</span><div>
         <button className="button secondary" onClick={() => setActivitySelection(null)}>Anuluj</button>
-        <button className="button secondary" disabled={!untimed} title={untimed ? undefined : 'Pozycje z czasem to pojedyncze wykonania'} onClick={() => untimed && setBulk({ kind: 'repetitions', value: untimed.repetitions })}>Wykonania</button>
+        <button className="button secondary" disabled={!untimed} title={untimed ? undefined : 'Pozycje z czasem lub nieukończonym elementem to pojedyncze wykonania'} onClick={() => untimed && setBulk({ kind: 'repetitions', value: untimed.repetitions })}>Wykonania</button>
         <button className="button secondary" onClick={() => setBulk({ kind: 'landing', id: landingOptions.find((type) => type.id === selected[0]?.executionTypeId)?.id ?? landingOptions[0]?.id ?? '' })}>Lądowanie</button>
+        <button className="button secondary" disabled={selected.length < 2 || selected.some((activity) => activity.type === 'routine')} title={selected.some((activity) => activity.type === 'routine') ? 'Układu nie można połączyć z innymi pozycjami' : undefined} onClick={combineSelected}>Połącz</button>
         <button className="button secondary" onClick={duplicateSelectedActivities}>Duplikuj</button>
         <button className="button danger" onClick={() => setBulk({ kind: 'delete' })}>Usuń</button>
       </div></div>;
@@ -411,8 +507,8 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
     {bulk && activitySelection && (() => {
       const count = activitySelection.indexes.size;
       if (bulk.kind === 'delete') return <ConfirmDialog title={count === 1 ? 'Usunąć pozycję?' : `Usunąć ${positionsLabel(count)}?`} confirmLabel="Tak, usuń" onCancel={() => setBulk(null)} onConfirm={applyBulk}><p>Zaznaczone pozycje znikną z wejścia {selectedEntryIndex + 1}. Zmiana zapisze się po kliknięciu „Zapisz”.</p></ConfirmDialog>;
-      if (bulk.kind === 'repetitions') return <ConfirmDialog title="Liczba wykonań" confirmLabel="Ustaw" cancelLabel="Anuluj" onCancel={() => setBulk(null)} onConfirm={applyBulk}><p>Dla zaznaczonych pozycji ({count}). Pozycje z czasem zostaną bez zmian.</p><Counter value={bulk.value} label="Liczba wykonań zaznaczonych pozycji" onChange={(value) => setBulk({ kind: 'repetitions', value })}/></ConfirmDialog>;
-      return <ConfirmDialog title="Miejsce lądowania" confirmLabel="Ustaw" cancelLabel="Anuluj" onCancel={() => setBulk(null)} onConfirm={applyBulk}><p>Dla zaznaczonych pozycji ({count}), w układach także dla każdego elementu.</p><label className="bulk-landing"><span className="sr-only">Miejsce lądowania</span><select value={bulk.id} onChange={(event) => setBulk({ kind: 'landing', id: event.target.value })}>{landingOptions.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label></ConfirmDialog>;
+      if (bulk.kind === 'repetitions') return <ConfirmDialog title="Liczba wykonań" confirmLabel="Ustaw" cancelLabel="Anuluj" onCancel={() => setBulk(null)} onConfirm={applyBulk}><p>Dla zaznaczonych pozycji ({count}). Pozycje z czasem lub nieukończonym elementem zostaną bez zmian.</p><Counter value={bulk.value} label="Liczba wykonań zaznaczonych pozycji" onChange={(value) => setBulk({ kind: 'repetitions', value })}/></ConfirmDialog>;
+      return <ConfirmDialog title="Miejsce lądowania" confirmLabel="Ustaw" cancelLabel="Anuluj" onCancel={() => setBulk(null)} onConfirm={applyBulk}><p>Dla zaznaczonych pozycji ({count}); w układach i połączeniach — dla ostatniego elementu.</p><label className="bulk-landing"><span className="sr-only">Miejsce lądowania</span><select value={bulk.id} onChange={(event) => setBulk({ kind: 'landing', id: event.target.value })}>{landingOptions.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label></ConfirmDialog>;
     })()}
     {picker?.type === 'element' && <ElementPicker entryNumber={picker.entryIndex + 1} catalog={catalogOfEntry(entries[picker.entryIndex])} showCatalog={multipleApparatus} elements={elementsOfCatalog(sources.data!.elements, catalogOfEntry(entries[picker.entryIndex]))} onCreated={(element) => sources.setData({ ...sources.data!, elements: [...sources.data!.elements, element] })} onPick={(element) => addElement(picker.entryIndex, element)} onClose={() => setPicker(null)}/>}
     {picker?.type === 'routine' && <RoutinePicker entryNumber={picker.entryIndex + 1} catalog={catalogOfEntry(entries[picker.entryIndex])} apparatusName={multipleApparatus ? entries[picker.entryIndex]?.apparatusName : undefined} routines={routinesForApparatus(sources.data!.routines, entries[picker.entryIndex]?.apparatusId)} elements={sources.data!.elements} onRoutineUpdated={(updated) => sources.setData({ ...sources.data!, routines: sources.data!.routines.map((routine) => routine.id === updated.id ? updated : routine) })} onPick={(routine, start, end) => addRoutine(picker.entryIndex, routine, start, end)} onClose={() => setPicker(null)}/>}
@@ -422,6 +518,7 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
       activity={entries[editingActivity.entryIndex].activities[editingActivity.activityIndex]}
       routines={sources.data!.routines}
       executionTypes={sources.data!.executionTypes}
+      middleLanding={middleFor(entries[editingActivity.entryIndex])}
       tracksTime={apparatusOf(entries[editingActivity.entryIndex])?.tracksTime ?? true}
       focusTime={!!editingActivity.focusTime}
       onClose={() => setEditingActivity(null)}
@@ -429,9 +526,12 @@ export function TrainingEditor({ initial, onBack, onSaved, setGlobalDirty }: { i
       onChange={(activity) => { updateEntry(editingActivity.entryIndex, (entry) => ({ ...entry, activities: entry.activities.map((item, i) => i === editingActivity.activityIndex ? activity : item) })); }}
       onSplit={() => splitActivity(editingActivity)}
       onAddNextTimed={() => addNextTimed(editingActivity)}
+      onSplitUnfinished={(elementIndex) => splitUnfinished(editingActivity, elementIndex)}
+      onSplitCombo={() => splitComboAt(editingActivity)}
+      onSaveAsRoutine={(name) => saveComboAsRoutine(editingActivity, name)}
     />}
     {showExitDialog && <div className="modal-backdrop above"><section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="exit-title"><h2 id="exit-title">Zapisać trening?</h2><p>Masz niezapisane zmiany. Możesz je zapisać, odrzucić albo zostać w formularzu.</p><div><button className="button primary" disabled={saving} onClick={() => void save()}>{saving ? 'Zapisuję…' : 'Zapisz'}</button><button className="button danger" onClick={() => { setShowExitDialog(false); setGlobalDirty(false); onBack(); }}>Odrzuć</button><button className="button secondary" onClick={() => setShowExitDialog(false)}>Zostań</button></div></section></div>}
-    {message && (() => { const calm = ['Zapisano.', 'Zduplikowano', 'Pominięto'].some((prefix) => message.startsWith(prefix)); return <Toast message={message} kind={calm ? 'success' : 'error'} autoHideMs={message === 'Zapisano.' ? 3000 : calm ? 6000 : undefined} onClose={() => setMessage('')}/>; })()}
+    {message && (() => { const calm = ['Zapisano', 'Zduplikowano', 'Pominięto', 'Połączono', 'Rozłączono'].some((prefix) => message.startsWith(prefix)); return <Toast message={message} kind={calm ? 'success' : 'error'} autoHideMs={message === 'Zapisano.' ? 3000 : calm ? 6000 : undefined} onClose={() => setMessage('')}/>; })()}
   </div>;
 }
 
@@ -504,13 +604,51 @@ function TimeField({ label, valueMs, onChange, autoFocus = false, compact = fals
   </label>;
 }
 
-function ActivityEditor({ entryNumber, activity, routines, executionTypes, tracksTime, focusTime, onClose, onDelete, onChange, onSplit, onAddNextTimed }: { entryNumber: number; activity: Activity; routines: Routine[]; executionTypes: ExecutionType[]; tracksTime: boolean; focusTime: boolean; onClose: () => void; onDelete: () => void; onChange: (activity: Activity) => void; onSplit: () => void; onAddNextTimed: () => void }) {
+const kindLetter = (activity: Activity) => activity.type === 'element' ? 'E' : activity.type === 'combo' ? 'P' : 'U';
+
+/** One position in the entry list: code or routine name, or the joined elements of a combo. */
+function ActivitySummary({ activity, picked }: { activity: Activity; picked: boolean }) {
+  const unfinished = hasUnfinished(activity);
+  const detail = activity.type === 'routine' ? `${activity.isFullRoutine ? 'Cały układ' : `Elementy ${activity.rangeStart}–${activity.rangeEnd}`} · ${activity.elements?.map((x) => x.code).join(' · ')}`
+    : activity.type === 'combo' ? `Połączenie · ${elementCountLabel(activity.elements?.length ?? 0)}` : activity.elementName || 'Pojedynczy element';
+  const landing = activity.type === 'element' ? activity.executionTypeName : `ostatni: ${activity.executionTypeName}`;
+  return <>
+    <span className={`activity-kind ${activity.type}`}>{picked ? <Icon name="check"/> : kindLetter(activity)}</span>
+    <div>
+      {activity.type === 'combo' ? <span className="combo-chain" aria-label={`Połączenie: ${activity.elements?.map((x) => x.code).join(', ')}`}>{activity.elements?.map((item, index) => <i key={index} className={item.unfinished ? 'unfinished' : ''}>{item.code}</i>)}</span>
+        : <strong>{activity.type === 'element' ? activity.elementCode : activity.routineName}</strong>}
+      {unfinished && <small className="unfinished-tag">{activity.type === 'element' ? 'nieukończony' : 'nieukończony element'}</small>}
+      <small>{detail}<br/>{landing}{activity.type !== 'element' && activity.elements?.some((item) => item.timeMs != null) ? ' · czasy elementów' : ''}</small>
+    </div>
+    {activity.timeMs != null && <span className="time-badge"><Icon name="clock"/>{formatTime(activity.timeMs)}</span>}<b>{activity.repetitions}×</b>
+  </>;
+}
+
+/** An element of a combo in the editor; the handle on the left changes its place in the combo. */
+function SortableElementRow({ id, draggable, children }: { id: string; draggable: boolean; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: !draggable, attributes: { roleDescription: 'element do przeniesienia' } });
+  return <div ref={setNodeRef} className={`snapshot-row ${draggable ? 'with-handle' : ''} ${isDragging ? 'dragging' : ''}`} style={{ transform: CSS.Translate.toString(transform), transition }}>
+    {draggable && <button type="button" ref={setActivatorNodeRef} className="drag-handle small" aria-label="Przeciągnij, aby zmienić kolejność w połączeniu" {...attributes} {...listeners}><Icon name="grip"/></button>}
+    {children}
+  </div>;
+}
+
+function ActivityEditor({ entryNumber, activity, routines, executionTypes, middleLanding, tracksTime, focusTime, onClose, onDelete, onChange, onSplit, onAddNextTimed, onSplitUnfinished, onSplitCombo, onSaveAsRoutine }: { entryNumber: number; activity: Activity; routines: Routine[]; executionTypes: ExecutionType[]; middleLanding?: ExecutionType; tracksTime: boolean; focusTime: boolean; onClose: () => void; onDelete: () => void; onChange: (activity: Activity) => void; onSplit: () => void; onAddNextTimed: () => void; onSplitUnfinished: (elementIndex?: number) => void; onSplitCombo: () => void; onSaveAsRoutine: (name: string) => Promise<void> }) {
   const currentRoutine = activity.type === 'routine' ? routines.find((routine) => routine.id === activity.routineId) : undefined;
   const canResize = activity.type === 'routine' && currentRoutine && activity.sourceTemplateVersion != null && currentRoutine.templateVersion === activity.sourceTemplateVersion;
   const [showTime, setShowTime] = useState(activity.timeMs != null || focusTime);
   const [showElementTimes, setShowElementTimes] = useState(!!activity.elements?.some((item) => item.timeMs != null));
   const [askSplit, setAskSplit] = useState<'time' | 'elements' | null>(null);
+  // Unfinished is one execution: at ×N it first asks to split off one (the element itself or element k of a routine/combo).
+  const [askUnfinished, setAskUnfinished] = useState<'self' | number | null>(null);
+  const [routineName, setRoutineName] = useState<string | null>(null);
+  const [routineSaving, setRoutineSaving] = useState(false);
+  const [routineError, setRoutineError] = useState('');
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const timed = hasTimes(activity);
+  const single = isSingleExecution(activity);
+  const nested = activity.type !== 'element';
+  const lastLanding = { id: activity.executionTypeId ?? '', name: activity.executionTypeName };
   function changeRange(start: number, end: number) {
     if (activity.type !== 'routine' || !currentRoutine || !canResize) return;
     const oldStart = activity.rangeStart ?? 1;
@@ -519,21 +657,58 @@ function ActivityEditor({ entryNumber, activity, routines, executionTypes, track
       if (existing && (existing.elementId === slot.elementId || existing.code === slot.code)) return existing;
       return { elementId: slot.elementId, code: slot.code ?? '—', name: slot.name, executionTypeId: activity.executionTypeId, executionTypeName: activity.executionTypeName };
     });
-    onChange({ ...activity, rangeStart: start, rangeEnd: end, isFullRoutine: start === 1 && end === currentRoutine.slots.length, elements: nextElements });
+    onChange({ ...activity, rangeStart: start, rangeEnd: end, isFullRoutine: start === 1 && end === currentRoutine.slots.length, elements: applyLandingRule(nextElements, lastLanding, middleLanding) });
   }
   // A time always belongs to one execution, so ×5 first has to become five positions.
   function requestTime(kind: 'time' | 'elements') {
     if (activity.repetitions > 1) return setAskSplit(kind);
     if (kind === 'time') setShowTime(true); else setShowElementTimes(true);
   }
+  function setUnfinished(target: 'self' | number, checked: boolean) {
+    if (checked && activity.repetitions > 1) return setAskUnfinished(target);
+    if (target === 'self') onChange({ ...activity, unfinished: checked });
+    else onChange({ ...activity, elements: activity.elements?.map((item, index) => index === target ? { ...item, unfinished: checked } : item) });
+  }
+  function setLastLanding(typeId: string) {
+    const type = executionTypes.find((item) => item.id === typeId); if (!type) return;
+    onChange({ ...activity, executionTypeId: type.id, executionTypeName: type.name, elements: activity.elements?.map((item, index) => index === activity.elements!.length - 1 ? { ...item, executionTypeId: type.id, executionTypeName: type.name } : item) });
+  }
+  function setElementLanding(elementIndex: number, typeId: string) {
+    const type = executionTypes.find((item) => item.id === typeId); if (!type) return;
+    const last = elementIndex === (activity.elements?.length ?? 0) - 1;
+    onChange({ ...activity, ...(last && { executionTypeId: type.id, executionTypeName: type.name }), elements: activity.elements!.map((item, index) => index === elementIndex ? { ...item, executionTypeId: type.id, executionTypeName: type.name } : item) });
+  }
+  function reorderElements({ active, over }: DragEndEvent) {
+    if (!over || active.id === over.id || !activity.elements) return;
+    const from = Number(String(active.id).slice(3)); const to = Number(String(over.id).slice(3));
+    const moved = moveActivity(activity.elements, from, to);
+    // The landing chosen for the combo stays with whatever element is now the last one.
+    onChange({ ...activity, elements: applyLandingRule(moved, lastLanding, middleLanding) });
+  }
+  async function saveRoutine(event: FormEvent) {
+    event.preventDefault(); if (!routineName?.trim()) return;
+    setRoutineSaving(true); setRoutineError('');
+    try { await onSaveAsRoutine(routineName.trim()); }
+    catch (reason) { setRoutineError(reason instanceof Error ? reason.message : 'Nie udało się zapisać układu.'); }
+    finally { setRoutineSaving(false); }
+  }
   const rangeStart = activity.rangeStart ?? 1; const rangeEnd = activity.rangeEnd ?? activity.elements?.length ?? 1;
-  const name = activity.type === 'element' ? activity.elementCode : activity.routineName;
-  const timeLabel = activity.type === 'element' ? 'Czas wykonania' : activity.isFullRoutine ? 'Czas całego układu' : 'Czas fragmentu';
+  const name = activity.type === 'element' ? activity.elementCode : activity.type === 'combo' ? 'Połączenie' : activity.routineName;
+  const timeLabel = activity.type === 'element' ? 'Czas wykonania' : activity.type === 'combo' ? 'Czas całego połączenia' : activity.isFullRoutine ? 'Czas całego układu' : 'Czas fragmentu';
+  const whole = activity.type === 'combo' ? 'połączenia' : 'układu';
+  const unfinishedPromptName = askUnfinished === null || askUnfinished === 'self' ? name : activity.elements?.[askUnfinished]?.code;
   return <div className="modal-backdrop above"><section className="sheet"><PageHeader title="Edytuj wykonanie" eyebrow={`Wejście ${entryNumber}`} onBack={onClose}/><div className="activity-editor">
-    <div className="activity-title"><span className={`activity-kind ${activity.type}`}>{activity.type === 'element' ? 'E' : 'U'}</span><div><strong>{name}</strong><small>{activity.type === 'routine' ? `W tym wykonaniu: ${activity.elements?.map((item) => item.code).join(' · ')}` : activity.elementName || 'Pojedynczy element'}</small></div></div>
+    <div className="activity-title"><span className={`activity-kind ${activity.type}`}>{kindLetter(activity)}</span><div><strong>{name}</strong><small>{activity.type === 'routine' ? `W tym wykonaniu: ${activity.elements?.map((item) => item.code).join(' · ')}` : activity.type === 'combo' ? activity.elements?.map((item) => item.code).join(' · ') : activity.elementName || 'Pojedynczy element'}</small></div></div>
     <div className="field-label"><span>Liczba powtórzeń</span></div>
-    <Counter value={activity.repetitions} disabled={timed} onChange={(repetitions) => onChange({ ...activity, repetitions })}/>
-    {timed && <p className="hint">Pozycja z czasem to jedno wykonanie. Kolejne wykonanie na czas dodasz przyciskiem poniżej.</p>}
+    <Counter value={activity.repetitions} disabled={single} onChange={(repetitions) => onChange({ ...activity, repetitions })}/>
+    {timed ? <p className="hint">Pozycja z czasem to jedno wykonanie. Kolejne wykonanie na czas dodasz przyciskiem poniżej.</p>
+      : single && <p className="hint">Pozycja z nieukończonym elementem to jedno wykonanie. Udane powtórzenia zapisz jako osobną pozycję.</p>}
+
+    {askUnfinished !== null && <div className="split-prompt" role="alertdialog" aria-label="Rozdzielenie powtórzeń">
+      <p>Nieukończone jest jedno wykonanie. Rozdzielić „{name} ×{activity.repetitions}” na ×{activity.repetitions - 1} i osobne ×1{askUnfinished === 'self' ? ' nieukończone' : `, w którym nie wyszedł ${unfinishedPromptName}`}?</p>
+      <div><button className="button primary" onClick={() => onSplitUnfinished(askUnfinished === 'self' ? undefined : askUnfinished)}>Rozdziel</button><button className="button secondary" onClick={() => setAskUnfinished(null)}>Anuluj</button></div>
+    </div>}
+    {activity.type === 'element' && <label className="check-row unfinished-row"><input type="checkbox" checked={!!activity.unfinished} onChange={(event) => setUnfinished('self', event.target.checked)}/><span><strong>Nieukończony</strong><small>Ten skok nie wyszedł — liczy się jako jedna nieudana próba.</small></span></label>}
 
     {(tracksTime || showTime || showElementTimes) && <div className="time-section">
       {askSplit ? <div className="split-prompt" role="alertdialog" aria-label="Rozdzielenie powtórzeń">
@@ -544,16 +719,36 @@ function ActivityEditor({ entryNumber, activity, routines, executionTypes, track
         <TimeField label={timeLabel} valueMs={activity.timeMs} autoFocus={focusTime} onChange={(timeMs) => onChange({ ...activity, timeMs })}/>
         <button className="text-button" onClick={() => { onChange({ ...activity, timeMs: null }); setShowTime(false); }}>Usuń czas</button>
       </div>
-      : tracksTime && <button className="time-add" onClick={() => requestTime('time')}><Icon name="clock"/> Dodaj czas{activity.type === 'routine' ? activity.isFullRoutine ? ' układu' : ' fragmentu' : ''}</button>}
-      {tracksTime && activity.type === 'routine' && !askSplit && !showElementTimes && <button className="time-add" onClick={() => requestTime('elements')}><Icon name="clock"/> Dodaj czasy elementów</button>}
+      : tracksTime && <button className="time-add" onClick={() => requestTime('time')}><Icon name="clock"/> Dodaj czas{activity.type === 'combo' ? ' połączenia' : activity.type === 'routine' ? activity.isFullRoutine ? ' układu' : ' fragmentu' : ''}</button>}
+      {tracksTime && nested && !askSplit && !showElementTimes && <button className="time-add" onClick={() => requestTime('elements')}><Icon name="clock"/> Dodaj czasy elementów</button>}
       {tracksTime && timed && activity.repetitions === 1 && <button className="button secondary full" onClick={onAddNextTimed}><Icon name="plus"/> Kolejne wykonanie na czas</button>}
     </div>}
 
     {activity.type === 'routine' && (canResize ? <div className="routine-count-editor"><div className="field-label"><span>Wykonany fragment układu</span><small>{activity.elements?.length ?? 0} z {currentRoutine.slots.length} elementów</small></div><div className="range-fields"><label>Od<select value={rangeStart} onChange={(event) => { const value = Number(event.target.value); changeRange(value, Math.max(rangeEnd, value)); }}>{currentRoutine.slots.map((_, index) => <option key={index} value={index + 1}>{index + 1}</option>)}</select></label><span>—</span><label>Do<select value={rangeEnd} onChange={(event) => changeRange(rangeStart, Number(event.target.value))}>{currentRoutine.slots.map((_, index) => index + 1 >= rangeStart && <option key={index} value={index + 1}>{index + 1}</option>)}</select></label></div></div> : <p className="form-warning">Nie można tutaj zmienić liczby elementów, ponieważ źródłowy układ został usunięty albo od czasu tego wykonania zmieniono jego szablon. Jeśli zapis ma mieć inny skład, usuń tę czynność i dodaj wykonane elementy pojedynczo.</p>)}
-    <label>Miejsce lądowania<select value={activity.executionTypeId} onChange={(event) => { const type = executionTypes.find((item) => item.id === event.target.value)!; onChange({ ...activity, executionTypeId: type.id, executionTypeName: type.name }); }}><option value="" disabled>Wybierz</option>{executionTypes.map((type) => <option value={type.id} key={type.id}>{type.name}</option>)}</select><small>{activity.type === 'routine' ? 'Dla układu to wartość startowa. Poniżej możesz zaznaczyć, że np. ostatni element był na materac, a wcześniejsze na siatkę.' : 'Domyślnie takie jak w wejściu.'}</small></label>
-    {activity.type === 'routine' && <div className={`snapshot-elements ${showElementTimes ? 'with-times' : ''}`}><div className="field-label"><span>{showElementTimes ? 'Lądowanie i czas każdego elementu' : 'Gdzie lądował każdy element?'}</span></div>{activity.elements?.map((element, index) => <div key={index}><strong>{(activity.rangeStart ?? 1) + index}. {element.code}</strong><select aria-label={`Lądowanie elementu ${index + 1}: ${element.code}`} value={element.executionTypeId} onChange={(event) => { const type = executionTypes.find((item) => item.id === event.target.value)!; onChange({ ...activity, elements: activity.elements!.map((item, itemIndex) => itemIndex === index ? { ...item, executionTypeId: type.id, executionTypeName: type.name } : item) }); }}>{executionTypes.map((type) => <option value={type.id} key={type.id}>{type.name}</option>)}</select>{showElementTimes && <TimeField compact label={`Czas elementu ${index + 1}: ${element.code}`} valueMs={element.timeMs} onChange={(timeMs) => onChange({ ...activity, elements: activity.elements!.map((item, itemIndex) => itemIndex === index ? { ...item, timeMs } : item) })}/>}</div>)}
+    <label>{nested ? 'Lądowanie ostatniego elementu' : 'Miejsce lądowania'}<select value={activity.executionTypeId} onChange={(event) => nested ? setLastLanding(event.target.value) : (() => { const type = executionTypes.find((item) => item.id === event.target.value)!; onChange({ ...activity, executionTypeId: type.id, executionTypeName: type.name }); })()}><option value="" disabled>Wybierz</option>{executionTypes.map((type) => <option value={type.id} key={type.id}>{type.name}</option>)}</select><small>{nested ? `Elementy przed ostatnim lądują na „${middleLanding?.name ?? 'Siatka'}”. Poniżej możesz to zmienić dla wybranego elementu.` : 'Domyślnie takie jak w wejściu.'}</small></label>
+    {nested && unfinishedInMiddle(activity) && <p className="hint warn">Nieukończony element jest w środku {whole}. Zapis przejdzie — kolejne elementy liczą się jako wykonane.</p>}
+    {nested && <div className={`snapshot-elements ${showElementTimes ? 'with-times' : ''}`}><div className="field-label"><span>{showElementTimes ? 'Lądowanie i czas każdego elementu' : 'Gdzie lądował każdy element?'}</span>{activity.type === 'combo' && (activity.elements?.length ?? 0) > 1 && <small>uchwytem zmienisz kolejność</small>}</div>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[verticalOnly]} accessibility={dragAccessibility} onDragEnd={reorderElements}>
+      <SortableContext items={(activity.elements ?? []).map((_, index) => `el-${index}`)} strategy={verticalListSortingStrategy}>
+      {activity.elements?.map((element, index) => <SortableElementRow key={`el-${index}`} id={`el-${index}`} draggable={activity.type === 'combo' && activity.elements!.length > 1}>
+        <strong className={element.unfinished ? 'unfinished' : ''}>{activity.type === 'combo' ? index + 1 : (activity.rangeStart ?? 1) + index}. {element.code}</strong>
+        <select aria-label={`Lądowanie elementu ${index + 1}: ${element.code}`} value={element.executionTypeId} onChange={(event) => setElementLanding(index, event.target.value)}>{executionTypes.map((type) => <option value={type.id} key={type.id}>{type.name}</option>)}</select>
+        <label className="element-unfinished" title="Ten element nie wyszedł"><input type="checkbox" checked={!!element.unfinished} onChange={(event) => setUnfinished(index, event.target.checked)}/><span>nie wyszedł</span></label>
+        {showElementTimes && <TimeField compact label={`Czas elementu ${index + 1}: ${element.code}`} valueMs={element.timeMs} onChange={(timeMs) => onChange({ ...activity, elements: activity.elements!.map((item, itemIndex) => itemIndex === index ? { ...item, timeMs } : item) })}/>}
+      </SortableElementRow>)}
+      </SortableContext>
+      </DndContext>
       {showElementTimes && <button className="text-button" onClick={() => { onChange({ ...activity, elements: activity.elements?.map((item) => ({ ...item, timeMs: null })) }); setShowElementTimes(false); }}>Usuń czasy elementów</button>}
     </div>}
+    {activity.type === 'combo' && (routineName === null ? <div className="combo-actions">
+      <button className="button secondary" onClick={() => { setRoutineName(''); setRoutineError(''); }}><Icon name="routine"/> Zapisz jako układ</button>
+      <button className="button secondary" onClick={onSplitCombo}>Rozłącz na pojedyncze</button>
+    </div> : <form className="combo-routine form-stack" onSubmit={saveRoutine}>
+      <label>Nazwa nowego układu<input autoFocus required maxLength={100} value={routineName} onChange={(event) => setRoutineName(event.target.value)} placeholder="np. Przebieg z flikiem"/></label>
+      <p className="hint">Układ trafi do zakładki Układy na ten sprzęt, a to wykonanie stanie się jego pełnym wykonaniem.</p>
+      {routineError && <p className="form-error">{routineError}</p>}
+      <div className="combo-actions"><button type="button" className="button secondary" onClick={() => setRoutineName(null)}>Anuluj</button><button className="button primary" disabled={routineSaving || !routineName.trim()}>{routineSaving ? 'Zapisuję…' : 'Zapisz układ'}</button></div>
+    </form>)}
     <button className="button secondary full" onClick={onClose}>Gotowe</button><button className="danger-link centered" onClick={onDelete}>Usuń tę czynność</button>
   </div></section></div>;
 }
