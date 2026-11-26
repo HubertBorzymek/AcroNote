@@ -99,7 +99,7 @@ docs/            wymagania, architektura, plan testów, stan prac
 | `npm run package:win` | samodzielna paczka Windows (`release/AcroNote-<wersja>-win-x64.zip`) |
 | `npm run import-report -- <plik.json>` | odtwarza dane ze zgłoszenia błędu w lokalnej bazie |
 | `scripts\pobierz-kopie.bat` | kopia produkcyjnej bazy do `Dokumenty\AcroNote-kopie` (zob. [DEPLOY.md](docs/DEPLOY.md)) |
-| `scripts\zaplanuj-kopie.bat` | cotygodniowa kopia produkcyjnej bazy w Harmonogramie zadań |
+| `scripts\zaplanuj-kopie.bat` | comiesięczna (nadpisywana) kopia produkcyjnej bazy w Harmonogramie zadań |
 
 ### 🌐 Wersja online i gałęzie
 

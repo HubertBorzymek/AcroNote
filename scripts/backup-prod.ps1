@@ -1,10 +1,10 @@
 ﻿# Pobiera spójną kopię produkcyjnej bazy AcroNote z Fly.io na ten komputer.
 #   scripts\pobierz-kopie.bat            -> Dokumenty\AcroNote-kopie\acronote-RRRR-MM-DD_GGMM.db (nowy plik)
-#   backup-prod.ps1 -Weekly              -> Dokumenty\AcroNote-kopie\acronote-tygodniowa.db (nadpisywany)
+#   backup-prod.ps1 -Monthly             -> Dokumenty\AcroNote-kopie\acronote-miesieczna.db (nadpisywany; zadanie z zaplanuj-kopie.bat)
 # Wymaga zainstalowanego flyctl i jednorazowego "fly auth login". Kopia zawiera prawdziwe dane
 # użytkowników: trzymaj ją tylko u siebie, nigdy w repozytorium ani w udostępnianym folderze.
 param(
-  [switch]$Weekly,
+  [switch]$Monthly,
   [string]$App = 'acronote',
   [string]$Folder = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'AcroNote-kopie')
 )
@@ -25,7 +25,7 @@ try {
   & $fly ssh console -a $App -C "node apps/api/dist/backup-cli.js $remote"
   if ($LASTEXITCODE -ne 0) { throw 'Nie udało się utworzyć kopii na serwerze (fly ssh console).' }
 
-  $name = if ($Weekly) { 'acronote-tygodniowa.db' } else { "acronote-$(Get-Date -Format 'yyyy-MM-dd_HHmm').db" }
+  $name = if ($Monthly) { 'acronote-miesieczna.db' } else { "acronote-$(Get-Date -Format 'yyyy-MM-dd_HHmm').db" }
   $partial = Join-Path $Folder 'pobieranie.tmp'
   if (Test-Path $partial) { Remove-Item $partial -Force }
   & $fly ssh sftp get -a $App $remote $partial
@@ -33,7 +33,7 @@ try {
   & $fly ssh console -a $App -C "rm -f $remote" | Out-Null
   if (-not $downloaded) { throw 'Nie udało się pobrać kopii (fly ssh sftp get).' }
 
-  # The previous weekly copy is replaced only after the new one arrived in full.
+  # The previous monthly copy is replaced only after the new one arrived in full.
   $target = Join-Path $Folder $name
   Move-Item -Path $partial -Destination $target -Force
   Write-Log "Zapisano kopię: $target ($([math]::Round((Get-Item $target).Length / 1KB)) KB)"
