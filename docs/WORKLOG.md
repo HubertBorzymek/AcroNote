@@ -359,3 +359,72 @@ Poprawki po 0.6.0 (uwagi ze zrzutów z telefonu): w statystykach wyraźny odstę
 Skuteczność (decyzja użytkownika: tak dla ukończonych wejść na trening i skuteczności elementu, nie dla serii): `trainingSummary.byElement[].failed` — w każdym nieukończonym wejściu ostatnia czynność (w układzie jego ostatni element) to jedna nieudana próba; listy treningów mają `unfinishedCount`. Web (`completion.ts`, tylko pozytywne ujęcie): karta treningu „ukończone X z Y”, karta Wejścia „ukończone X z Y (Z%)”, wybrany element „udane X z Y (Z%)”, sekcja „Najpewniejsze elementy” (min. 3 próby, od najlepszego, widoczna tylko gdy są nieukończone wejścia; brak listy najsłabszych). Testy: `variants-unfinished.test.ts`, `completion.test.ts`. Przeglądarka 375×812: karty „ukończone 2 z 3”, statystyki „ukończone 6 z 8 (75%)”, element „udane 8 z 9 (89%)”, lista najpewniejszych.
 
 Wersja 0.6.1 (`package.json`): poprawki po 0.6.0 i skuteczność; bez zmian w bazie. Wdrożenie na prośbę użytkownika („Yes, deploy”).
+
+## Iteracja 2026-11-25/26 — uwagi z treningu, wersja 0.7.0
+
+Stan wyjściowy: `dev` = `main` = produkcja `0.6.1+06e461d` (PR #6).
+
+Notatki użytkownika z treningu: zaznaczanie wielu elementów w wejściu i zbiorcza edycja (wykonania, lądowanie, kopiowanie, usuwanie); zmiana kolejności przeciąganiem; „nieukończony” ma dotyczyć elementu, nie wejścia; na ścieżce w jednym wejściu (od usiąścia do usiąścia) skacze się kilka połączeń kończonych zeskokiem.
+
+### Ustalenia (z użytkownikiem)
+
+- Zbiorcza zmiana wykonań pomija pozycje z czasem. Przeciąganie tylko w obrębie wejścia.
+- Etap 0.7.0: zaznaczanie i przeciąganie (bez zmian w bazie). Etap 0.8.0: połączenia i nieukończony element, jedna migracja v10.
+- Ustalenia do 0.8.0 (niezaczęte):
+  - **Nieukończony element:** pole wyboru na pozycji zamiast na wejściu; przy ×N rozdzielenie jak przy czasie; kopie (duplikowanie) nie przejmują oznaczenia, jak czasów. Statystyki bez zmian w ujęciu (wejście jest nieukończone, gdy ma nieukończoną pozycję). Migracja: nieukończone wejście → nieukończona jego ostatnia pozycja (w układzie ostatni element), czyli dokładnie to, co liczą dziś statystyki; ostatnia pozycja ×N rozdzielona na ×(N−1) i ×1.
+  - W układzie/połączeniu nieukończony może być element w środku: zapis przechodzi, element dostaje żółte ostrzeżenie (jak kod spoza notacji); o reszcie decyduje użytkownik.
+  - **Połączenie** (nazwa ustalona): nowy rodzaj czynności — przebudowa tabeli `activities` (CHECK `kind`), żeby połączenia nie liczyły się jako fragmenty układów. Tworzone z zaznaczenia („Połącz”), „Rozłącz”, przeciąganie elementów w środku, „Zapisz jako układ”. Wiele połączeń w jednym wejściu, każde z własną liczbą wykonań. Na wszystkich sprzętach (zasady zależą tylko od kategorii sprzętu: trampolinowa/ścieżkowa).
+  - **Lądowanie w połączeniu i układzie:** wszystkie elementy poza ostatnim automatycznie na „Ścieżka” (sprzęt ścieżkowy) albo „Siatka” (trampolina, DMT); ostatni na dowolne miejsce. Aplikacja ustawia to sama przy tworzeniu/zmianie, ale da się ręcznie zmienić; zwykły ponowny zapis nie zmienia dawnych migawek.
+  - Miejsca „Siatka” i „Ścieżka” nie dają się usunąć ani przemianować (każde konto musi mieć „Ścieżka” — dodać w migracji). „Zeskok” nie jest dodawany automatycznie.
+
+### Zrobione (0.7.0)
+
+- `TrainingEditor.tsx`: czyste funkcje `setRepetitions` (zwraca liczbę pominiętych z czasem), `setLanding` (pozycja + elementy układu), `duplicateActivities` (na koniec wejścia, bez id i czasów), `removeActivities`, `moveActivity`. Zaznaczenie pozycji `{entryKey, indexes}` z osobnym `useLongPress`; zaznaczenie wejść i pozycji wykluczają się; zwinięcie wejścia kończy zaznaczanie. Okna „Liczba wykonań” i „Miejsce lądowania” na `ConfirmDialog`.
+- Przeciąganie: `@dnd-kit/core` 6.3.1, `@dnd-kit/sortable` 10.0.0, `@dnd-kit/utilities` 3.2.2 (devDependencies frontendu). `DndContext` na wejście, ruch tylko w pionie, uchwyt `drag-handle` z `touch-action:none` (przytrzymanie wiersza dalej zaznacza), polskie komunikaty dla czytników ekranu. Stabilne id pozycji w `WeakMap` (nic nie trafia do API). W trybie zaznaczania uchwyty ukryte, bo zaznaczenie trzyma indeksy.
+- Ikona `grip`. Krótsza podpowiedź nad listą wejść; licznik „5 z 5” nie łamie się.
+- Wersja 0.7.0 (`package.json`, `package-lock.json`).
+
+Weryfikacja: `npm test` 243/243 (API 160, web 83; nowe testy w `trainingEditor.test.ts`), `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate` (0), `git diff --check`. Przeglądarka (zbudowana aplikacja na porcie 3011, baza tymczasowa w scratchpadzie, konto demo; 800 px i 375×812, motyw ciemny i jasny): przeciąganie zmienia kolejność; przytrzymanie zaznacza, dotknięcie dokłada, w trakcie brak uchwytów i okna edycji; „Wykonania” 2→3 z komunikatem „Pominięto 1 pozycję z czasem…”; „Lądowanie” Materac na układzie zmienia wszystkie 5 elementów; „Duplikuj” dodaje kopie na końcu bez czasu; „Usuń 2 pozycje?” z potwierdzeniem; „Zapisz i kontynuuj” zapisuje nową kolejność, czas i lądowania (sprawdzone przez API). Poprawione przy tym: licznik w oknie dialogowym rozjeżdżał się (reguła `.confirm-dialog>div`).
+
+Niezweryfikowane: przeciąganie palcem na prawdziwym iPhonie (emulacja w Chromium używa zdarzeń myszy). Niezacommitowane.
+
+## Iteracja 2026-11-26 — połączenia i nieukończony element, wersja 0.8.0
+
+0.7.0 zacommitowane na `dev` (3f2b5c1, bez pusha). Dalsze ustalenia użytkownika: elementy pośrednie ustawiane automatycznie, ale do zmiany ręcznie; „Zeskok” nie jest dodawany; „Siatki” i „Ścieżki” nie da się usunąć ani przemianować; połączenia działają na wszystkich sprzętach tak samo jak na ścieżce (zasady zależą tylko od kategorii sprzętu).
+
+### Baza (migracja v10, `migrateV10` w `db.ts`)
+
+- `activities` przebudowana: `kind IN ('element','routine','combo')`, nowa kolumna `unfinished`, `time_ms` w definicji; te same id. Przebudowa przy `foreign_keys = OFF` (poza transakcją, bo pragma w transakcji nie działa), w transakcji z `PRAGMA foreign_key_check`; bez tego `DROP TABLE activities` skasowałby kaskadowo `activity_elements`. Warunek: definicja tabeli nie zawiera `'combo'` (nowe bazy mają ją od razu z `schema.ts`).
+- `activity_elements.unfinished`; indeksy `idx_activities_entry`, `idx_activity_elements_activity`.
+- Dane (tylko przy pierwszym przejściu v10): w każdym wejściu z `unfinished=1` ostatnia pozycja: element ×1 → oznaczony; element ×N → ×(N−1) i nowa pozycja ×1 oznaczona; układ ×1 → oznaczony jego ostatni element; układ ×N → ×(N−1) i kopia ×1 (z kopią elementów, bez czasów) z oznaczonym ostatnim elementem. Wejście bez pozycji traci znacznik. Dokładnie to liczyły dotąd statystyki jako nieudaną próbę, więc liczby się nie zmieniają.
+- `ensureFixedLandings`: każde konto ma „Siatka” i „Ścieżka” (brakujące dodane, usunięte przywrócone jako ukryte). `seedExecutionTypes` daje nowym kontom także „Ścieżka”.
+
+### API
+
+- `saveTraining`: rodzaj `combo` (elementy jak w układzie, bez szablonu, zakresu i dopasowania), nieznany rodzaj → 400; `unfinished` przy elemencie i przy elementach układu/połączenia, tylko ×1 (400 przy ×N); `training_entries.unfinished` wyliczane z elementów (znacznik wysłany dla wejścia jest ignorowany). Sprawdzenie zapisu elementów sprzętu obejmuje połączenia.
+- `getTraining` zwraca `unfinished` (bool) dla czynności i elementów, elementy także dla połączeń.
+- `trainingSummary`: `failed` z oznaczonych elementów (zamiast „ostatniej pozycji nieukończonego wejścia”), elementy połączeń w sumach, nowe pole `combos`; połączenia nie wchodzą do `fullRoutines`/`fragments`.
+- `time-stats`: rodzaj `combo`, klucz i etykieta to kody w kolejności (np. `41o 800o`), osobno na sprzęt.
+- `execution-types`: pole `fixed`; zmiana nazwy i usunięcie „Siatka”/„Ścieżka” → 400 (ukrywanie dozwolone); trener dostaje tę samą listę (tylko odczyt).
+- `import-report`: czasy i znaczniki nieukończenia czynności i elementów; starsze zgłoszenia ze znacznikiem wejścia zachowują go.
+
+### Web
+
+- `TrainingEditor.tsx`: `intermediateLanding`, `applyLandingRule` (dodanie układu, zmiana zakresu, połączenie, przestawienie elementów), `combineActivities` („Połącz” na pasku zaznaczenia; wyłączone dla układów), `splitCombo` („Rozłącz na pojedyncze”), `splitOffUnfinished` (×N → ×(N−1) + ×1), `comboSlots` + „Zapisz jako układ” (`api.createRoutine`, wykonanie staje się pełnym wykonaniem nowego układu), `isSingleExecution` (czas lub nieukończony: licznik zablokowany, pomijane przy zbiorczych wykonaniach), `entryHasUnfinished`, `unfinishedInMiddle` (żółte ostrzeżenie). Zbiorcze lądowanie w układzie/połączeniu zmienia tylko ostatni element. Duplikaty i „kolejne wykonanie na czas” bez znaczników.
+- Wiersz połączenia: litera „P”, kody jako złączone kafelki, „ostatni: …”; znaczniki „nieukończony” / „nieukończony element”. Okno edycji: „Lądowanie ostatniego elementu”, „nie wyszedł” przy każdym elemencie, uchwyty w połączeniu. Usunięte pole „Wejście nieukończone”.
+- Profil: „Stała nazwa” zamiast „Zmień nazwę” dla Siatki i Ścieżki; statystyki: „· N połączeń” i litera „P” w rekordach czasu; widok trenera pokazuje połączenia i nieukończone elementy.
+
+### Weryfikacja
+
+`npm test` 252/252 (API 165 w 14 plikach, w tym nowy `combos.test.ts`; web 87), `npm run typecheck`, `npm run build`, `npm audit --audit-level=moderate` (0). Migracja v10 w teście: baza w kształcie v9 z sześcioma przypadkami (×1, ×N, układ ×1 i ×N, wejście ukończone, wejście puste), usuniętą Siatką i bez Ścieżki — te same id, elementy układów nienaruszone, statystyki jak przed migracją (13 elementów, 2+2 nieudane próby), `integrity_check` ok, `foreign_key_check` pusty, klucze obce z powrotem włączone, ponowne otwarcie bez zmian.
+Przeglądarka (375×812, zbudowana aplikacja, kopia testowej bazy v9 z trzema nieukończonymi wejściami zmigrowana przy starcie): `41< ×2` → `×1` + `×1 nieukończony`, ostatni element układu oznaczony, `831o` z czasem oznaczony, Ścieżka dodana; wejście na Ścieżce: `(`, `F`, `00/` → „Połącz” → połączenie z pośrednimi na Ścieżce i ostatnim na Siatce (domyślne lądowanie wejścia); zmiana ostatniego na Materac, „nie wyszedł” przy F z żółtym ostrzeżeniem i zablokowanym licznikiem, przeciągnięcie elementu na koniec (lądowanie Materac przechodzi na nowy ostatni); „Zapisz jako układ” → układ „Przebieg testowy” na Ścieżce; F ×3 → „Nieukończony” → pytanie → ×2 + ×1; „Połącz” różnych liczb wykonań → ×1 z komunikatem; „Rozłącz”; zapis i odczyt przez API zgodny; profil z „Stała nazwa”. Poprawione przy tym: komunikaty o połączeniu pokazywały się jako błąd (czerwony).
+
+Niezweryfikowane: **migracja v10 na kopii prawdziwej bazy produkcyjnej** (na tym komputerze nie ma `flyctl` ani kopii w `Dokumenty\AcroNote-kopie`; przed wdrożeniem uruchomić `scripts\pobierz-kopie.bat` i sprawdzić migrację na kopii), przeciąganie palcem na iPhonie, widok trenera w przeglądarce (sprawdzony tylko testami API).
+
+Wersja 0.8.0. Niezacommitowane.
+
+### Przed wdrożeniem 0.8.0 (2026-11-26)
+
+- Na tym komputerze zainstalowano `flyctl` 0.5.18 i zalogowano (użytkownik). Kopia produkcji: `Dokumenty\AcroNote-kopie\acronote-2026-11-26_0135.db` (v9; 10 kont, 27 treningów, 248 wejść, 483 czynności, 516 elementów w układach).
+- Migracja v10 na kopii tej kopii (skrypt w scratchpadzie: stan v9 liczony starymi regułami, potem `openDatabase` z nowego kodu): wersja 10; 4 nieukończone wejścia → 2 oznaczone pojedyncze elementy i 2 elementy układów, 3 pozycje ×N rozdzielone (+3 czynności, +6 elementów w kopiach układów); wszystkie dawne czynności i elementy układów z tymi samymi id i wartościami (poza zmniejszonym ×N); dla każdego z 10 kont te same liczby wykonań i nieudane próby na element, ta sama suma elementów i liczba nieukończonych wejść; każde konto ma widoczne Siatkę i Ścieżkę (+10 Ścieżek, +1 Siatka dla konta, które jej nie miało); `integrity_check` ok, `foreign_key_check` pusty, klucze obce włączone, ponowne otwarcie bez zmian.
+- Kopia na komputer: zamiast cotygodniowej — **comiesięczna, nadpisywana** (prośba użytkownika). `scripts\schedule-monthly-backup.ps1` (dawny `schedule-weekly-backup.ps1`): `schtasks /SC MONTHLY /D 1 /ST 19:00` (cmdlet nie ma wyzwalacza miesięcznego), potem akcja i ustawienia przez `Set-ScheduledTask` (start przy najbliższym włączeniu, na baterii, tylko z siecią, limit 30 min, jako zalogowany użytkownik); usuwa dawne zadanie cotygodniowe. `backup-prod.ps1 -Monthly` zapisuje `acronote-miesieczna.db`. Zadanie „AcroNote - comiesieczna kopia bazy” zarejestrowane na tym komputerze (najbliżej 1.12.2026 19:00); próbne uruchomienie: wynik 0, plik zapisany, wpis w `kopie.log`.

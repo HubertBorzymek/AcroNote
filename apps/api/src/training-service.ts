@@ -1,8 +1,11 @@
 import { defaultApparatus, type Db } from './db.js';
 
-type SnapshotElement = { sourceElementId?: number | null; code: string; name?: string | null; executionTypeId?: number | null; executionTypeName?: string; position?: number; timeMs?: number | null };
+type SnapshotElement = { sourceElementId?: number | null; code: string; name?: string | null; executionTypeId?: number | null; executionTypeName?: string; position?: number; timeMs?: number | null; unfinished?: boolean };
+/** 'combo' ("Połączenie"): elements joined in the editor, without a routine template; elements as in a routine. */
 type Activity = {
-  kind: 'element' | 'routine'; repetitions: number; executionTypeId?: number | null; executionTypeName?: string;
+  kind: 'element' | 'routine' | 'combo'; repetitions: number; executionTypeId?: number | null; executionTypeName?: string;
+  /** A single element that did not work out (always ×1). In a routine or combo the elements carry the flag. */
+  unfinished?: boolean;
   sourceElementId?: number | null; code?: string; name?: string | null;
   sourceRoutineId?: number | null; sourceRoutineName?: string; sourceTemplateVersion?: number;
   rangeStart?: number; rangeEnd?: number; isFullRange?: boolean; elements?: SnapshotElement[];
@@ -10,7 +13,8 @@ type Activity = {
   timeMs?: number | null;
 };
 export type TrainingInput = {
-  date: string; entries: { defaultExecutionTypeId?: number | null; defaultExecutionTypeName?: string; apparatusId?: number | null; apparatusName?: string; unfinished?: boolean; activities: Activity[] }[];
+  /** An entry is unfinished when one of its elements is; any `unfinished` sent for the entry itself is ignored. */
+  date: string; entries: { defaultExecutionTypeId?: number | null; defaultExecutionTypeName?: string; apparatusId?: number | null; apparatusName?: string; activities: Activity[] }[];
   /** Private to the athlete: never returned to coaches or administrators. Omitted = keep the stored value. */
   rating?: number | null; comment?: string | null;
 };
@@ -19,6 +23,8 @@ export type TrainingAccess = { includePrivate?: boolean };
 /** Longest accepted time of one execution (10 min); times are stored as whole milliseconds. */
 export const MAX_TIME_MS = 600_000;
 const ONE_EXECUTION_ONLY = 'Czas można wpisać tylko dla pojedynczego wykonania (×1). Rozdziel powtórzenia na osobne pozycje.';
+const UNFINISHED_ONE_EXECUTION = 'Nieukończone może być tylko pojedyncze wykonanie (×1). Rozdziel powtórzenia na osobne pozycje.';
+const KINDS = new Set(['element', 'routine', 'combo']);
 
 function timeValue(value: unknown): number | null {
   if (value === undefined || value === null || value === '') return null;
@@ -79,9 +85,10 @@ export function saveTraining(db: Db, userId: number, input: TrainingInput, train
     };
     const addActivity = db.prepare(`INSERT INTO activities(entry_id,position,kind,repetitions,execution_type_id,execution_type_name,
       source_element_id,code_snapshot,name_snapshot,source_routine_id,source_routine_name,source_template_version,
-      range_start,range_end,is_full_range,matched_original_template,time_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      range_start,range_end,is_full_range,matched_original_template,time_ms,unfinished) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const addElement = db.prepare(`INSERT INTO activity_elements(activity_id,position,source_element_id,code_snapshot,name_snapshot,
-      execution_type_id,execution_type_name,time_ms) VALUES(?,?,?,?,?,?,?,?)`);
+      execution_type_id,execution_type_name,time_ms,unfinished) VALUES(?,?,?,?,?,?,?,?,?)`);
+    const markEntryUnfinished = db.prepare('UPDATE training_entries SET unfinished=1 WHERE id=?');
     input.entries.forEach((entry, entryIndex) => {
       const defaultName = requiredText(entry.defaultExecutionTypeName ?? 'Siatka', 'Miejsce lądowania');
       // The apparatus must belong to this user; its name is kept in the entry snapshot (like the landing place).
@@ -92,43 +99,52 @@ export function saveTraining(db: Db, userId: number, input: TrainingInput, train
         apparatus = owned;
       }
       const apparatusName = typeof entry.apparatusName === 'string' && entry.apparatusName.trim() && entry.apparatusId != null ? entry.apparatusName.trim() : apparatus.name;
-      const entryId = Number(addEntry.run(id, entryIndex, entry.defaultExecutionTypeId ?? null, defaultName, apparatus.id, apparatusName, entry.unfinished ? 1 : 0).lastInsertRowid);
+      const entryId = Number(addEntry.run(id, entryIndex, entry.defaultExecutionTypeId ?? null, defaultName, apparatus.id, apparatusName, 0).lastInsertRowid);
+      let entryUnfinished = false;
       entry.activities.forEach((activity, activityIndex) => {
+        if (!KINDS.has(activity?.kind)) throw new Error('Nieznany rodzaj czynności.');
         if (!Number.isInteger(activity.repetitions) || activity.repetitions < 1) throw new Error('Liczba powtórzeń musi być dodatnią liczbą całkowitą.');
         const activityTime = timeValue(activity.timeMs);
-        if (activity.kind === 'element') checkCatalog(activity.sourceElementId, apparatus.catalog);
+        const nested = activity.kind !== 'element';
+        if (!nested) checkCatalog(activity.sourceElementId, apparatus.catalog);
         else for (const element of activity.elements ?? []) checkCatalog(element.sourceElementId, apparatus.catalog);
-        const elementTimes = activity.kind === 'routine' ? (activity.elements ?? []).map(element => timeValue(element.timeMs)) : [];
+        const elementTimes = nested ? (activity.elements ?? []).map(element => timeValue(element.timeMs)) : [];
         if (activity.repetitions !== 1 && (activityTime !== null || elementTimes.some(time => time !== null))) throw new Error(ONE_EXECUTION_ONLY);
+        const unfinished = !nested && activity.unfinished === true;
+        const elementsUnfinished = nested ? (activity.elements ?? []).map(element => element?.unfinished === true) : [];
+        if ((unfinished || elementsUnfinished.includes(true)) && activity.repetitions !== 1) throw new Error(UNFINISHED_ONE_EXECUTION);
+        if (unfinished || elementsUnfinished.includes(true)) entryUnfinished = true;
         const executionName = requiredText(activity.executionTypeName ?? defaultName, 'Miejsce lądowania');
         let matched = activity.kind === 'element';
         let templateVersion: number | null = null;
+        if (nested && !activity.elements?.length) throw new Error(activity.kind === 'combo' ? 'Połączenie musi zawierać elementy.' : 'Wykonanie układu musi zawierać elementy.');
         if (activity.kind === 'routine') {
-          if (!activity.elements?.length) throw new Error('Wykonanie układu musi zawierać elementy.');
           if (activity.sourceRoutineId) {
             const routine = db.prepare('SELECT template_version FROM routines WHERE id=? AND user_id=?').get(activity.sourceRoutineId, userId) as { template_version: number } | undefined;
             templateVersion = activity.sourceTemplateVersion ?? routine?.template_version ?? null;
           }
           matched = Boolean(activity.isFullRange) && matchesCurrentSnapshot(db, userId, activity);
         }
+        const routine = activity.kind === 'routine';
         const result = addActivity.run(entryId, activityIndex, activity.kind, activity.repetitions,
           activity.executionTypeId ?? entry.defaultExecutionTypeId ?? null, executionName,
-          activity.kind === 'element' ? activity.sourceElementId ?? null : null,
-          activity.kind === 'element' ? requiredText(activity.code, 'Kod elementu') : null,
-          activity.kind === 'element' ? activity.name ?? null : null,
-          activity.kind === 'routine' ? activity.sourceRoutineId ?? null : null,
-          activity.kind === 'routine' ? requiredText(activity.sourceRoutineName, 'Nazwa układu') : null,
-          templateVersion, activity.kind === 'routine' ? activity.rangeStart ?? 1 : null,
-          activity.kind === 'routine' ? activity.rangeEnd ?? activity.elements!.length : null,
-          activity.kind === 'routine' && activity.isFullRange ? 1 : 0, matched ? 1 : 0, activityTime);
+          nested ? null : activity.sourceElementId ?? null,
+          nested ? null : requiredText(activity.code, 'Kod elementu'),
+          nested ? null : activity.name ?? null,
+          routine ? activity.sourceRoutineId ?? null : null,
+          routine ? requiredText(activity.sourceRoutineName, 'Nazwa układu') : null,
+          templateVersion, routine ? activity.rangeStart ?? 1 : null,
+          routine ? activity.rangeEnd ?? activity.elements!.length : null,
+          routine && activity.isFullRange ? 1 : 0, matched ? 1 : 0, activityTime, unfinished ? 1 : 0);
         const activityId = Number(result.lastInsertRowid);
-        if (activity.kind === 'routine') activity.elements!.forEach((element, elementIndex) => {
-          addElement.run(activityId, element.position ?? elementIndex + 1, element.sourceElementId ?? null,
+        if (nested) activity.elements!.forEach((element, elementIndex) => {
+          addElement.run(activityId, routine ? element.position ?? elementIndex + 1 : elementIndex + 1, element.sourceElementId ?? null,
             requiredText(element.code, 'Kod elementu'), element.name ?? null,
             element.executionTypeId ?? activity.executionTypeId ?? entry.defaultExecutionTypeId ?? null,
-            requiredText(element.executionTypeName ?? executionName, 'Miejsce lądowania'), elementTimes[elementIndex] ?? null);
+            requiredText(element.executionTypeName ?? executionName, 'Miejsce lądowania'), elementTimes[elementIndex] ?? null, elementsUnfinished[elementIndex] ? 1 : 0);
         });
       });
+      if (entryUnfinished) markEntryUnfinished.run(entryId);
     });
     return id;
   });
@@ -153,10 +169,15 @@ export function getTraining(db: Db, userId: number, id: number, access: Training
     entry.activities = db.prepare(`SELECT id,position,kind,repetitions,execution_type_id executionTypeId,execution_type_name executionTypeName,
       source_element_id sourceElementId,code_snapshot code,name_snapshot name,source_routine_id sourceRoutineId,
       source_routine_name sourceRoutineName,source_template_version sourceTemplateVersion,range_start rangeStart,range_end rangeEnd,
-      is_full_range isFullRange,matched_original_template matchedOriginalTemplate,time_ms timeMs FROM activities WHERE entry_id=? ORDER BY position`).all(entry.id) as any[];
-    for (const activity of entry.activities) if (activity.kind === 'routine') activity.elements = db.prepare(`SELECT position,source_element_id sourceElementId,
-      code_snapshot code,name_snapshot name,execution_type_id executionTypeId,execution_type_name executionTypeName,time_ms timeMs
-      FROM activity_elements WHERE activity_id=? ORDER BY position`).all(activity.id);
+      is_full_range isFullRange,matched_original_template matchedOriginalTemplate,time_ms timeMs,unfinished FROM activities WHERE entry_id=? ORDER BY position`).all(entry.id) as any[];
+    for (const activity of entry.activities) {
+      activity.unfinished = Boolean(activity.unfinished);
+      if (activity.kind === 'element') continue;
+      activity.elements = db.prepare(`SELECT position,source_element_id sourceElementId,
+        code_snapshot code,name_snapshot name,execution_type_id executionTypeId,execution_type_name executionTypeName,time_ms timeMs,unfinished
+        FROM activity_elements WHERE activity_id=? ORDER BY position`).all(activity.id) as any[];
+      for (const element of activity.elements) element.unfinished = Boolean(element.unfinished);
+    }
   }
   return training;
 }
@@ -175,16 +196,18 @@ export function trainingSummary(db: Db, userId: number, from?: string, to?: stri
     ? `SELECT t.id,t.training_date date,COUNT(DISTINCT te.id) entries FROM trainings t LEFT JOIN training_entries te ON te.training_id=t.id WHERE ${where} GROUP BY t.id ORDER BY t.training_date`
     : `SELECT t.id,t.training_date date,COUNT(DISTINCT te.id) entries FROM trainings t JOIN training_entries te ON te.training_id=t.id WHERE ${where}${onApparatus} GROUP BY t.id ORDER BY t.training_date`).all(...values, ...apparatusValues) as any[];
   const activityRows = db.prepare(`SELECT a.id,a.kind,a.repetitions,a.is_full_range,a.matched_original_template,a.source_routine_name,
-    a.source_element_id,a.code_snapshot,a.name_snapshot,a.execution_type_name FROM trainings t JOIN training_entries te ON te.training_id=t.id JOIN activities a ON a.entry_id=te.id WHERE ${where}${onApparatus}`).all(...values, ...apparatusValues) as any[];
+    a.source_element_id,a.code_snapshot,a.name_snapshot,a.execution_type_name,a.unfinished FROM trainings t JOIN training_entries te ON te.training_id=t.id JOIN activities a ON a.entry_id=te.id WHERE ${where}${onApparatus}`).all(...values, ...apparatusValues) as any[];
   const ids = activityRows.map(row => row.id);
-  const snapshotRows = ids.length ? db.prepare(`SELECT ae.activity_id,ae.source_element_id,ae.code_snapshot code,ae.name_snapshot name,ae.execution_type_name,a.repetitions FROM activity_elements ae JOIN activities a ON a.id=ae.activity_id WHERE ae.activity_id IN (${ids.map(()=>'?').join(',')})`).all(...ids) as any[] : [];
+  const snapshotRows = ids.length ? db.prepare(`SELECT ae.activity_id,ae.source_element_id,ae.code_snapshot code,ae.name_snapshot name,ae.execution_type_name,ae.unfinished,a.repetitions FROM activity_elements ae JOIN activities a ON a.id=ae.activity_id WHERE ae.activity_id IN (${ids.map(()=>'?').join(',')})`).all(...ids) as any[] : [];
   const byCode: Record<string, number> = {};
   // Per element (its id), so variants with the same code (e.g. 40o from the back) stay apart; snapshots without an id: per code.
   const byElement = new Map<string, { key: string; elementId: number | null; code: string; name: string | null; count: number; failed: number; landings: Map<string, number> }>();
-  const addElement = (sourceId: number | null, code: string, name: string | null, landing: string, repetitions: number) => {
+  // An unfinished element (always ×1) is one failed attempt; shown positively as "udane X z Y".
+  const addElement = (sourceId: number | null, code: string, name: string | null, landing: string, repetitions: number, unfinished: boolean) => {
     const key = sourceId != null ? `e${sourceId}` : `c${code}`;
     const item = byElement.get(key) ?? { key, elementId: sourceId ?? null, code, name, count: 0, failed: 0, landings: new Map<string, number>() };
     item.count += repetitions; item.landings.set(landing, (item.landings.get(landing) ?? 0) + repetitions);
+    if (unfinished) item.failed += 1;
     byElement.set(key, item);
   };
   const landingTotals = new Map<string, number>();
@@ -197,34 +220,23 @@ export function trainingSummary(db: Db, userId: number, from?: string, to?: stri
   };
   for (const row of activityRows) if (row.kind === 'element') {
     byCode[row.code_snapshot] = (byCode[row.code_snapshot] ?? 0) + row.repetitions;
-    addElement(row.source_element_id, row.code_snapshot, row.name_snapshot, row.execution_type_name, row.repetitions);
+    addElement(row.source_element_id, row.code_snapshot, row.name_snapshot, row.execution_type_name, row.repetitions, Boolean(row.unfinished));
     if(elementId===undefined||row.source_element_id===elementId)addLanding(row.code_snapshot, row.execution_type_name, row.repetitions);
   }
   for (const row of snapshotRows) {
     byCode[row.code] = (byCode[row.code] ?? 0) + row.repetitions;
-    addElement(row.source_element_id, row.code, row.name, row.execution_type_name, row.repetitions);
+    addElement(row.source_element_id, row.code, row.name, row.execution_type_name, row.repetitions, Boolean(row.unfinished));
     if(elementId===undefined||row.source_element_id===elementId)addLanding(row.code, row.execution_type_name, row.repetitions);
   }
   let totalElements = Object.values(byCode).reduce((sum, count) => sum + count, 0);
   for (const training of trainings) {
     const rows=db.prepare(`SELECT a.kind,a.repetitions,a.code_snapshot FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=?${onApparatus}`).all(training.id,...apparatusValues) as any[];
-    const routineIds=db.prepare(`SELECT a.id,a.repetitions FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=?${onApparatus} AND a.kind='routine'`).all(training.id,...apparatusValues) as any[];
+    const routineIds=db.prepare(`SELECT a.id,a.repetitions FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=?${onApparatus} AND a.kind IN ('routine','combo')`).all(training.id,...apparatusValues) as any[];
     const direct=elementId===undefined?rows.filter(r=>r.kind==='element').reduce((s,r)=>s+r.repetitions,0):
       Number((db.prepare(`SELECT COALESCE(SUM(a.repetitions),0) count FROM training_entries te JOIN activities a ON a.entry_id=te.id WHERE te.training_id=?${onApparatus} AND a.kind='element' AND a.source_element_id=?`).get(training.id,...apparatusValues,elementId) as any).count);
     const nested=elementId===undefined?routineIds.reduce((sum,r)=>sum+(db.prepare('SELECT COUNT(*) count FROM activity_elements WHERE activity_id=?').get(r.id) as any).count*r.repetitions,0):
       Number((db.prepare(`SELECT COALESCE(SUM(a.repetitions),0) count FROM training_entries te JOIN activities a ON a.entry_id=te.id JOIN activity_elements ae ON ae.activity_id=a.id WHERE te.training_id=?${onApparatus} AND ae.source_element_id=?`).get(training.id,...apparatusValues,elementId) as any).count);
     training.totalElements=direct+nested;
-  }
-  // In an unfinished entry the last recorded element is the one that did not work out: one failed attempt
-  // (the last activity; in a routine, its last element). Shown positively as "udane X z Y".
-  const lastOfUnfinished = db.prepare(`SELECT a.id,a.kind,a.source_element_id sourceId,a.code_snapshot code FROM trainings t JOIN training_entries te ON te.training_id=t.id
-    JOIN activities a ON a.entry_id=te.id WHERE ${where}${onApparatus} AND te.unfinished=1 AND a.position=(SELECT MAX(position) FROM activities x WHERE x.entry_id=te.id)`).all(...values, ...apparatusValues) as { id: number; kind: string; sourceId: number | null; code: string | null }[];
-  const lastRoutineElement = db.prepare('SELECT source_element_id sourceId,code_snapshot code FROM activity_elements WHERE activity_id=? ORDER BY position DESC LIMIT 1');
-  for (const row of lastOfUnfinished) {
-    const last = row.kind === 'element' ? row : lastRoutineElement.get(row.id) as { sourceId: number | null; code: string } | undefined;
-    if (!last?.code) continue;
-    const item = byElement.get(last.sourceId != null ? `e${last.sourceId}` : `c${last.code}`);
-    if (item) item.failed += 1;
   }
   if(elementId!==undefined){
     totalElements=trainings.reduce((sum,row)=>sum+row.totalElements,0);
@@ -253,6 +265,7 @@ export function trainingSummary(db: Db, userId: number, from?: string, to?: stri
     fullRoutines: activityRows.filter(row=>row.kind==='routine' && row.is_full_range).reduce((sum,row)=>sum+row.repetitions,0),
     matchingFullRoutines: activityRows.filter(row=>row.kind==='routine' && row.is_full_range && row.matched_original_template).reduce((sum,row)=>sum+row.repetitions,0),
     fragments: activityRows.filter(row=>row.kind==='routine' && !row.is_full_range).reduce((sum,row)=>sum+row.repetitions,0),
+    combos: activityRows.filter(row=>row.kind==='combo').reduce((sum,row)=>sum+row.repetitions,0),
     timeline: [...timelineByDate.values()]
   };
 }

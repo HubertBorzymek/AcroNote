@@ -53,14 +53,20 @@ describe('warianty kodu, nieukończone wejścia i zmiana nazwy użytkownika', ()
     expect((await get(`/api/stats/summary?elementId=${back.id}`)).json().byElement).toMatchObject([{ elementId: back.id, count: 4 }]);
   });
 
-  it('wejście można oznaczyć jako nieukończone; statystyki je liczą', async () => {
+  it('nieukończony element oznacza wejście jako nieukończone; statystyki je liczą', async () => {
     const [trampoline, dmt] = (await get('/api/apparatus')).json();
     const saved = await send('POST', '/api/trainings', { date: '2026-11-20', entries: [
-      { apparatusId: trampoline.id, unfinished: true, activities: [{ kind: 'element', code: '40o', repetitions: 3, executionTypeName: 'Siatka' }] },
-      { apparatusId: trampoline.id, activities: [{ kind: 'element', code: '41o', repetitions: 1, executionTypeName: 'Siatka' }] },
-      { apparatusId: dmt.id, unfinished: true, activities: [{ kind: 'element', code: '40o', repetitions: 1, executionTypeName: 'Siatka' }] },
+      { apparatusId: trampoline.id, activities: [{ kind: 'element', code: '40o', repetitions: 2, executionTypeName: 'Siatka' }, { kind: 'element', code: '40o', repetitions: 1, executionTypeName: 'Siatka', unfinished: true }] },
+      // The entry flag itself is ignored: an entry is unfinished only through its elements.
+      { apparatusId: trampoline.id, unfinished: true, activities: [{ kind: 'element', code: '41o', repetitions: 1, executionTypeName: 'Siatka' }] },
+      { apparatusId: dmt.id, activities: [{ kind: 'element', code: '40o', repetitions: 1, executionTypeName: 'Siatka', unfinished: true }] },
     ] });
+    expect(saved.statusCode, saved.body).toBe(201);
     expect(saved.json().entries.map((entry: any) => entry.unfinished)).toEqual([true, false, true]);
+    expect(saved.json().entries[0].activities.map((activity: any) => activity.unfinished)).toEqual([false, true]);
+    // An unfinished position is one execution (like a time).
+    const many = await send('POST', '/api/trainings', { date: '2026-11-21', entries: [{ activities: [{ kind: 'element', code: '40o', repetitions: 2, executionTypeName: 'Siatka', unfinished: true }] }] });
+    expect(many.statusCode).toBe(400); expect(many.json().message).toMatch(/×1/);
     expect((await get('/api/stats/summary')).json()).toMatchObject({ entries: 3, unfinishedEntries: 2, totalElements: 5 });
     expect((await get(`/api/stats/summary?apparatusId=${trampoline.id}`)).json()).toMatchObject({ entries: 2, unfinishedEntries: 1 });
     // "Tylko ukończone": unfinished entries are left out entirely.
@@ -68,20 +74,21 @@ describe('warianty kodu, nieukończone wejścia i zmiana nazwy użytkownika', ()
     expect((await get(`/api/stats/summary?apparatusId=${dmt.id}&finished=1`)).json()).toMatchObject({ entries: 0, trainings: 0, totalElements: 0 });
   });
 
-  it('skuteczność: ostatni element nieukończonego wejścia to jedna nieudana próba; licznik ukończonych na treningu', async () => {
+  it('skuteczność: nieukończony element to jedna nieudana próba, także w środku układu; licznik ukończonych na treningu', async () => {
     const salto = (await send('POST', '/api/elements', { code: '40o' })).json();
     const barani = (await send('POST', '/api/elements', { code: '41o' })).json();
-    const el = (item: any, repetitions = 1) => ({ kind: 'element', sourceElementId: item.id, code: item.code, repetitions, executionTypeName: 'Siatka' });
+    const el = (item: any, repetitions = 1, unfinished = false) => ({ kind: 'element', sourceElementId: item.id, code: item.code, repetitions, executionTypeName: 'Siatka', unfinished });
+    // The routine broke off in the middle, on 40o; 41o after it still counts as done.
     const routine = { kind: 'routine', sourceRoutineName: 'U', rangeStart: 1, rangeEnd: 2, isFullRange: true, repetitions: 1, executionTypeName: 'Siatka',
-      elements: [{ sourceElementId: salto.id, code: '40o', position: 1 }, { sourceElementId: barani.id, code: '41o', position: 2 }] };
+      elements: [{ sourceElementId: salto.id, code: '40o', position: 1, unfinished: true }, { sourceElementId: barani.id, code: '41o', position: 2 }] };
     await send('POST', '/api/trainings', { date: '2026-11-20', entries: [
-      { unfinished: true, activities: [el(barani), el(salto, 3)] },   // the last 40o did not work out
-      { unfinished: true, activities: [routine] },                    // the routine broke off on its last element, 41o
+      { activities: [el(barani), el(salto, 2), el(salto, 1, true)] },
+      { activities: [routine] },
       { activities: [el(salto, 2), el(barani, 2)] },
     ] });
     const byElement = (await get('/api/stats/summary')).json().byElement;
-    expect(byElement.map((item: any) => [item.code, item.count, item.failed])).toEqual([['40o', 6, 1], ['41o', 4, 1]]);
-    expect((await get(`/api/stats/summary?elementId=${salto.id}`)).json().byElement).toMatchObject([{ count: 6, failed: 1 }]);
+    expect(byElement.map((item: any) => [item.code, item.count, item.failed])).toEqual([['40o', 6, 2], ['41o', 4, 0]]);
+    expect((await get(`/api/stats/summary?elementId=${salto.id}`)).json().byElement).toMatchObject([{ count: 6, failed: 2 }]);
     expect((await get('/api/stats/summary?finished=1')).json().byElement.map((item: any) => item.failed)).toEqual([0, 0]);
     expect((await get('/api/trainings')).json()[0]).toMatchObject({ entriesCount: 3, unfinishedCount: 2 });
   });
@@ -124,7 +131,7 @@ describe('migracja v9: warianty kodu i nieukończone wejścia', () => {
 
     db = openDatabase(path);
     try {
-      expect((db.prepare('SELECT MAX(version) v FROM migrations').get() as any).v).toBe(9);
+      expect((db.prepare('SELECT MAX(version) v FROM migrations').get() as any).v).toBe(10);
       expect(db.prepare('SELECT id,code,name,catalog FROM elements ORDER BY id').all()).toEqual([{ id: 5, code: '40o', name: 'Salto', catalog: 'trampoline' }, { id: 8, code: '0o', name: null, catalog: 'tumbling' }]);
       db.prepare("INSERT INTO elements(user_id,code,name,catalog) VALUES(?,'40o','z pleców','trampoline')").run(userId);
       expect((db.prepare('SELECT unfinished FROM training_entries').get() as any).unfinished).toBe(0);

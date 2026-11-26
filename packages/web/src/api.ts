@@ -1,5 +1,5 @@
 import { recordRequest, type Diagnostics } from './diagnostics';
-import type { Activity, AdminBugReport, Apparatus, AdminBugReportSummary, AdminSummary, AdminUser, BugReportSummary, OwnPasswordReset, PasswordResetRequest, TimeStats, TwoStepSetup, AdminUserData, CoachAthlete, CoachInvitation, CoachLink, ElementHistoryItem, ElementItem, ExecutionType, LandingCount, Routine, RoutineSlot, StatsSummary, Training, TrainingEntry, User } from './types';
+import type { Activity, ActivityType, AdminBugReport, Apparatus, AdminBugReportSummary, AdminSummary, AdminUser, BugReportSummary, OwnPasswordReset, PasswordResetRequest, TimeStats, TwoStepSetup, AdminUserData, CoachAthlete, CoachInvitation, CoachLink, ElementHistoryItem, ElementItem, ExecutionType, LandingCount, Routine, RoutineSlot, StatsSummary, Training, TrainingEntry, User } from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public details?: unknown) {
@@ -52,23 +52,25 @@ function routineBody(input: Pick<Routine, 'name' | 'slots' | 'apparatusId'>) {
   return { name: input.name, apparatusId: apiId(input.apparatusId), items: input.slots.map((slot, index) => ({ elementId: apiId(slot.elementId), code: slot.code, name: slot.name ?? null, position: index + 1 })) };
 }
 function mapActivity(raw: Record<string, unknown>): Activity {
-  const kind = (raw.kind ?? raw.type) as 'element' | 'routine';
+  const kind = (raw.kind ?? raw.type) as ActivityType;
   return {
     id: id(raw.id), type: kind, repetitions: Number(raw.repetitions ?? 1), executionTypeId: id(raw.executionTypeId), executionTypeName: String(raw.executionTypeName ?? ''),
     elementId: id(raw.sourceElementId ?? raw.elementId), elementCode: (raw.code ?? raw.elementCode) as string | undefined, elementName: (raw.name ?? raw.elementName) as string | null | undefined,
     routineId: id(raw.sourceRoutineId ?? raw.routineId), routineName: (raw.sourceRoutineName ?? raw.routineName) as string | undefined, sourceTemplateVersion: raw.sourceTemplateVersion as number | undefined, matchedOriginalTemplate: raw.matchedOriginalTemplate == null ? undefined : Boolean(raw.matchedOriginalTemplate), rangeStart: raw.rangeStart as number | undefined, rangeEnd: raw.rangeEnd as number | undefined,
-    isFullRoutine: Boolean(raw.isFullRange ?? raw.isFullRoutine), elements: Array.isArray(raw.elements) ? raw.elements.map((item: Record<string, unknown>) => ({ elementId: id(item.sourceElementId ?? item.elementId), code: String(item.code), name: item.name as string | null | undefined, executionTypeId: id(item.executionTypeId), executionTypeName: String(item.executionTypeName ?? ''), timeMs: item.timeMs == null ? null : Number(item.timeMs) })) : undefined,
-    timeMs: raw.timeMs == null ? null : Number(raw.timeMs),
+    isFullRoutine: Boolean(raw.isFullRange ?? raw.isFullRoutine), elements: Array.isArray(raw.elements) ? raw.elements.map((item: Record<string, unknown>) => ({ elementId: id(item.sourceElementId ?? item.elementId), code: String(item.code), name: item.name as string | null | undefined, executionTypeId: id(item.executionTypeId), executionTypeName: String(item.executionTypeName ?? ''), timeMs: item.timeMs == null ? null : Number(item.timeMs), unfinished: Boolean(item.unfinished) })) : undefined,
+    timeMs: raw.timeMs == null ? null : Number(raw.timeMs), unfinished: Boolean(raw.unfinished),
   };
 }
 function activityBody(activity: Activity) {
   const common = { kind: activity.type, repetitions: activity.repetitions, executionTypeId: apiId(activity.executionTypeId), executionTypeName: activity.executionTypeName, timeMs: activity.timeMs ?? null };
-  if (activity.type === 'element') return { ...common, sourceElementId: apiId(activity.elementId), code: activity.elementCode, name: activity.elementName ?? null };
+  if (activity.type === 'element') return { ...common, sourceElementId: apiId(activity.elementId), code: activity.elementCode, name: activity.elementName ?? null, unfinished: !!activity.unfinished };
+  const elements = activity.elements?.map((item, index) => ({ sourceElementId: apiId(item.elementId), code: item.code, name: item.name ?? null, executionTypeId: apiId(item.executionTypeId), executionTypeName: item.executionTypeName, timeMs: item.timeMs ?? null, unfinished: !!item.unfinished, position: index + 1 }));
+  if (activity.type === 'combo') return { ...common, elements };
   return { ...common, sourceRoutineId: apiId(activity.routineId), sourceRoutineName: activity.routineName, sourceTemplateVersion: activity.sourceTemplateVersion, rangeStart: activity.rangeStart, rangeEnd: activity.rangeEnd, isFullRange: activity.isFullRoutine,
-    elements: activity.elements?.map((item, index) => ({ sourceElementId: apiId(item.elementId), code: item.code, name: item.name ?? null, executionTypeId: apiId(item.executionTypeId), executionTypeName: item.executionTypeName, timeMs: item.timeMs ?? null, position: index + 1 })) };
+    elements };
 }
 function trainingBody(input: Pick<Training, 'date' | 'entries' | 'rating' | 'comment'>) {
-  return { date: input.date, ...('rating' in input && { rating: input.rating ?? null }), ...('comment' in input && { comment: input.comment ?? null }), entries: input.entries.map((entry) => ({ defaultExecutionTypeId: apiId(entry.defaultExecutionTypeId), defaultExecutionTypeName: entry.defaultExecutionTypeName, apparatusId: apiId(entry.apparatusId), apparatusName: entry.apparatusName, unfinished: !!entry.unfinished, activities: entry.activities.map(activityBody) })) };
+  return { date: input.date, ...('rating' in input && { rating: input.rating ?? null }), ...('comment' in input && { comment: input.comment ?? null }), entries: input.entries.map((entry) => ({ defaultExecutionTypeId: apiId(entry.defaultExecutionTypeId), defaultExecutionTypeName: entry.defaultExecutionTypeName, apparatusId: apiId(entry.apparatusId), apparatusName: entry.apparatusName, activities: entry.activities.map(activityBody) })) };
 }
 function mapTraining(raw: Record<string, unknown>): Training {
   const mapped = { ...(raw as unknown as Training), id: String(raw.id), date: String(raw.date), entries: ((raw.entries ?? []) as Array<Record<string, unknown>>).map((entry): TrainingEntry => ({ id: id(entry.id), defaultExecutionTypeId: id(entry.defaultExecutionTypeId), defaultExecutionTypeName: String(entry.defaultExecutionTypeName ?? ''), apparatusId: id(entry.apparatusId), apparatusName: entry.apparatusName == null ? undefined : String(entry.apparatusName), unfinished: Boolean(entry.unfinished), activities: ((entry.activities ?? []) as Array<Record<string, unknown>>).map(mapActivity) })) };
@@ -78,7 +80,7 @@ function mapTraining(raw: Record<string, unknown>): Training {
 
 function mapStats(raw: Record<string, unknown>): StatsSummary {
   const byCode = raw.byCode as Record<string, number> | Array<{ code: string; count: number }> | undefined;
-  return { entries: Number(raw.entries ?? raw.totalEntries ?? 0), unfinishedEntries: Number(raw.unfinishedEntries ?? 0), elements: Number(raw.totalElements ?? raw.elements ?? 0), trainings: Number(raw.trainings ?? raw.trainingCount ?? 0), fullRoutines: Number(raw.fullRoutines ?? 0), fragments: Number(raw.fragments ?? raw.routineFragments ?? 0),
+  return { entries: Number(raw.entries ?? raw.totalEntries ?? 0), unfinishedEntries: Number(raw.unfinishedEntries ?? 0), elements: Number(raw.totalElements ?? raw.elements ?? 0), trainings: Number(raw.trainings ?? raw.trainingCount ?? 0), fullRoutines: Number(raw.fullRoutines ?? 0), fragments: Number(raw.fragments ?? raw.routineFragments ?? 0), combos: Number(raw.combos ?? 0),
     byCode: Array.isArray(byCode) ? byCode : Object.entries(byCode ?? {}).map(([code, count]) => ({ code, count })).sort((a, b) => b.count - a.count),
     // Per element: variants of one code (e.g. 40o from the back) are separate rows.
     byElement: ((raw.byElement ?? []) as Array<Record<string, unknown>>).map((item) => ({ key: String(item.key), elementId: id(item.elementId), code: String(item.code), name: (item.name as string | null) ?? null, count: Number(item.count ?? 0), failed: Number(item.failed ?? 0), landings: landingCounts(item.landings) })),

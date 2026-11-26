@@ -152,6 +152,95 @@ function migrate(db: Db): void {
     if (!columns('training_entries').has('unfinished')) db.exec('ALTER TABLE training_entries ADD COLUMN unfinished INTEGER NOT NULL DEFAULT 0');
     db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(9)').run();
   })();
+
+  migrateV10(db);
+}
+
+/**
+ * v10: combos ("Połączenie") and unfinished elements.
+ * - `activities.kind` also allows 'combo'. SQLite cannot change a CHECK constraint, so the table is
+ *   rebuilt with the same ids. Dropping it with foreign keys on would cascade-delete activity_elements,
+ *   so foreign keys are switched off around the rebuild (outside the transaction, where the pragma works).
+ * - `unfinished` moves from the entry to the element: an unfinished entry gets its last position marked
+ *   (in a routine: its last element), which is exactly what statistics counted as the failed attempt so far.
+ *   A last position ×N becomes ×(N−1) and a separate ×1 that is unfinished. `training_entries.unfinished`
+ *   stays as a derived value (the entry has an unfinished element), kept up to date on every save.
+ * - Every user has the landing places "Siatka" and "Ścieżka": elements before the last one in a routine or
+ *   combo land there (trampoline/DMT vs tumbling apparatus).
+ */
+function migrateV10(db: Db): void {
+  const columns = (table: string) => new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(row => row.name));
+  const tableSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='activities'").get() as { sql: string }).sql;
+  if (!tableSql.includes("'combo'")) {
+    const hasTime = columns('activities').has('time_ms');
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.transaction(() => {
+        db.exec(`CREATE TABLE activities_v10 (
+          id INTEGER PRIMARY KEY, entry_id INTEGER NOT NULL REFERENCES training_entries(id) ON DELETE CASCADE,
+          position INTEGER NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('element','routine','combo')),
+          repetitions INTEGER NOT NULL CHECK(repetitions > 0), execution_type_id INTEGER,
+          execution_type_name TEXT NOT NULL, source_element_id INTEGER, code_snapshot TEXT, name_snapshot TEXT,
+          source_routine_id INTEGER, source_routine_name TEXT, source_template_version INTEGER,
+          range_start INTEGER, range_end INTEGER, is_full_range INTEGER NOT NULL DEFAULT 0,
+          matched_original_template INTEGER NOT NULL DEFAULT 0, time_ms INTEGER, unfinished INTEGER NOT NULL DEFAULT 0);
+          INSERT INTO activities_v10(id,entry_id,position,kind,repetitions,execution_type_id,execution_type_name,source_element_id,code_snapshot,name_snapshot,
+            source_routine_id,source_routine_name,source_template_version,range_start,range_end,is_full_range,matched_original_template,time_ms)
+            SELECT id,entry_id,position,kind,repetitions,execution_type_id,execution_type_name,source_element_id,code_snapshot,name_snapshot,
+            source_routine_id,source_routine_name,source_template_version,range_start,range_end,is_full_range,matched_original_template,${hasTime ? 'time_ms' : 'NULL'} FROM activities;
+          DROP TABLE activities;
+          ALTER TABLE activities_v10 RENAME TO activities;`);
+        const broken = db.prepare('PRAGMA foreign_key_check').all();
+        if (broken.length) throw new Error(`Migracja v10: naruszone klucze obce (${broken.length}).`);
+      })();
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
+  }
+  db.transaction(() => {
+    if (!columns('activity_elements').has('unfinished')) db.exec('ALTER TABLE activity_elements ADD COLUMN unfinished INTEGER NOT NULL DEFAULT 0');
+    if (!columns('activity_elements').has('time_ms')) db.exec('ALTER TABLE activity_elements ADD COLUMN time_ms INTEGER');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_activities_entry ON activities(entry_id, position)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_activity_elements_activity ON activity_elements(activity_id, position)');
+    if (!db.prepare('SELECT 1 FROM migrations WHERE version=10').get()) {
+      const last = db.prepare('SELECT * FROM activities WHERE entry_id=? ORDER BY position DESC, id DESC LIMIT 1');
+      const copyActivity = db.prepare(`INSERT INTO activities(entry_id,position,kind,repetitions,execution_type_id,execution_type_name,source_element_id,code_snapshot,name_snapshot,
+        source_routine_id,source_routine_name,source_template_version,range_start,range_end,is_full_range,matched_original_template,time_ms,unfinished)
+        SELECT entry_id,position+1,kind,1,execution_type_id,execution_type_name,source_element_id,code_snapshot,name_snapshot,
+        source_routine_id,source_routine_name,source_template_version,range_start,range_end,is_full_range,matched_original_template,NULL,? FROM activities WHERE id=?`);
+      const copyElements = db.prepare(`INSERT INTO activity_elements(activity_id,position,source_element_id,code_snapshot,name_snapshot,execution_type_id,execution_type_name,time_ms,unfinished)
+        SELECT ?,position,source_element_id,code_snapshot,name_snapshot,execution_type_id,execution_type_name,NULL,0 FROM activity_elements WHERE activity_id=?`);
+      const markLastElement = db.prepare('UPDATE activity_elements SET unfinished=1 WHERE id=(SELECT id FROM activity_elements WHERE activity_id=? ORDER BY position DESC, id DESC LIMIT 1)');
+      for (const { id: entryId } of db.prepare('SELECT id FROM training_entries WHERE unfinished=1').all() as { id: number }[]) {
+        const activity = last.get(entryId) as { id: number; kind: string; repetitions: number } | undefined;
+        if (!activity) { db.prepare('UPDATE training_entries SET unfinished=0 WHERE id=?').run(entryId); continue; }
+        let failed = activity.id;
+        if (activity.repetitions > 1) {
+          // ×N with the last attempt failed: ×(N−1) done, then one more ×1 that did not work out.
+          db.prepare('UPDATE activities SET repetitions=repetitions-1 WHERE id=?').run(activity.id);
+          failed = Number(copyActivity.run(activity.kind === 'element' ? 1 : 0, activity.id).lastInsertRowid);
+          if (activity.kind !== 'element') copyElements.run(failed, activity.id);
+        } else if (activity.kind === 'element') db.prepare('UPDATE activities SET unfinished=1 WHERE id=?').run(activity.id);
+        if (activity.kind !== 'element') markLastElement.run(failed);
+      }
+      for (const { id } of db.prepare('SELECT id FROM users').all() as { id: number }[]) ensureFixedLandings(db, id);
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations(version) VALUES(10)').run();
+  })();
+}
+
+/** Landing places of the elements before the last one in a routine or combo: they cannot be renamed or deleted. */
+export const FIXED_LANDINGS = ['Siatka', 'Ścieżka'] as const;
+
+/** Makes sure the user has "Siatka" and "Ścieżka" (a deleted one comes back hidden, a missing one is added). */
+export function ensureFixedLandings(db: Db, userId: number): void {
+  for (const name of FIXED_LANDINGS) {
+    const row = db.prepare('SELECT id,deleted_at FROM execution_types WHERE user_id=? AND name=?').get(userId, name) as { id: number; deleted_at: string | null } | undefined;
+    if (row?.deleted_at) db.prepare('UPDATE execution_types SET deleted_at=NULL,hidden=1 WHERE id=?').run(row.id);
+    if (row) continue;
+    const order = (db.prepare('SELECT COALESCE(MAX(sort_order),-1)+1 n FROM execution_types WHERE user_id=?').get(userId) as { n: number }).n;
+    db.prepare('INSERT INTO execution_types(user_id,name,sort_order) VALUES(?,?,?)').run(userId, name, order);
+  }
 }
 
 /** "Ścieżka" with the tumbling notation, unless the user already has an apparatus of that name. */
@@ -169,7 +258,7 @@ export function usernameKey(username: string): string {
 /** Per-user defaults: landing places and apparatus. */
 export function seedExecutionTypes(db: Db, userId: number): void {
   const insert = db.prepare('INSERT OR IGNORE INTO execution_types(user_id,name,sort_order) VALUES(?,?,?)');
-  ['Siatka', 'Materac', 'Gąbki'].forEach((name, index) => insert.run(userId, name, index));
+  ['Siatka', 'Materac', 'Gąbki', 'Ścieżka'].forEach((name, index) => insert.run(userId, name, index));
   seedApparatus(db, userId);
 }
 

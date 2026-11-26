@@ -2,7 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { openBugReport } from './BugReport';
 import { describeElementCode, type Catalog } from '../elementCode';
 
-export type IconName = 'home' | 'spark' | 'routine' | 'chart' | 'user' | 'admin' | 'plus' | 'search' | 'back' | 'more' | 'journal' | 'target' | 'check' | 'sun' | 'moon' | 'clock' | 'chevron' | 'key';
+export type IconName = 'home' | 'spark' | 'routine' | 'chart' | 'user' | 'admin' | 'plus' | 'search' | 'back' | 'more' | 'journal' | 'target' | 'check' | 'sun' | 'moon' | 'clock' | 'chevron' | 'key' | 'grip';
 
 // Decorative symbols are always SVG: iOS draws characters such as an arrow as a coloured emoji tile.
 export function Icon({ name }: { name: IconName }) {
@@ -25,6 +25,7 @@ export function Icon({ name }: { name: IconName }) {
     clock: <><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9.5 2.5h5"/></>,
     chevron: <path d="m6 9 6 6 6-6"/>,
     key: <><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3M15 8l2 2"/></>,
+    grip: <><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></>,
   };
   return <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
 }

@@ -57,6 +57,8 @@ export interface ExecutionType {
   name: string;
   hidden?: boolean;
   sortOrder?: number;
+  /** "Siatka" and "Ścieżka": elements before the last one in a routine or combo land there; they cannot be renamed or deleted. */
+  fixed?: boolean;
 }
 
 export interface RoutineSlot {
@@ -85,11 +87,16 @@ export interface ActivityElement {
   executionTypeName: string;
   /** Time of this element in milliseconds (only for a single execution). */
   timeMs?: number | null;
+  /** This element did not work out (the position is then a single execution). */
+  unfinished?: boolean;
 }
+
+/** 'combo' ("Połączenie"): elements joined in the editor, without a routine template. */
+export type ActivityType = 'element' | 'routine' | 'combo';
 
 export interface Activity {
   id?: ID;
-  type: 'element' | 'routine';
+  type: ActivityType;
   repetitions: number;
   executionTypeId?: ID;
   executionTypeName: string;
@@ -106,6 +113,8 @@ export interface Activity {
   elements?: ActivityElement[];
   /** Time of a single execution in milliseconds: the element, or the whole routine/fragment. */
   timeMs?: number | null;
+  /** A single element that did not work out (×1). Routine and combo elements carry their own flag. */
+  unfinished?: boolean;
 }
 
 export interface TrainingEntry {
@@ -115,7 +124,7 @@ export interface TrainingEntry {
   /** The apparatus of this entry; its name is part of the saved snapshot. */
   apparatusId?: ID;
   apparatusName?: string;
-  /** The athlete marked this entry as not finished (e.g. broken off). */
+  /** Read-only, from the API: one of the entry's elements did not work out. */
   unfinished?: boolean;
   activities: Activity[];
   /** Client-only key for list rendering and the collapsed state; never sent to the API. */
@@ -137,10 +146,10 @@ export interface Training {
   apparatusNames?: string[];
 }
 
-export interface TimeRecord { key: string; kind: 'element' | 'routine'; label: string; apparatusName?: string | null; timeMs: number; previousMs: number }
+export interface TimeRecord { key: string; kind: 'element' | 'routine' | 'combo'; label: string; apparatusName?: string | null; timeMs: number; previousMs: number }
 
 export interface TimeStatsItem {
-  key: string; kind: 'element' | 'routine'; label: string; count: number; apparatusId?: number | null; apparatusName?: string | null; elementId?: number | null; name?: string | null;
+  key: string; kind: 'element' | 'routine' | 'combo'; label: string; count: number; apparatusId?: number | null; apparatusName?: string | null; elementId?: number | null; name?: string | null;
   bestMs: number; bestDate: string; avgMs: number; lastMs: number; lastDate: string;
   recentAvgMs: number | null; earlierAvgMs: number | null; trendMs: number | null;
   series: Array<{ trainingId: number; date: string; count: number; bestMs: number; worstMs: number; avgMs: number }>;
@@ -166,14 +175,16 @@ export interface StatsPoint {
 
 export interface StatsSummary {
   entries: number;
-  /** Entries marked as unfinished (counted calmly, not as failures). */
+  /** Entries with an unfinished element (counted calmly, not as failures). */
   unfinishedEntries: number;
   elements: number;
   trainings: number;
   fullRoutines: number;
   fragments: number;
+  /** Executions of combos ("Połączenie"). */
+  combos: number;
   byCode: Array<{ code: string; count: number }>;
-  /** `failed`: the last recorded element of an unfinished entry (one attempt that did not work out). */
+  /** `failed`: elements marked as unfinished (each one attempt that did not work out). */
   byElement: Array<{ key: string; elementId?: ID; code: string; name: string | null; count: number; failed: number; landings: LandingCount[] }>;
   timeline: StatsPoint[];
   byLanding: LandingCount[];

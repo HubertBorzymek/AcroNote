@@ -66,8 +66,8 @@ Nazwy fizycznych tabel mogą ewoluować, lecz model logiczny obejmuje:
 - **routines / routine_items** — aktualne szablony układów i uporządkowane pozycje;
 - **trainings** — odrębne treningi przypisane do daty i właściciela;
 - **entries** — uporządkowane wejścia należące do treningu;
-- **activities** — uporządkowane czynności elementowe lub układowe z liczbą powtórzeń;
-- **activity_elements** — uporządkowane, historyczne migawki elementów składających się na czynność układową;
+- **activities** — uporządkowane czynności z liczbą powtórzeń: pojedynczy element, wykonanie układu albo połączenie (`kind = 'combo'`, elementy złączone w edytorze bez szablonu); pojedynczy element ma znacznik `unfinished`;
+- **activity_elements** — uporządkowane, historyczne migawki elementów układu lub połączenia, każdy z własnym lądowaniem, czasem i znacznikiem `unfinished`;
 - **coach_links / invitations** — aktywne relacje trener–zawodnik oraz ograniczone czasowo zaproszenia.
 
 Każda tabela z danymi użytkownika jest powiązana z właścicielem bezpośrednio lub przez nadrzędny zasób. API nie ufa identyfikatorowi przekazanemu przez klienta: przed odczytem lub zmianą weryfikuje właściciela na podstawie sesji.
@@ -135,7 +135,7 @@ Formularze edycyjne powinny:
 
 ## Schemat bazy i transakcje
 
-Przy uruchomieniu API implementacja tworzy brakujące tabele i wykonuje idempotentne migracje. V2 dodaje rolę, stan usunięcia użytkownika i metadane kodu oraz zmienia bieżącą nazwę „Na płasko” na „Siatka”. V3 rozszerza zaproszenia o datę utworzenia, odbiorcę akceptacji i anulowanie. Historyczne migawki nie są przepisywane.
+Przy uruchomieniu API implementacja tworzy brakujące tabele i wykonuje idempotentne migracje. V10 przebudowuje `activities` (nowy `CHECK` rodzaju, te same id) przy wyłączonych kluczach obcych — inaczej `DROP TABLE` usunąłby kaskadowo `activity_elements` — i przenosi znacznik nieukończenia z wejścia na jego ostatni element; `training_entries.unfinished` pozostaje wartością wyliczaną przy zapisie. V2 dodaje rolę, stan usunięcia użytkownika i metadane kodu oraz zmienia bieżącą nazwę „Na płasko” na „Siatka”. V3 rozszerza zaproszenia o datę utworzenia, odbiorcę akceptacji i anulowanie. Historyczne migawki nie są przepisywane.
 
 Zmiany obejmujące trening, czynności i elementy migawki są wykonywane transakcyjnie, aby przerwany zapis nie pozostawił częściowych danych. SQLite ma włączone klucze obce i tryb WAL.
 

@@ -38,8 +38,8 @@ export async function importSnapshot(db: Db, snapshot: any, baseName: string): P
       for (const item of r.items ?? []) db.prepare('INSERT INTO routine_items(routine_id,position,element_id,code_snapshot,name_snapshot) VALUES(?,?,?,?,?)').run(id, item.position, mapped(elements, item.elementId), item.code, item.name ?? null);
     }
     const addActivity = db.prepare(`INSERT INTO activities(entry_id,position,kind,repetitions,execution_type_id,execution_type_name,source_element_id,code_snapshot,name_snapshot,
-      source_routine_id,source_routine_name,source_template_version,range_start,range_end,is_full_range,matched_original_template) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
-    const addElement = db.prepare('INSERT INTO activity_elements(activity_id,position,source_element_id,code_snapshot,name_snapshot,execution_type_id,execution_type_name) VALUES(?,?,?,?,?,?,?)');
+      source_routine_id,source_routine_name,source_template_version,range_start,range_end,is_full_range,matched_original_template,time_ms,unfinished) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    const addElement = db.prepare('INSERT INTO activity_elements(activity_id,position,source_element_id,code_snapshot,name_snapshot,execution_type_id,execution_type_name,time_ms,unfinished) VALUES(?,?,?,?,?,?,?,?,?)');
     for (const t of snapshot.trainings ?? []) {
       if (!t) continue;
       const trainingId = Number(db.prepare('INSERT INTO trainings(user_id,training_date,created_at,updated_at) VALUES(?,?,?,?)').run(userId, t.date, t.createdAt, t.updatedAt).lastInsertRowid);
@@ -48,8 +48,10 @@ export async function importSnapshot(db: Db, snapshot: any, baseName: string): P
         const entryId = Number(db.prepare('INSERT INTO training_entries(training_id,position,default_execution_type_id,default_execution_type_name,apparatus_id,apparatus_name) VALUES(?,?,?,?,?,?)').run(trainingId, entry.position, mapped(types, entry.defaultExecutionTypeId), entry.defaultExecutionTypeName, entryApparatus ?? fallbackApparatus.id, entryApparatus ? entry.apparatusName : fallbackApparatus.name).lastInsertRowid);
         for (const a of entry.activities ?? []) {
           const activityId = Number(addActivity.run(entryId, a.position, a.kind, a.repetitions, mapped(types, a.executionTypeId), a.executionTypeName, mapped(elements, a.sourceElementId), a.code ?? null, a.name ?? null,
-            mapped(routines, a.sourceRoutineId), a.sourceRoutineName ?? null, a.sourceTemplateVersion ?? null, a.rangeStart ?? null, a.rangeEnd ?? null, a.isFullRange ? 1 : 0, a.matchedOriginalTemplate ? 1 : 0).lastInsertRowid);
-          for (const el of a.elements ?? []) addElement.run(activityId, el.position, mapped(elements, el.sourceElementId), el.code, el.name ?? null, mapped(types, el.executionTypeId), el.executionTypeName);
+            mapped(routines, a.sourceRoutineId), a.sourceRoutineName ?? null, a.sourceTemplateVersion ?? null, a.rangeStart ?? null, a.rangeEnd ?? null, a.isFullRange ? 1 : 0, a.matchedOriginalTemplate ? 1 : 0, a.timeMs ?? null, a.unfinished ? 1 : 0).lastInsertRowid);
+          for (const el of a.elements ?? []) addElement.run(activityId, el.position, mapped(elements, el.sourceElementId), el.code, el.name ?? null, mapped(types, el.executionTypeId), el.executionTypeName, el.timeMs ?? null, el.unfinished ? 1 : 0);
+          // The entry is unfinished when one of its elements is (older reports also mark the entry itself).
+          if (entry.unfinished || a.unfinished || (a.elements ?? []).some((el: { unfinished?: boolean }) => el.unfinished)) db.prepare('UPDATE training_entries SET unfinished=1 WHERE id=?').run(entryId);
         }
       }
     }

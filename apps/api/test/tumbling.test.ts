@@ -136,7 +136,7 @@ describe('migracja v8: katalogi elementów', () => {
 
     db = openDatabase(path);
     try {
-      expect((db.prepare('SELECT MAX(version) v FROM migrations').get() as any).v).toBe(9);
+      expect((db.prepare('SELECT MAX(version) v FROM migrations').get() as any).v).toBe(10);
       expect(db.prepare('SELECT id,code,name,favorite,deleted_at deletedAt,catalog,salto_count s FROM elements ORDER BY id').all()).toEqual([
         { id: 7, code: '40o', name: 'Salto', favorite: 1, deletedAt: null, catalog: 'trampoline', s: 1 },
         { id: 9, code: '4o', name: null, favorite: 0, deletedAt: null, catalog: 'trampoline', s: null },

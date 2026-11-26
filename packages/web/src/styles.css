@@ -217,3 +217,48 @@ a.button{text-decoration:none;display:inline-flex;align-items:center;justify-con
 /* A clear gap between the apparatus and the period choice. */
 .apparatus-switch+.filter-row.period{margin-top:4px}
 .ranking.reliable .rank-row{grid-template-columns:24px minmax(70px,44%) 1fr 42px}.ranking.reliable .reliable-detail{grid-column:2/-1;margin-top:-4px;font-size:.68rem;color:var(--muted)}.ranking.reliable header small{display:block;font-size:.68rem;color:var(--muted);margin-top:4px}
+/* Positions inside an entry: long press selects them, the handle on the right drags them. */
+.activity{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+.activity.selected{border-color:var(--green);box-shadow:0 0 0 2px var(--green)}
+.activity.selected .activity-kind{background:var(--green);color:#fff}
+.activity-row{display:flex;align-items:stretch;gap:6px;position:relative}
+.activity-row>.activity{flex:1;min-width:0}
+.activity-row.dragging{z-index:5}
+.activity-row.dragging>.activity{border-color:var(--green);box-shadow:0 10px 24px rgba(21,62,50,.18)}
+.drag-handle{flex:none;width:38px;border:1px solid #e7ebe7;border-radius:12px;background:#fbfcfa;color:#8f9b93;display:grid;place-items:center;cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;padding:0}
+.drag-handle:active,.activity-row.dragging .drag-handle{cursor:grabbing;color:var(--green);border-color:var(--green)}
+.drag-handle .icon{width:20px;height:20px}
+:root[data-theme='dark'] .drag-handle{background:var(--subtle);border-color:var(--line)}
+.activity-selection>div{flex-wrap:wrap;justify-content:flex-end}
+.bulk-landing{display:block;margin:4px 0 14px}.bulk-landing select{width:100%;height:48px;border:1px solid var(--line);border-radius:12px;background:var(--paper,#fff);color:var(--ink);padding:0 12px}
+.confirm-dialog>.counter{grid-template-columns:52px 1fr 52px;gap:0;margin:4px 0 14px}
+@media(max-width:560px){.activity-selection{flex-direction:column;align-items:stretch;gap:6px}.activity-selection>div .button{flex:1 1 30%;min-width:0}}
+.entry-list-summary>span{white-space:nowrap;flex:none}
+/* Combo ("Połączenie"): elements joined like puzzle pieces. */
+.activity-kind.combo{background:#e3e6f5;color:#3d4b8c}
+:root[data-theme='dark'] .activity-kind.combo{background:#2a3150;color:#c4cbf2}
+.combo-chain{display:flex;flex-wrap:wrap;align-items:center;row-gap:4px;margin:1px 0 2px}
+.combo-chain i{position:relative;font:800 .92rem Manrope;font-style:normal;background:var(--soft);border:1px solid #c9d8ce;border-radius:7px;padding:2px 8px;color:var(--ink)}
+.combo-chain i+i{margin-left:12px}
+.combo-chain i+i::before{content:'';position:absolute;left:-13px;top:50%;width:12px;height:2px;margin-top:-1px;background:var(--green-2)}
+.combo-chain i.unfinished{border-style:dashed;border-color:#8b9bad;color:#4f6478}
+:root[data-theme='dark'] .combo-chain i{border-color:var(--line)}
+.activity small.unfinished-tag{display:inline-block;margin:2px 0 3px;font-size:.62rem;color:#566575}
+.activity strong+small.unfinished-tag{margin-left:0}
+.readonly-elements .unfinished-tag{margin-left:6px}
+/* Elements of a routine or combo in the editor: landing, "nie wyszedł" and (combo) a handle. */
+.snapshot-elements>div.snapshot-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(92px,130px) auto;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--divider)}
+.snapshot-elements>div.snapshot-row.with-handle{grid-template-columns:30px minmax(0,1fr) minmax(92px,130px) auto}
+.snapshot-elements>div.snapshot-row strong{grid-column:auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.snapshot-elements>div.snapshot-row .time-field{grid-column:1/-1}
+.snapshot-elements>div.snapshot-row select{width:100%;min-width:0}
+.snapshot-elements>div.snapshot-row.dragging{z-index:5;background:var(--paper);box-shadow:0 8px 20px rgba(21,62,50,.15);border-radius:10px}
+.snapshot-elements strong.unfinished{color:#4f6478}
+.element-unfinished{display:inline-flex;align-items:center;gap:4px;font-size:.68rem;color:var(--muted);font-weight:400;cursor:pointer;white-space:nowrap}
+.element-unfinished input{width:16px;height:16px;accent-color:#6b7b8c}
+.drag-handle.small{width:30px;height:34px;border-radius:9px}
+.unfinished-row input{accent-color:#6b7b8c}
+.combo-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.combo-actions .button{min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.combo-routine{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px}
+@media(max-width:560px){.element-unfinished span{font-size:.64rem}.snapshot-elements>div.snapshot-row{gap:6px}}

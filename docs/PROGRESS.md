@@ -4,11 +4,23 @@
 
 ## Stan bieżący
 
-**Aktualizacja:** 2026-11-11
+**Aktualizacja:** 2026-11-26
 
-**Etap:** produkcja (`main`) działa na Fly.io; gałąź `dev` zawiera scalenie z `main` i nowe funkcje (iteracja 2026-11-11), jeszcze niewdrożone
+**Etap:** produkcja działa na Fly.io w wersji 0.6.1 (baza v9). Na `dev`: 0.7.0 (commit 3f2b5c1) i niezacommitowane 0.8.0 — połączenia, nieukończony element, migracja v10.
 
-**Weryfikacja `dev`:** 109 testów automatycznych (API 73, web 36), kontrola typów, build, audyt 0, migracja v1–v3 → v6 na bazie utworzonej kodem z `main`, testy przeglądarkowe desktop/mobile na odizolowanej bazie. Niezweryfikowane: migracja na kopii prawdziwej bazy produkcyjnej, skrypty kopii na produkcji, obraz Docker po zmianach (sprawdzi CI), działanie na prawdziwym iPhonie.
+**Weryfikacja 0.8.0:** 252 testy automatyczne (API 165, web 87), kontrola typów, build, audyt 0, migracja v10 w teście i na testowej kopii v9, test przeglądarkowy 375×812. Niezweryfikowane: migracja na kopii prawdziwej bazy produkcyjnej (wymagana przed wdrożeniem), przeciąganie palcem na iPhonie.
+
+## Wersja 0.8.0 — połączenia i nieukończony element (niewdrożona)
+
+- „Połącz” łączy zaznaczone elementy w połączenie (np. rundak–flik–salto na ścieżce); wiele połączeń w wejściu, każde z liczbą wykonań, czasem i czasami elementów; przestawianie elementów, „Rozłącz”, „Zapisz jako układ”. Działa na każdym sprzęcie.
+- W układzie i połączeniu wybiera się lądowanie ostatniego elementu; wcześniejsze aplikacja ustawia na Siatkę (trampolina, DMT) albo Ścieżkę, z możliwością ręcznej zmiany. Siatki i Ścieżki nie da się przemianować ani usunąć.
+- „Nieukończony” przy elemencie (także w środku układu/połączenia) zamiast przy wejściu; przy ×N rozdzielenie na ×(N−1) i ×1. Statystyki skuteczności liczą oznaczone elementy.
+- Migracja v10 przenosi dotychczasowe nieukończone wejścia na ich ostatni element bez zmiany liczb.
+
+## Wersja 0.7.0 — pozycje w wejściu (niewdrożona)
+
+- Przytrzymanie pozycji w wejściu zaznacza ją; pasek pozwala ustawić liczbę wykonań (pomija pozycje z czasem), miejsce lądowania (w układzie także elementom), zduplikować na koniec wejścia (bez czasów) i usunąć.
+- Uchwyt po prawej stronie pozycji zmienia kolejność przeciąganiem w obrębie wejścia (biblioteka `@dnd-kit`, także klawiatura).
 
 ## Zrealizowany zakres
 
